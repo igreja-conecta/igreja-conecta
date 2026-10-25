@@ -1,0 +1,13 @@
+{
+  "name": "igreja-conecta",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "serve": "node tests/server.mjs 4173",
+    "build": "node scripts/build-site.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}

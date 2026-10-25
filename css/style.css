@@ -1,0 +1,219 @@
+/* A cor da igreja chega em --brand (e o texto sobre ela em --brand-ink) pelo js/app.js. */
+:root {
+  --brand: #3b5bdb;
+  --brand-ink: #ffffff;
+  --bg: #f5f6fa;
+  --surface: #ffffff;
+  --ink: #1b1e27;
+  --muted: #5f6475;
+  --line: #e2e4ec;
+  --danger: #c92a2a;
+  --warn: #9a5b00;
+  --link: var(--brand);
+  --brand-soft: color-mix(in srgb, var(--brand) 12%, var(--surface));
+  --radius: 14px;
+  --shadow: 0 1px 2px rgb(0 0 0 / .05), 0 4px 14px rgb(0 0 0 / .06);
+  --tabbar-h: 64px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111318;
+    --surface: #1a1d24;
+    --ink: #eceef4;
+    --muted: #9aa0b0;
+    --line: #2c303a;
+    --danger: #ff6b6b;
+    --warn: #f0b45a;
+    --link: color-mix(in srgb, var(--brand) 55%, white);
+    --brand-soft: color-mix(in srgb, var(--brand) 22%, var(--surface));
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111318;
+  --surface: #1a1d24;
+  --ink: #eceef4;
+  --muted: #9aa0b0;
+  --line: #2c303a;
+  --danger: #ff6b6b;
+  --warn: #f0b45a;
+  --link: color-mix(in srgb, var(--brand) 55%, white);
+  --brand-soft: color-mix(in srgb, var(--brand) 22%, var(--surface));
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.45;
+  -webkit-tap-highlight-color: transparent;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+body.has-tabbar { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
+a { color: var(--link); }
+h1 { font-size: 1.5rem; line-height: 1.2; margin: .3em 0 .5em; }
+h2 { font-size: 1.1rem; margin: 1.2em 0 .5em; }
+svg { width: 1.15em; height: 1.15em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+code { background: var(--brand-soft); padding: 1px 5px; border-radius: 4px; }
+
+/* ---------- Estrutura ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--ink); text-decoration: none; font-weight: 700; }
+.brand img { border-radius: 8px; object-fit: contain; }
+.brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-link { font-weight: 600; text-decoration: none; white-space: nowrap; }
+
+.view { max-width: 640px; margin: 0 auto; padding: 16px; }
+.page > :first-child { margin-top: 0; }
+.loading, .empty { text-align: center; padding: 48px 8px; color: var(--muted); }
+.empty h2 { color: var(--ink); }
+
+.tabbar {
+  position: fixed; inset: auto 0 0 0; z-index: 10;
+  display: flex; justify-content: space-around;
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+.tabbar a {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  color: var(--muted); text-decoration: none; font-size: .75rem;
+}
+.tabbar a svg { width: 24px; height: 24px; }
+.tabbar a.active { color: var(--link); font-weight: 600; }
+
+/* ---------- Botões ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 10px 18px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--ink);
+  font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
+}
+.btn.primary { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.btn.big { width: 100%; min-height: 50px; }
+.btn.small { min-height: 36px; padding: 6px 14px; font-size: .9rem; }
+.btn.link { border: 0; background: none; color: var(--link); width: 100%; }
+.btn.danger-outline { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.btn:disabled { opacity: .6; cursor: default; }
+.btn.google { background: #fff; color: #1f1f1f; border-color: #dadce0; }
+.btn.google .g { width: 20px; height: 20px; }
+
+/* ---------- Formulários ---------- */
+.form { display: flex; flex-direction: column; gap: 14px; }
+label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: .95rem; }
+input:not([type="checkbox"]):not([type="color"]), textarea, select {
+  width: 100%; padding: 11px 12px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--ink);
+  font: inherit; font-weight: 400;
+}
+input:focus, textarea:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+input[type="color"] { width: 64px; height: 44px; padding: 2px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+fieldset { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+legend { font-weight: 700; padding: 0 4px; }
+.check { flex-direction: row; align-items: center; gap: 10px; font-weight: 400; }
+.check input { width: 20px; height: 20px; accent-color: var(--brand); }
+.check.disabled { color: var(--muted); }
+.prefix-input { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.prefix-input span { padding-left: 12px; color: var(--muted); font-weight: 400; }
+.prefix-input input { border: 0 !important; padding-left: 2px !important; }
+.colors { display: flex; gap: 24px; flex-wrap: wrap; }
+.logo-picker { display: flex; gap: 16px; align-items: center; }
+.icon-preview {
+  width: 84px; height: 84px; flex: none; border-radius: 20px; display: grid; place-items: center;
+  border: 1px solid var(--line); overflow: hidden;
+}
+.icon-preview img { width: 84%; height: 84%; object-fit: contain; }
+
+/* ---------- Blocos ---------- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin: 0 0 14px; }
+.card h2:first-child { margin-top: 0; }
+.notice { background: var(--brand-soft); border-radius: var(--radius); padding: 14px 16px; margin: 0 0 14px; }
+.notice p { margin: .4em 0 0; }
+.hint { color: var(--muted); font-size: .9rem; font-weight: 400; margin: .3em 0; }
+.hint.warn { color: var(--warn); }
+.center { text-align: center; }
+.pre { white-space: pre-line; }
+.meta { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.bullets { padding-left: 1.2em; }
+.bullets li { margin: .3em 0; }
+.legal { color: var(--muted); font-size: .85rem; text-align: center; }
+
+.list { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
+.church-row, .menu-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink); text-decoration: none;
+  font: inherit; text-align: left; width: 100%; cursor: pointer;
+}
+.church-row img { border-radius: 10px; object-fit: contain; background: #fff; border: 1px solid var(--line); }
+.church-row span, .menu-row span { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.church-row small { color: var(--muted); }
+.church-row > svg:last-child, .menu-row > svg:last-child { color: var(--muted); }
+.menu-row > svg:first-child { color: var(--link); width: 22px; height: 22px; }
+.platform-church { display: flex; flex-direction: column; gap: 6px; }
+.platform-church.inactive .church-row { opacity: .6; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-left: 4px; }
+
+.hero, .church-hero { text-align: center; padding: 24px 8px 16px; }
+.hero img, .church-hero img { border-radius: 20px; object-fit: contain; }
+.church-hero p { color: var(--muted); }
+.hero .btn { margin: 12px 0 4px; }
+
+.shortcuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 0 0 16px; }
+.shortcut {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--ink); text-decoration: none; font-weight: 600;
+}
+.shortcut svg { width: 30px; height: 30px; color: var(--link); }
+.shortcut small { color: var(--muted); font-weight: 400; }
+.shortcut.soon { opacity: .75; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--brand-soft); text-decoration: none; font-weight: 600; font-size: .9rem; }
+
+.auth { display: flex; flex-direction: column; gap: 14px; max-width: 420px; margin: 0 auto; }
+.or { display: flex; align-items: center; gap: 12px; color: var(--muted); }
+.or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+
+/* ---------- Avisos flutuantes ---------- */
+.toast {
+  position: fixed; left: 16px; right: 16px; z-index: 30;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  max-width: 480px; margin: 0 auto; padding: 12px 16px;
+  border-radius: 12px; background: var(--ink); color: var(--bg); box-shadow: var(--shadow);
+}
+body.has-tabbar .toast { bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom)); }
+.toast.error { background: var(--danger); color: #fff; }
+
+.install-banner {
+  position: fixed; left: 12px; right: 12px; z-index: 20;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 10px;
+  max-width: 520px; margin: 0 auto; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+body.has-tabbar .install-banner { bottom: calc(var(--tabbar-h) + 10px + env(safe-area-inset-bottom)); }
+.install-banner img { border-radius: 10px; object-fit: contain; }
+.install-banner div { flex: 1; display: flex; flex-direction: column; font-size: .9rem; min-width: 0; }
+.install-banner span { color: var(--muted); }
+.install-banner .close { border: 0; background: none; color: var(--muted); font-size: 1.5rem; cursor: pointer; padding: 0 4px; }
+
+.modal-backdrop { position: fixed; inset: 0; z-index: 40; background: rgb(0 0 0 / .45); display: grid; place-items: end center; padding: 16px; }
+.modal { width: 100%; max-width: 440px; background: var(--surface); border-radius: var(--radius); padding: 20px; }
+.modal h2 { margin-top: 0; }
+.modal li { margin: .5em 0; }
+svg.inline { vertical-align: -3px; }
