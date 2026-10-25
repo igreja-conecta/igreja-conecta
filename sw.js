@@ -1,7 +1,7 @@
 // Service worker: deixa o app abrir rápido e funcionar com internet ruim.
 // Arquivos do app: rede primeiro, cache como reserva. Dados do Supabase: sempre da rede.
 // Troque o nome do cache a cada versão publicada.
-const CACHE = 'igreja-conecta-v3';
+const CACHE = 'igreja-conecta-v4';
 const SHELL = [
   './',
   'index.html',
@@ -11,6 +11,7 @@ const SHELL = [
   'js/util.js',
   'js/images.js',
   'js/install.js',
+  'js/push.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
 ];
@@ -60,5 +61,37 @@ self.addEventListener('fetch', (e) => {
         return res;
       })
       .catch(() => caches.match(req).then((hit) => hit || caches.match('./'))),
+  );
+});
+
+// Mensagens de aniversário e resumos (enviados pelo GitHub Actions: scripts/enviar-aniversarios.mjs).
+self.addEventListener('push', (e) => {
+  let msg = {};
+  try {
+    msg = e.data ? e.data.json() : {};
+  } catch {}
+  e.waitUntil(
+    self.registration.showNotification(msg.title || 'Igreja Conecta', {
+      body: msg.body || '',
+      icon: msg.icon || 'icons/icon-192.png',
+      badge: 'icons/badge-96.png',
+      image: msg.image,
+      tag: msg.tag,
+      data: { url: msg.url || './' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || './', self.registration.scope).href;
+  const page = url.split('#')[0];
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      // Já aberto na mesma igreja: usa a janela; senão abre uma nova.
+      const win = wins.find((w) => w.url.split('#')[0] === page);
+      if (win) return win.focus().then(() => win.navigate(url)).catch(() => self.clients.openWindow(url));
+      return self.clients.openWindow(url);
+    }),
   );
 });

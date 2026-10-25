@@ -48,6 +48,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `001_base.sql` | Igrejas, membros, papéis, regras de acesso (RLS), pastas de arquivos e a Igreja Exemplo |
 | `002_igrejas_de_teste.sql` | Igrejas Teste A e Teste B, usadas pelos testes de separação (não ganham página pública) |
 | `003_membros.sql` | Foto do membro na pasta dele, o membro troca a própria foto, e-mail de quem já entrou só muda após desligar a conta, admin desliga contas |
+| `004_aniversarios.sql` | Mensagem de aniversário por igreja, aparelhos com notificação, registro de envios (sem repetir), limite de 100 e-mails/dia, resumo da liderança, aniversariantes do mês |
 
 ## Contas de teste
 
@@ -56,6 +57,21 @@ Os testes de `tests/isolation.spec.mjs` entram com cinco contas (admin, líder e
 1. `node scripts/criar-usuarios-de-teste.mjs` gera uma senha aleatória em `tests/senha-testes.local` e o arquivo `supabase/usuarios-de-teste.local.sql`. Os dois ficam fora do Git.
 2. Rode `supabase/usuarios-de-teste.local.sql` no SQL Editor (pode rodar de novo quando quiser; recria as contas).
 3. No GitHub, em **Settings > Secrets and variables > Actions**, crie o segredo `TEST_USERS_PASSWORD` com o conteúdo de `tests/senha-testes.local`. Sem ele, os testes do GitHub falham de propósito.
+
+## Mensagens de aniversário
+
+O GitHub Actions (`.github/workflows/aniversarios.yml`) roda todo dia às 7h de Brasília e chama `scripts/enviar-aniversarios.mjs`, que envia o push e o e-mail de aniversário e o resumo da liderança. As funções de envio do banco só respondem com a senha `ENVIO_SECRET`; no SQL fica apenas o hash dela.
+
+Segredos do GitHub (**Settings > Secrets and variables > Actions**):
+
+| Nome | Tipo | Para quê |
+|---|---|---|
+| `ENVIO_SECRET` | Segredo | Senha das funções de envio |
+| `VAPID_PRIVATE_KEY` | Segredo | Chave privada das notificações (a pública fica em `js/config.js`) |
+| `RESEND_API_KEY` | Segredo (opcional) | E-mail pelo Resend. Sem ele, só sai o push |
+| `EMAIL_FROM` | Variável (opcional) | Remetente, ex.: `aniversario@seudominio.com.br` (domínio verificado no Resend) |
+
+O e-mail respeita o limite de 100 por dia para todas as igrejas juntas. O que passar fica para o dia seguinte (até 2 dias de atraso), e o administrador da plataforma recebe um aviso no celular.
 
 ## Testes
 

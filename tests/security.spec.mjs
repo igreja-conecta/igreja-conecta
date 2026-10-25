@@ -78,3 +78,19 @@ test.describe('Banco: visitante sem login', () => {
     if (res.ok()) expect(await res.json()).toEqual([]);
   });
 });
+
+test.describe('Banco: visitante sem login (aniversários)', () => {
+  test('não dispara envios nem lê aparelhos, modelos e registros', async ({ request }) => {
+    for (const fn of ['claim_birthday_push', 'claim_birthday_email', 'claim_leader_summaries', 'platform_push_targets', 'birthday_email_backlog', 'clean_message_log']) {
+      expect((await rpc(request, fn, { p_secret: 'errada' })).ok(), fn).toBe(false);
+    }
+    expect((await rpc(request, 'mark_message_failed', { p_secret: 'errada', p_log_id: 1 })).ok()).toBe(false);
+    expect((await rpc(request, 'forget_push_subscription', { p_secret: 'errada', p_endpoint: 'https://x' })).ok()).toBe(false);
+    expect((await rpc(request, 'save_push_subscription', { p_endpoint: 'https://x', p_p256dh: 'a', p_auth: 'b' })).ok()).toBe(false);
+    expect((await rpc(request, 'birthdays_between', { p_church: UUID, p_from: '2027-01-01', p_to: '2027-01-31' })).ok()).toBe(false);
+    for (const table of ['push_subscriptions', 'message_log', 'message_templates']) {
+      const res = await request.get(rest(`${table}?select=*`), { headers });
+      if (res.ok()) expect(await res.json(), table).toEqual([]);
+    }
+  });
+});
