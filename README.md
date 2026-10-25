@@ -60,6 +60,8 @@ Os testes de `tests/isolation.spec.mjs` entram com cinco contas (admin, líder e
 2. Rode `supabase/usuarios-de-teste.local.sql` no SQL Editor (pode rodar de novo quando quiser; recria as contas).
 3. No GitHub, em **Settings > Secrets and variables > Actions**, crie o segredo `TEST_USERS_PASSWORD` com o conteúdo de `tests/senha-testes.local`. Sem ele, os testes do GitHub falham de propósito.
 
+As igrejas de teste são só dos testes: **não entre nelas com a sua conta** (para experimentar, use a Igreja Exemplo). Se alguém entrar, os testes param antes de mexer em qualquer coisa e pedem para rodar `supabase/limpar-igrejas-de-teste.sql`, que tira das igrejas de teste as contas que não são de teste e devolve os papéis.
+
 ## Mensagens de aniversário
 
 O GitHub Actions (`.github/workflows/aniversarios.yml`) roda todo dia às 7h de Brasília e chama `scripts/enviar-aniversarios.mjs`, que envia o push e o e-mail de aniversário e o resumo da liderança. As funções de envio do banco só respondem com a senha `ENVIO_SECRET`; no SQL fica apenas o hash dela.

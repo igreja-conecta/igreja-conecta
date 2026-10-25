@@ -40,6 +40,32 @@ export async function loginAs(request, user) {
   };
 }
 
+// As igrejas de teste só podem ter as contas de teste, com os papéis esperados. Se alguém entrar
+// nelas com uma conta de verdade (ex.: virar administrador da Teste A), alguns testes deixariam de
+// ser barrados e mudariam dados de verdade. Por isso tudo para aqui, antes de mexer em qualquer coisa.
+export async function assertCleanTestChurches(request, as) {
+  const expected = {
+    'adm-a@teste.igrejaconecta.invalid': 'admin',
+    'lider-a@teste.igrejaconecta.invalid': 'lider',
+    'membro-a@teste.igrejaconecta.invalid': 'membro',
+    'adm-b@teste.igrejaconecta.invalid': 'admin',
+  };
+  const problems = [];
+  for (const who of ['lider-a', 'adm-b']) {
+    const res = await request.get(rest('members?select=name,email,role,user_id'), { headers: as[who].headers });
+    for (const m of await res.json()) {
+      if (m.user_id && !(m.email || '').endsWith('@teste.igrejaconecta.invalid')) problems.push(`conta que não é de teste: "${m.name}"`);
+      if (expected[m.email] && expected[m.email] !== m.role) problems.push(`"${m.name}" está como ${m.role} (esperado: ${expected[m.email]})`);
+    }
+  }
+  if (problems.length) {
+    throw new Error(
+      `As igrejas de teste não estão como os testes esperam: ${[...new Set(problems)].join('; ')}. ` +
+        'Rode supabase/limpar-igrejas-de-teste.sql no SQL Editor e tente de novo. Para experimentar o app, use a Igreja Exemplo.',
+    );
+  }
+}
+
 // Abre o app já logado com uma conta de teste (a sessão vai onde o supabase-js a guarda).
 export async function openLoggedIn(page, session, url) {
   const ref = new URL(SUPABASE_URL).hostname.split('.')[0];

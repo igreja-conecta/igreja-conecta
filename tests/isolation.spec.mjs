@@ -2,7 +2,7 @@
 // Cada tentativa de ler ou mexer na outra igreja (ou de passar do próprio papel) precisa falhar.
 // Contas: supabase/002_igrejas_de_teste.sql + supabase/usuarios-de-teste.local.sql.
 import { test, expect } from '@playwright/test';
-import { SUPABASE_URL, rest, configured, testPassword, loginAs } from './helpers.mjs';
+import { SUPABASE_URL, rest, configured, testPassword, loginAs, assertCleanTestChurches } from './helpers.mjs';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -41,6 +41,7 @@ test.beforeAll(async ({ playwright }) => {
   }
   api = await playwright.request.newContext();
   for (const u of ['adm-a', 'lider-a', 'membro-a', 'adm-b', 'sem-igreja']) as[u] = await loginAs(api, u);
+  await assertCleanTestChurches(api, as);
   const rows = await (await api.get(rest('churches?select=id,slug&slug=in.(teste-a,teste-b)'), { headers: as['adm-a'].headers })).json();
   church.a = rows.find((r) => r.slug === 'teste-a').id;
   church.b = rows.find((r) => r.slug === 'teste-b').id;
