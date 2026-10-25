@@ -63,6 +63,9 @@ function requireLogin(next) {
 // Mensagens do banco em português; o resto vira uma frase genérica.
 function errorText(err) {
   const msg = err?.message || String(err);
+  if (/rate limit|too many|only request this after/i.test(msg))
+    return 'Muitos pedidos de link de acesso em pouco tempo. Espere alguns minutos e tente de novo (ou entre com o Google).';
+  if (/provider is not enabled/i.test(msg)) return 'O login com Google ainda não está ligado. Use o link pelo e-mail.';
   if (/duplicate key.*slug/i.test(msg)) return 'Já existe uma igreja com esse endereço.';
   if (/duplicate key.*email/i.test(msg)) return 'Esse e-mail já está no cadastro desta igreja.';
   if (/row-level security|permission denied/i.test(msg)) return 'Você não tem permissão para isso.';
@@ -167,6 +170,16 @@ async function loadMemberships() {
   state.platformAdmin = !!pa.data;
 }
 
+// Pergunta ao Supabase (endereço público) se o login com Google está ligado; guarda a resposta.
+let googleCheck;
+function googleEnabled() {
+  googleCheck ??= fetch(`${CONFIG.SUPABASE_URL}/auth/v1/settings`, { headers: { apikey: CONFIG.SUPABASE_ANON_KEY } })
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((s) => !!s.external?.google)
+    .catch(() => false);
+  return googleCheck;
+}
+
 async function setUser(user) {
   state.user = user;
   await loadMemberships();
@@ -235,11 +248,11 @@ async function viewLogin(ctx) {
     <div class="auth">
       <h1>Entrar</h1>
       <p class="hint">Use o mesmo e-mail que você deu à secretaria da sua igreja. Assim o app encontra o seu cadastro.</p>
-      <button class="btn google big" id="google">
+      <button class="btn google big" id="google" hidden>
         <svg viewBox="0 0 24 24" class="g"><path fill="#4285F4" d="M22.5 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 0 1-2.2 3.3v2.7h3.5c2.1-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.5-2.7c-1 .7-2.3 1.1-3.8 1.1-2.9 0-5.4-2-6.3-4.6H2.1v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.7 14.1a6.6 6.6 0 0 1 0-4.2V7.1H2.1a11 11 0 0 0 0 9.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.1-3.1A11 11 0 0 0 2.1 7.1l3.6 2.8C6.6 7.3 9.1 5.4 12 5.4z"/></svg>
         Entrar com Google
       </button>
-      <div class="or"><span>ou</span></div>
+      <div class="or" id="google-or" hidden><span>ou</span></div>
       <form id="email-form">
         <label>Seu e-mail<input type="email" name="email" required autocomplete="email" placeholder="voce@exemplo.com"></label>
         <button class="btn primary big">Receber link de acesso</button>
@@ -247,6 +260,12 @@ async function viewLogin(ctx) {
       <p class="legal">Ao entrar, você concorda com a <a href="privacidade.html">Política de Privacidade</a>.</p>
     </div>`;
 
+  // O botão do Google só aparece quando o login com Google está ligado no Supabase.
+  googleEnabled().then((on) => {
+    if (!on || !ctx.alive()) return;
+    document.getElementById('google').hidden = false;
+    document.getElementById('google-or').hidden = false;
+  });
   document.getElementById('google').onclick = async () => {
     const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: PAGE_URL } });
     if (error) toast(errorText(error), 'error');

@@ -19,6 +19,29 @@ test('página da igreja mostra o nome dela, mesmo antes de ganhar a pasta própr
   await expect(page.getByRole('button', { name: 'Receber link de acesso' })).toBeVisible();
 });
 
+test('botão do Google só aparece com o login do Google ligado no Supabase', async ({ page }) => {
+  const settings = (google) => (route) => route.fulfill({ json: { external: { email: true, google } } });
+  await page.route('**/auth/v1/settings', settings(false));
+  await page.goto('/i/exemplo/#/entrar');
+  await expect(page.getByRole('button', { name: 'Receber link de acesso' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Entrar com Google' })).toBeHidden();
+
+  await page.unroute('**/auth/v1/settings');
+  await page.route('**/auth/v1/settings', settings(true));
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Entrar com Google' })).toBeVisible();
+});
+
+test('limite de envio de e-mails aparece em português', async ({ page }) => {
+  await page.route('**/auth/v1/otp*', (route) =>
+    route.fulfill({ status: 429, json: { code: 429, error_code: 'over_email_send_rate_limit', msg: 'email rate limit exceeded' } }),
+  );
+  await page.goto('/i/exemplo/#/entrar');
+  await page.getByLabel('Seu e-mail').fill('alguem@exemplo.com');
+  await page.getByRole('button', { name: 'Receber link de acesso' }).click();
+  await expect(page.locator('#toast')).toContainText('Muitos pedidos de link de acesso');
+});
+
 test('igreja que não existe', async ({ page }) => {
   await page.goto('/i/nao-existe-esta/');
   await expect(page.getByRole('heading', { name: 'Igreja não encontrada' })).toBeVisible();
