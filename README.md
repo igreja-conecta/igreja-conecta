@@ -49,6 +49,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `002_igrejas_de_teste.sql` | Igrejas Teste A e Teste B, usadas pelos testes de separação (não ganham página pública) |
 | `003_membros.sql` | Foto do membro na pasta dele, o membro troca a própria foto, e-mail de quem já entrou só muda após desligar a conta, admin desliga contas |
 | `004_aniversarios.sql` | Mensagem de aniversário por igreja, aparelhos com notificação, registro de envios (sem repetir), limite de 100 e-mails/dia, resumo da liderança, aniversariantes do mês |
+| `005_agenda_avisos.sql` | Agenda (eventos que podem repetir toda semana), mural de avisos, central de notificações, lembretes e avisos por push |
 
 ## Contas de teste
 
@@ -72,6 +73,12 @@ Segredos do GitHub (**Settings > Secrets and variables > Actions**):
 | `EMAIL_FROM` | Variável (opcional) | Remetente, ex.: `aniversario@seudominio.com.br` (domínio verificado no Resend) |
 
 O e-mail respeita o limite de 100 por dia para todas as igrejas juntas. O que passar fica para o dia seguinte (até 2 dias de atraso), e o administrador da plataforma recebe um aviso no celular.
+
+## Lembretes da agenda e avisos
+
+O GitHub Actions (`.github/workflows/lembretes.yml`) roda a cada 10 minutos e chama `scripts/enviar-lembretes.mjs`: manda o lembrete de cada evento no prazo escolhido (1 h, 2 h, 3 h ou 1 dia antes) e a notificação dos avisos publicados com "Mandar notificação". As notificações também ficam na central do app. Usa os mesmos segredos `ENVIO_SECRET` e `VAPID_PRIVATE_KEY`.
+
+Atenção: o GitHub desliga os agendamentos de um repositório público depois de 60 dias sem nenhum commit. Se isso acontecer, ele avisa por e-mail; é só reativar em **Actions**.
 
 ## Testes
 

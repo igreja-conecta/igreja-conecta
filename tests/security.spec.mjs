@@ -88,7 +88,11 @@ test.describe('Banco: visitante sem login (aniversários)', () => {
     expect((await rpc(request, 'forget_push_subscription', { p_secret: 'errada', p_endpoint: 'https://x' })).ok()).toBe(false);
     expect((await rpc(request, 'save_push_subscription', { p_endpoint: 'https://x', p_p256dh: 'a', p_auth: 'b' })).ok()).toBe(false);
     expect((await rpc(request, 'birthdays_between', { p_church: UUID, p_from: '2027-01-01', p_to: '2027-01-31' })).ok()).toBe(false);
-    for (const table of ['push_subscriptions', 'message_log', 'message_templates']) {
+    for (const fn of ['claim_event_reminders', 'claim_announcement_push', 'deliver_birthday_notifications', 'clean_notifications']) {
+      expect((await rpc(request, fn, { p_secret: 'errada' })).ok(), fn).toBe(false);
+    }
+    expect((await rpc(request, 'events_between', { p_church: UUID, p_from: '2027-01-01T00:00:00Z', p_to: '2027-01-31T00:00:00Z' })).ok()).toBe(false);
+    for (const table of ['push_subscriptions', 'message_log', 'message_templates', 'events', 'announcements', 'notifications']) {
       const res = await request.get(rest(`${table}?select=*`), { headers });
       if (res.ok()) expect(await res.json(), table).toEqual([]);
     }

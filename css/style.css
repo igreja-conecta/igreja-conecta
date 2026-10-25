@@ -297,3 +297,40 @@ select:disabled, input:disabled { opacity: .65; }
   .bday-month { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .avatar { border: 1px solid #ccc; }
 }
+
+/* ---------- Agenda, avisos e central de notificações ---------- */
+.top-actions { display: flex; align-items: center; gap: 14px; }
+.notif-link { position: relative; display: grid; place-items: center; width: 36px; height: 36px; color: var(--ink); }
+.notif-link svg { width: 24px; height: 24px; }
+.notif-link.active { color: var(--link); }
+.notif-badge {
+  position: absolute; top: 0; right: -2px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px; background: var(--danger); color: #fff; font-size: .7rem; font-weight: 700;
+  display: grid; place-items: center;
+}
+.card h2 { display: flex; align-items: center; gap: 8px; }
+.agenda-day h2 { font-size: 1rem; color: var(--muted); margin: 18px 0 8px; }
+.event-card {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+  color: var(--ink); text-decoration: none;
+}
+.event-card > span:not(.event-time) { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.event-card small { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.event-card > svg:last-child { color: var(--muted); }
+.event-time { width: 52px; flex: none; font-weight: 700; color: var(--link); }
+.card .event-card { padding: 10px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
+.announcement h2 { margin: 4px 0 8px; }
+.announcement.expired { opacity: .65; }
+.tags-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.notice-mini { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.notice-mini p { margin: 4px 0 0; color: var(--muted); }
+.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.notif-row {
+  display: flex; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink); text-decoration: none;
+}
+.notif-row.unread { border-color: var(--brand); background: var(--brand-soft); }
+.notif-row > span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.notif-row small { color: var(--muted); }
+.notif-icon { width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--brand-soft); color: var(--link); }

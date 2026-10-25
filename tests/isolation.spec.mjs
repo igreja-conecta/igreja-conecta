@@ -348,3 +348,87 @@ test.describe('Aniversários (004)', () => {
     }
   });
 });
+
+test.describe('Agenda, avisos e central de notificações (005)', () => {
+  const tag = `teste-${Date.now()}`;
+
+  test('agenda: a liderança cria um culto semanal; os membros veem as repetições; a outra igreja, nada', async () => {
+    const start = new Date('2027-03-07T22:00:00Z'); // domingo, 19h em Brasília
+    const created = await api.post(rest('events'), {
+      headers: returning(as['lider-a'].headers),
+      data: {
+        church_id: church.a,
+        title: `Culto ${tag}`,
+        starts_at: start.toISOString(),
+        ends_at: new Date(start.getTime() + 2 * 3600e3).toISOString(),
+        repeat_weekly: true,
+        repeat_until: '2027-03-28',
+      },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    const [ev] = await created.json();
+    try {
+      const range = { p_church: church.a, p_from: '2027-03-01T00:00:00Z', p_to: '2027-04-30T00:00:00Z' };
+      const occ = (await (await rpc('membro-a', 'events_between', range)).json()).filter((o) => o.event_id === ev.id);
+      expect(occ.map((o) => o.starts_at.slice(0, 10))).toEqual(['2027-03-07', '2027-03-14', '2027-03-21', '2027-03-28']);
+
+      expect(await (await rpc('adm-b', 'events_between', range)).json()).toEqual([]);
+      expect(await get('adm-b', `events?select=id&id=eq.${ev.id}`)).toEqual([]);
+      const h = returning(as['adm-b'].headers);
+      const changed = await api.patch(rest(`events?id=eq.${ev.id}`), { headers: h, data: { title: 'Invadido' } });
+      if (changed.ok()) expect(await changed.json()).toEqual([]);
+      const removed = await api.delete(rest(`events?id=eq.${ev.id}`), { headers: h });
+      if (removed.ok()) expect(await removed.json()).toEqual([]);
+
+      // O líder da A não leva o evento para a B; o membro não cria eventos.
+      const moved = await api.patch(rest(`events?id=eq.${ev.id}`), { headers: as['lider-a'].headers, data: { church_id: church.b } });
+      expect(moved.ok()).toBe(false);
+      const byMember = await api.post(rest('events'), {
+        headers: as['membro-a'].headers,
+        data: { church_id: church.a, title: 'Do membro', starts_at: start.toISOString() },
+      });
+      expect(byMember.ok()).toBe(false);
+    } finally {
+      const del = await api.delete(rest(`events?id=eq.${ev.id}`), { headers: returning(as['lider-a'].headers) });
+      expect(await del.json()).toHaveLength(1);
+    }
+  });
+
+  test('avisos: vencido some para os membros (a liderança vê); a notificação não é ligada depois', async () => {
+    const created = await api.post(rest('announcements'), {
+      headers: returning(as['lider-a'].headers),
+      data: { church_id: church.a, title: `Aviso ${tag}`, body: 'Texto', visible_until: '2020-01-01', pushed_at: '2020-01-01T00:00:00Z' },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    const [a] = await created.json();
+    try {
+      expect(a.pushed_at).toBe(null);
+      expect(await get('membro-a', `announcements?select=id&id=eq.${a.id}`)).toEqual([]);
+      expect(await get('lider-a', `announcements?select=id&id=eq.${a.id}`)).toHaveLength(1);
+      expect(await get('adm-b', `announcements?select=id&id=eq.${a.id}`)).toEqual([]);
+      const push = await api.patch(rest(`announcements?id=eq.${a.id}`), { headers: as['lider-a'].headers, data: { push: true } });
+      expect(push.ok()).toBe(false);
+      const byMember = await api.post(rest('announcements'), { headers: as['membro-a'].headers, data: { church_id: church.a, title: 'Do membro', body: 'x' } });
+      expect(byMember.ok()).toBe(false);
+    } finally {
+      const del = await api.delete(rest(`announcements?id=eq.${a.id}`), { headers: returning(as['lider-a'].headers) });
+      expect(await del.json()).toHaveLength(1);
+    }
+  });
+
+  test('notificações: ninguém cria pelo app, e cada um só lê as próprias', async () => {
+    const res = await api.post(rest('notifications'), {
+      headers: as['adm-a'].headers,
+      data: { user_id: as['membro-a'].id, church_id: church.a, kind: 'sistema', title: 'Falsa', dedupe_key: tag },
+    });
+    expect(res.ok()).toBe(false);
+    const rows = await get('membro-a', 'notifications?select=user_id');
+    expect(rows.every((r) => r.user_id === as['membro-a'].id)).toBe(true);
+  });
+
+  test('as funções de envio dos lembretes e avisos não respondem sem a senha', async () => {
+    for (const fn of ['claim_event_reminders', 'claim_announcement_push', 'deliver_birthday_notifications', 'clean_notifications']) {
+      expect((await rpc('adm-a', fn, { p_secret: 'errada' })).ok(), fn).toBe(false);
+    }
+  });
+});

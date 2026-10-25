@@ -90,3 +90,35 @@ test('mensagem de aniversário com os campos da igreja', async () => {
   expect(joinNames(['Ana Souza'])).toBe('Ana');
   expect(joinNames(['Ana Souza', 'João', 'Maria Clara'])).toBe('Ana, João e Maria');
 });
+
+test('adicionar à agenda: arquivo .ics e link do Google Agenda', async () => {
+  const { icsForEvent, googleCalendarUrl } = await import('../js/util.js');
+  const ev = {
+    event_id: 'abc',
+    title: 'Culto de domingo, com Santa Ceia',
+    description: 'Traga a família',
+    location: 'Templo; salão principal',
+    starts_at: '2027-03-14T22:00:00Z',
+    ends_at: null,
+    repeat_weekly: true,
+    repeat_until: '2027-12-31',
+    remind_minutes: 120,
+  };
+  const opts = { church: 'Igreja Exemplo', url: 'https://x/i/exemplo/', now: new Date('2027-01-01T00:00:00Z') };
+  const ics = icsForEvent(ev, opts);
+  expect(ics).toContain('DTSTART:20270314T220000Z\r\n');
+  expect(ics).toContain('DTEND:20270315T000000Z\r\n');
+  expect(ics).toContain('RRULE:FREQ=WEEKLY;UNTIL=20271231T235959Z\r\n');
+  expect(ics).toContain('SUMMARY:Culto de domingo\\, com Santa Ceia\r\n');
+  expect(ics).toContain('LOCATION:Templo\\; salão principal\r\n');
+  expect(ics).toContain('TRIGGER:-PT120M');
+  expect(ics.split('\r\n').every((l) => new TextEncoder().encode(l).length <= 75)).toBe(true);
+
+  const g = new URL(googleCalendarUrl(ev, opts));
+  expect(g.searchParams.get('dates')).toBe('20270314T220000Z/20270315T000000Z');
+  expect(g.searchParams.get('recur')).toBe('RRULE:FREQ=WEEKLY;UNTIL=20271231T235959Z');
+  const once = icsForEvent({ ...ev, repeat_weekly: false, repeat_until: null, remind_minutes: 0, location: null }, opts);
+  expect(once).not.toContain('RRULE');
+  expect(once).not.toContain('VALARM');
+  expect(once).not.toContain('LOCATION');
+});
