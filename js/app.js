@@ -2,9 +2,9 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import { CONFIG } from './config.js';
 import {
   esc, slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone,
-  ROLES, isLeaderRole, FEATURES,
+  ROLES, isLeaderRole, FEATURES, fold, fmtDate, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
 } from './util.js';
-import { resizeLogo, makeIconSet } from './images.js';
+import { resizeImage, resizeLogo, makeIconSet } from './images.js';
 import { maybeSuggestInstall } from './install.js';
 
 const $view = document.getElementById('view');
@@ -88,6 +88,10 @@ const icon = {
   pin: '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
   link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
   chevron: '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>',
+  users: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.3a6.5 6.5 0 0 1 3.5 5.7"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  upload: '<svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v4h16v-4"/></svg>',
+  search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 5 5"/></svg>',
 };
 
 const SOCIAL = [
@@ -123,9 +127,10 @@ function renderTabbar(path) {
   }
   const tabs = [
     ['/', icon.home, 'Início'],
+    ...(isLeaderRole(myRole()) ? [['/membros', icon.users, 'Membros']] : []),
     ['/menu', icon.menu, 'Menu'],
   ];
-  const active = ['/', ''].includes(path) ? '/' : '/menu';
+  const active = ['/', ''].includes(path) ? '/' : path.startsWith('/membros') ? '/membros' : '/menu';
   bar.innerHTML = tabs
     .map(([href, ic, label]) => `<a href="#${href}" class="${href === active ? 'active' : ''}">${ic}${label}</a>`)
     .join('');
@@ -202,6 +207,10 @@ const churchRoutes = [
   [/^\/menu$/, viewMenu],
   [/^\/perfil$/, viewProfile],
   [/^\/config$/, viewSettings],
+  [/^\/membros$/, viewMembers],
+  [/^\/membros\/novo$/, viewMemberForm],
+  [/^\/membros\/importar$/, viewImport],
+  [/^\/membros\/([0-9a-f-]{36})$/, viewMemberForm],
   [/^\/privacidade$/, viewChurchPrivacy],
 ];
 
@@ -561,6 +570,7 @@ async function viewMenu() {
       <p class="hint">${esc(state.user.email)} · ${esc(ROLES[m.role])}</p>
       <div class="list">
         <a class="menu-row" href="#/perfil">${icon.user}<span>Meu cadastro</span>${icon.chevron}</a>
+        ${isLeaderRole(m.role) ? `<a class="menu-row" href="#/membros">${icon.users}<span>Membros</span>${icon.chevron}</a>` : ''}
         ${admin ? `<a class="menu-row" href="#/config">${icon.gear}<span>Configurar a igreja</span>${icon.chevron}</a>` : ''}
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/privacidade">${icon.shield}<span>Privacidade</span>${icon.chevron}</a>
@@ -590,11 +600,13 @@ async function viewProfile(ctx) {
   if (!me?.consent_at) return navigate('/');
   const { data: m, error } = await sb.from('members').select('*').eq('id', me.id).single();
   if (error) throw error;
+  const photoUrl = m.photo_path ? (await signedPhotos([m.photo_path]))[m.photo_path] : null;
   if (!ctx.alive()) return;
   $view.innerHTML = `
     <form id="profile" class="form page">
       <h1>Meu cadastro</h1>
       <p class="hint">${esc(m.email || state.user.email)} · ${esc(ROLES[m.role])}</p>
+      ${photoField(m.name, photoUrl)}
       <label>Nome<input name="name" required minlength="2" maxlength="120" value="${esc(m.name)}"></label>
       <label>Telefone com DDD<input name="phone" type="tel" inputmode="tel" placeholder="(61) 99999-9999" value="${esc(fmtPhone(m.phone))}"></label>
       <label>Data de nascimento<input name="birth_date" type="date" min="1900-01-01" value="${esc(m.birth_date || '')}"></label>
@@ -608,26 +620,457 @@ async function viewProfile(ctx) {
       <p class="hint">Para trocar o e-mail, fale com a secretaria da igreja.</p>
     </form>`;
   const form = document.getElementById('profile');
+  const photo = bindPhotoField(form, m.name);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const phoneRaw = form.phone.value.trim();
     const phone = phoneRaw ? normalizePhone(phoneRaw) : null;
     if (phoneRaw && !phone) return toast('Telefone inválido. Use o DDD e o número, como (61) 99999-9999.', 'error');
-    const btn = form.querySelector('button');
+    const btn = form.querySelector('button.primary');
     btn.disabled = true;
-    const { error: err } = await sb
-      .from('members')
-      .update({
+    try {
+      const patch = {
         name: form.name.value.trim(),
         phone,
         birth_date: form.birth_date.value || null,
         show_birthday: form.show_birthday.checked,
         show_phone: form.show_phone.checked,
-      })
-      .eq('id', m.id);
-    btn.disabled = false;
-    if (err) return toast(errorText(err), 'error');
-    toast('Cadastro salvo.');
+      };
+      if (photo.file) patch.photo_path = await uploadMemberPhoto(m.church_id, m.id, photo.file);
+      else if (photo.removed && m.photo_path) {
+        await removeMemberPhotos(m.church_id, m.id);
+        patch.photo_path = null;
+      }
+      const { error: err } = await sb.from('members').update(patch).eq('id', m.id);
+      if (err) throw err;
+      m.photo_path = patch.photo_path === undefined ? m.photo_path : patch.photo_path;
+      photo.reset();
+      toast('Cadastro salvo.');
+    } catch (err) {
+      toast(errorText(err), 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+// ---------------------------------------------------------------------
+// Fotos dos membros: pasta privada <igreja>/<membro>/ com foto.* (1080 px) e mini.* (400 px).
+// A tela usa links temporários (1 hora), porque a pasta não é pública.
+// ---------------------------------------------------------------------
+const miniOf = (path) => path.replace(/\/foto\.(\w+)$/, '/mini.$1');
+
+async function signedPhotos(paths) {
+  if (!paths.length) return {};
+  const { data, error } = await sb.storage.from('membros').createSignedUrls(paths, 3600);
+  if (error) return {};
+  return Object.fromEntries(data.filter((d) => d.signedUrl).map((d) => [d.path, d.signedUrl]));
+}
+
+async function removeMemberPhotos(churchId, memberId) {
+  const bucket = sb.storage.from('membros');
+  const dir = `${churchId}/${memberId}`;
+  const { data } = await bucket.list(dir);
+  if (data?.length) {
+    const { error } = await bucket.remove(data.map((f) => `${dir}/${f.name}`));
+    if (error) throw error;
+  }
+}
+
+async function uploadMemberPhoto(churchId, memberId, file) {
+  const [big, small] = await Promise.all([resizeImage(file, 1080, 0.8), resizeImage(file, 400, 0.75)]);
+  const ext = big.type === 'image/webp' ? 'webp' : 'jpg';
+  await removeMemberPhotos(churchId, memberId);
+  const bucket = sb.storage.from('membros');
+  const dir = `${churchId}/${memberId}`;
+  for (const [name, blob] of [['foto', big], ['mini', small]]) {
+    const { error } = await bucket.upload(`${dir}/${name}.${ext}`, blob, { contentType: blob.type, cacheControl: '300', upsert: true });
+    if (error) throw error;
+  }
+  return `${dir}/foto.${ext}`;
+}
+
+const initials = (name) =>
+  esc(
+    String(name || '?')
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase(),
+  );
+
+const avatar = (name, url, size = '') =>
+  `<span class="avatar ${size}">${url ? `<img src="${esc(url)}" alt="">` : initials(name)}</span>`;
+
+function photoField(name, url) {
+  return `
+    <div class="photo-field">
+      <span id="photo-preview">${avatar(name, url, 'big')}</span>
+      <div>
+        <label class="btn small">${url ? 'Trocar a foto' : 'Escolher foto'}<input type="file" name="photo" accept="image/*" hidden></label>
+        <button type="button" class="btn link small" id="photo-remove" ${url ? '' : 'hidden'}>Remover foto</button>
+        <p class="hint">Opcional. A foto é reduzida no celular antes do envio.</p>
+      </div>
+    </div>`;
+}
+
+// Liga o campo de foto: guarda o arquivo escolhido ou o pedido de remoção, e mostra a prévia.
+function bindPhotoField(form, name) {
+  const state = { file: null, removed: false, reset() {
+    this.file = null;
+    this.removed = false;
+  } };
+  const preview = form.querySelector('#photo-preview');
+  const removeBtn = form.querySelector('#photo-remove');
+  form.photo.addEventListener('change', () => {
+    const file = form.photo.files[0];
+    if (!file) return;
+    state.file = file;
+    state.removed = false;
+    preview.innerHTML = avatar(name, URL.createObjectURL(file), 'big');
+    removeBtn.hidden = false;
+  });
+  removeBtn.onclick = () => {
+    state.file = null;
+    state.removed = true;
+    form.photo.value = '';
+    preview.innerHTML = avatar(name, null, 'big');
+    removeBtn.hidden = true;
+  };
+  return state;
+}
+
+// ---------------------------------------------------------------------
+// Membros (liderança): lista, ficha, importação por planilha
+// ---------------------------------------------------------------------
+function requireLeader(next) {
+  if (!requireLogin(next)) return false;
+  if (isLeaderRole(myRole())) return true;
+  $view.innerHTML = `<div class="empty"><h2>Só para a liderança</h2><p>A lista de membros fica com a secretaria, os líderes e o administrador da igreja.</p><a class="btn" href="#/">Voltar</a></div>`;
+  return false;
+}
+
+// Situação da conta no app: o que a secretaria precisa saber para ajudar a pessoa a entrar.
+function accountStatus(m) {
+  if (m.consent_at) return { cls: 'ok', label: 'No app' };
+  if (m.user_id) return { cls: 'wait', label: 'Convite pendente' };
+  if (m.email) return { cls: '', label: 'Ainda não entrou' };
+  return { cls: '', label: 'Sem e-mail' };
+}
+
+const MEMBER_COLUMNS = 'id, church_id, name, email, phone, birth_date, role, status, user_id, consent_at, photo_path, show_birthday, show_phone';
+
+async function viewMembers(ctx) {
+  if (!requireLeader('/membros')) return;
+  const { data: members, error } = await sb.from('members').select(MEMBER_COLUMNS).eq('church_id', state.church.id).order('name');
+  if (error) throw error;
+  const minis = await signedPhotos(members.filter((m) => m.photo_path).map((m) => miniOf(m.photo_path)));
+  if (!ctx.alive()) return;
+
+  const filter = ctx.params.get('ver') || 'ativo';
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Membros</h1>
+      <div class="actions-row">
+        <a class="btn primary" href="#/membros/novo">${icon.plus} Novo membro</a>
+        <a class="btn" href="#/membros/importar">${icon.upload} Importar planilha</a>
+      </div>
+      <label class="search">${icon.search}<input type="search" id="q" placeholder="Buscar por nome, e-mail ou telefone" aria-label="Buscar membros"></label>
+      <div class="chips filters">
+        ${[['ativo', 'Ativos'], ['inativo', 'Inativos'], ['todos', 'Todos']]
+          .map(([k, label]) => `<a class="chip ${filter === k ? 'active' : ''}" href="#/membros?ver=${k}">${label}</a>`)
+          .join('')}
+      </div>
+      <p class="hint" id="count"></p>
+      <div class="list" id="members"></div>
+    </div>`;
+
+  const list = document.getElementById('members');
+  const q = document.getElementById('q');
+  const draw = () => {
+    const term = fold(q.value);
+    const digits = q.value.replace(/\D/g, '');
+    const rows = members.filter(
+      (m) =>
+        (filter === 'todos' || m.status === filter) &&
+        (!term || fold(m.name).includes(term) || fold(m.email).includes(term) || (digits.length >= 3 && (m.phone || '').includes(digits))),
+    );
+    const total = members.filter((m) => filter === 'todos' || m.status === filter).length;
+    document.getElementById('count').textContent =
+      rows.length === total ? `${total} ${total === 1 ? 'pessoa' : 'pessoas'}` : `${rows.length} de ${total}`;
+    list.innerHTML = rows.length
+      ? rows
+          .map((m) => {
+            const st = accountStatus(m);
+            return `
+          <a class="member-row ${m.status === 'inativo' ? 'inactive' : ''}" href="#/membros/${m.id}">
+            ${avatar(m.name, m.photo_path && minis[miniOf(m.photo_path)])}
+            <span><strong>${esc(m.name)}</strong><small>${esc(m.email || fmtPhone(m.phone) || '')}</small></span>
+            <span class="tags">
+              ${m.role !== 'membro' ? `<span class="tag role">${esc(ROLES[m.role])}</span>` : ''}
+              <span class="tag ${st.cls}">${st.label}</span>
+            </span>
+          </a>`;
+          })
+          .join('')
+      : `<div class="empty"><p>${members.length ? 'Ninguém encontrado.' : 'Nenhum membro cadastrado ainda.'}</p></div>`;
+  };
+  q.addEventListener('input', draw);
+  draw();
+}
+
+async function viewMemberForm(ctx, id) {
+  if (!requireLeader(id ? `/membros/${id}` : '/membros/novo')) return;
+  const isNew = !id;
+  let m = { name: '', email: '', phone: '', birth_date: '', role: 'membro', status: 'ativo' };
+  let photoUrl = null;
+  if (!isNew) {
+    const { data, error } = await sb.from('members').select(MEMBER_COLUMNS).eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      $view.innerHTML = `<div class="empty"><h2>Cadastro não encontrado</h2><a class="btn" href="#/membros">Voltar aos membros</a></div>`;
+      return;
+    }
+    m = data;
+    if (m.photo_path) photoUrl = (await signedPhotos([m.photo_path]))[m.photo_path];
+  }
+  if (!ctx.alive()) return;
+
+  const role = myRole();
+  const admin = role === 'admin';
+  const canDelete = !isNew && ['admin', 'secretaria'].includes(role) && m.user_id !== state.user.id;
+  const linked = !!m.user_id;
+  const st = isNew ? null : accountStatus(m);
+
+  $view.innerHTML = `
+    <form id="member" class="form page">
+      <a href="#/membros" class="back">← Membros</a>
+      <h1>${isNew ? 'Novo membro' : esc(m.name)}</h1>
+      ${st ? `<p><span class="tag ${st.cls}">${st.label}</span></p>` : ''}
+      ${photoField(m.name, photoUrl)}
+      <label>Nome<input name="name" required minlength="2" maxlength="120" value="${esc(m.name)}"></label>
+      <label>E-mail
+        <input name="email" type="email" maxlength="160" value="${esc(m.email || '')}" ${linked ? 'disabled' : ''}>
+        <small class="hint">${
+          linked
+            ? 'A pessoa já entrou no app com este e-mail. Para trocar, o administrador desliga a conta primeiro.'
+            : 'Com o e-mail, a pessoa entra no app e a conta é ligada a este cadastro.'
+        }</small>
+      </label>
+      <label>Telefone com DDD<input name="phone" type="tel" inputmode="tel" placeholder="(61) 99999-9999" value="${esc(fmtPhone(m.phone))}"></label>
+      <label>Data de nascimento<input name="birth_date" type="date" min="1900-01-01" value="${esc(m.birth_date || '')}"></label>
+      <label>Papel na igreja
+        <select name="role" ${admin ? '' : 'disabled'}>
+          ${Object.entries(ROLES).map(([k, label]) => `<option value="${k}" ${m.role === k ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+        ${admin ? '' : '<small class="hint">Só o administrador muda o papel.</small>'}
+      </label>
+      ${
+        isNew
+          ? `<label class="check"><input type="checkbox" name="consent" required> A pessoa concordou em ter estes dados no app da igreja.</label>`
+          : `<label>Situação
+              <select name="status">
+                <option value="ativo" ${m.status === 'ativo' ? 'selected' : ''}>Ativo</option>
+                <option value="inativo" ${m.status === 'inativo' ? 'selected' : ''}>Inativo (não acessa o app)</option>
+              </select>
+            </label>
+            <p class="hint">Autorizações do membro: aniversário ${m.show_birthday ? 'visível' : 'oculto'} e telefone ${m.show_phone ? 'visível' : 'oculto'} para os outros membros.</p>`
+      }
+      <button class="btn primary big">${isNew ? 'Cadastrar' : 'Salvar'}</button>
+      ${admin && linked ? '<button type="button" class="btn" id="unlink">Desligar a conta do app</button>' : ''}
+      ${canDelete ? '<button type="button" class="btn danger-outline" id="delete">Excluir cadastro</button>' : ''}
+    </form>`;
+
+  const form = document.getElementById('member');
+  const photo = bindPhotoField(form, m.name);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = linked ? m.email : form.email.value.trim().toLowerCase() || null;
+    if (email && !EMAIL_RE.test(email)) return toast('E-mail inválido.', 'error');
+    const phoneRaw = form.phone.value.trim();
+    const phone = phoneRaw ? normalizePhone(phoneRaw) : null;
+    if (phoneRaw && !phone) return toast('Telefone inválido. Use o DDD e o número, como (61) 99999-9999.', 'error');
+
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const memberId = isNew ? crypto.randomUUID() : m.id;
+    let uploaded = false;
+    try {
+      const row = { name: form.name.value.trim(), phone, birth_date: form.birth_date.value || null };
+      if (!linked) row.email = email;
+      if (admin) row.role = form.role.value;
+      if (!isNew) row.status = form.status.value;
+      if (photo.file) {
+        row.photo_path = await uploadMemberPhoto(state.church.id, memberId, photo.file);
+        uploaded = true;
+      } else if (photo.removed && m.photo_path) {
+        await removeMemberPhotos(state.church.id, memberId);
+        row.photo_path = null;
+      }
+      const { error } = isNew
+        ? await sb.from('members').insert({ ...row, id: memberId, church_id: state.church.id })
+        : await sb.from('members').update(row).eq('id', m.id);
+      if (error) throw error;
+      toast(isNew ? 'Membro cadastrado.' : 'Cadastro salvo.');
+      // Mudou o próprio papel ou a própria situação: recarrega o que a pessoa pode ver.
+      if (m.user_id === state.user.id) await loadMemberships();
+      navigate('/membros');
+    } catch (err) {
+      if (isNew && uploaded) await removeMemberPhotos(state.church.id, memberId).catch(() => {});
+      toast(errorText(err), 'error');
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('unlink')?.addEventListener('click', async () => {
+    if (!confirm(`Desligar a conta de ${m.name} do app? O cadastro continua, mas a pessoa perde o acesso até entrar de novo e aceitar o convite.`)) return;
+    const { error } = await sb.rpc('unlink_member_account', { p_member: m.id });
+    if (error) return toast(errorText(error), 'error');
+    toast('Conta desligada.');
+    render();
+  });
+
+  document.getElementById('delete')?.addEventListener('click', async () => {
+    if (!confirm(`Excluir o cadastro de ${m.name}? Os dados e a foto são apagados e não dá para desfazer.`)) return;
+    try {
+      await removeMemberPhotos(state.church.id, m.id);
+      const { data, error } = await sb.from('members').delete().eq('id', m.id).select('id');
+      if (error) throw error;
+      if (!data.length) throw new Error('Você não tem permissão para excluir este cadastro.');
+      toast('Cadastro excluído.');
+      navigate('/membros');
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+  });
+}
+
+// Planilhas do Excel em português costumam vir em Windows-1252; as do Google, em UTF-8.
+async function readTextFile(file) {
+  const buf = await file.arrayBuffer();
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch {
+    return new TextDecoder('windows-1252').decode(buf);
+  }
+}
+
+function downloadFile(name, text, type) {
+  const url = URL.createObjectURL(new Blob(['﻿' + text], { type }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const IMPORT_MAX = 1000;
+
+async function viewImport(ctx) {
+  if (!requireLeader('/membros/importar')) return;
+  const { data: existing, error } = await sb.from('members').select('email').eq('church_id', state.church.id);
+  if (error) throw error;
+  if (!ctx.alive()) return;
+  const emails = new Set(existing.map((r) => r.email).filter(Boolean));
+  const room = (state.church.max_members ?? IMPORT_MAX) - existing.length;
+
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/membros" class="back">← Membros</a>
+      <h1>Importar planilha</h1>
+      <div class="card">
+        <p>Use uma planilha com as colunas <strong>nome</strong>, <strong>email</strong>, <strong>telefone</strong> e <strong>nascimento</strong> na primeira linha. Só o nome é obrigatório.</p>
+        <p class="hint">No Excel ou no Google Planilhas, salve como <strong>CSV</strong>. Datas como 15/03/1980. Quem já tem o e-mail cadastrado é pulado.</p>
+        <div class="actions-row">
+          <button class="btn small" id="template">Baixar modelo</button>
+          <label class="btn primary small">Escolher arquivo CSV<input type="file" id="file" accept=".csv,text/csv,text/plain" hidden></label>
+        </div>
+      </div>
+      <div id="preview"></div>
+    </div>`;
+
+  document.getElementById('template').onclick = () => downloadFile('modelo-membros.csv', MEMBERS_CSV_TEMPLATE, 'text/csv;charset=utf-8');
+
+  document.getElementById('file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const box = document.getElementById('preview');
+    const { rows, error: parseError } = parseMembersCsv(await readTextFile(file), emails);
+    if (parseError) {
+      box.innerHTML = `<div class="notice warn-box">${esc(parseError)}</div>`;
+      return;
+    }
+    const ok = rows.filter((r) => !r.errors.length && !r.skip);
+    const bad = rows.filter((r) => r.errors.length);
+    const skipped = rows.filter((r) => !r.errors.length && r.skip);
+    const tooMany = ok.length > Math.min(room, IMPORT_MAX);
+
+    box.innerHTML = `
+      <div class="card">
+        <h2>${ok.length} ${ok.length === 1 ? 'pessoa pronta' : 'pessoas prontas'} para importar</h2>
+        ${skipped.length ? `<p class="hint">${skipped.length} pulada(s): já cadastrada(s) ou com e-mail repetido.</p>` : ''}
+        ${bad.length ? `<p class="hint warn">${bad.length} linha(s) com erro não serão importadas. Corrija na planilha e importe de novo, se quiser.</p>` : ''}
+        ${tooMany ? `<p class="hint warn">A igreja pode cadastrar mais ${Math.max(room, 0)} pessoa(s) no plano atual (e até ${IMPORT_MAX} por planilha).</p>` : ''}
+        <div class="table-wrap">
+          <table class="preview-table">
+            <thead><tr><th>Linha</th><th>Situação</th><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Nascimento</th></tr></thead>
+            <tbody>
+              ${rows
+                .slice(0, 300)
+                .map(
+                  (r) => `
+                <tr class="${r.errors.length ? 'bad' : r.skip ? 'skip' : ''}">
+                  <td>${r.line}</td><td>${esc(r.errors.join(', ') || r.skip || 'ok')}</td>
+                  <td>${esc(r.name)}</td><td>${esc(r.email || '')}</td>
+                  <td>${esc(fmtPhone(r.phone))}</td><td>${esc(fmtDate(r.birth_date))}</td>
+                </tr>`,
+                )
+                .join('')}
+            </tbody>
+          </table>
+          ${rows.length > 300 ? `<p class="hint">Mostrando as primeiras 300 linhas.</p>` : ''}
+        </div>
+        ${
+          ok.length && !tooMany
+            ? `<form id="do-import" class="form">
+                <label class="check"><input type="checkbox" name="consent" required> As pessoas da planilha concordaram em ter os dados no app da igreja.</label>
+                <button class="btn primary big">Importar ${ok.length} ${ok.length === 1 ? 'pessoa' : 'pessoas'}</button>
+              </form>`
+            : ''
+        }
+      </div>`;
+
+    document.getElementById('do-import')?.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const btn = ev.target.querySelector('button');
+      btn.disabled = true;
+      let done = 0;
+      try {
+        for (let i = 0; i < ok.length; i += 100) {
+          const batch = ok.slice(i, i + 100).map((r) => ({
+            church_id: state.church.id,
+            name: r.name,
+            email: r.email,
+            phone: r.phone,
+            birth_date: r.birth_date,
+          }));
+          const { error: err } = await sb.from('members').insert(batch);
+          if (err) throw err;
+          done += batch.length;
+          btn.textContent = `Importando… ${done} de ${ok.length}`;
+        }
+        toast(`${done} ${done === 1 ? 'pessoa importada' : 'pessoas importadas'}.`);
+        navigate('/membros');
+      } catch (err) {
+        // Não oferece "tentar de novo" com a mesma lista: quem já entrou seria cadastrado duas vezes.
+        ev.target.outerHTML = `<div class="notice"><strong>A importação parou${done ? ` depois de ${done} pessoa(s)` : ''}.</strong>
+          <p>${esc(errorText(err))}</p><p>Confira a lista de membros antes de importar o restante.</p>
+          <a class="btn" href="#/membros">Ver membros</a></div>`;
+      }
+    });
   });
 }
 
@@ -838,6 +1281,15 @@ async function boot() {
   window.addEventListener('hashchange', render);
   render();
 }
+
+// Nas páginas das igrejas o <base> aponta para a raiz do site, e o navegador resolveria
+// href="#/..." contra ela (saindo da igreja). Os links internos trocam só o "#" da página atual.
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a[href^="#"]');
+  if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  location.hash = a.getAttribute('href').slice(1);
+});
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 boot().catch((e) => {

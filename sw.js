@@ -1,7 +1,7 @@
 // Service worker: deixa o app abrir rápido e funcionar com internet ruim.
 // Arquivos do app: rede primeiro, cache como reserva. Dados do Supabase: sempre da rede.
 // Troque o nome do cache a cada versão publicada.
-const CACHE = 'igreja-conecta-v2';
+const CACHE = 'igreja-conecta-v3';
 const SHELL = [
   './',
   'index.html',

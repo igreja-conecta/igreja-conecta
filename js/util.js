@@ -91,3 +91,113 @@ export const FEATURES = [
   { key: 'galeria', label: 'Galeria de fotos', phase: 3 },
   { key: 'devocional', label: 'Devocional e plano de leitura', phase: 3 },
 ];
+
+// Texto sem acentos e em minúsculas, para buscas e nomes de colunas.
+export const fold = (s) =>
+  String(s ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+
+// Data de nascimento digitada ("15/03/1980", "15-3-80", "1980-03-15") → "1980-03-15", ou null.
+// Ano com dois dígitos: até o ano atual vira 20xx, depois 19xx.
+export function parseBirthDate(s, today = new Date()) {
+  const t = String(s ?? '').trim();
+  let y, m, d;
+  let r;
+  if ((r = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) [, y, m, d] = r;
+  else if ((r = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/))) [, d, m, y] = r;
+  else return null;
+  y = Number(y);
+  m = Number(m);
+  d = Number(d);
+  if (y < 100) y += y <= today.getFullYear() % 100 ? 2000 : 1900;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
+  if (y < 1900 || date > today) return null;
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+export const fmtDate = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
+
+export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+// CSV de planilha (Excel em português usa ";"). Aceita aspas, quebras de linha dentro de aspas e BOM.
+export function parseCsv(text) {
+  const src = String(text ?? '').replace(/^﻿/, '');
+  const firstLine = src.split(/\r?\n/, 1)[0];
+  const count = (c) => firstLine.split(c).length - 1;
+  const sep = [';', ',', '\t'].sort((a, b) => count(b) - count(a))[0];
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (quoted) {
+      if (c === '"' && src[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else if (c === '"') quoted = false;
+      else field += c;
+    } else if (c === '"' && field === '') quoted = true;
+    else if (c === sep) {
+      row.push(field);
+      field = '';
+    } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && src[i + 1] === '\n') i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else field += c;
+  }
+  if (field !== '' || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((f) => f.trim() !== ''));
+}
+
+const COLUMNS = {
+  name: ['nome', 'nome completo', 'membro'],
+  email: ['email', 'e-mail', 'e mail'],
+  phone: ['telefone', 'celular', 'whatsapp', 'fone', 'tel'],
+  birth_date: ['nascimento', 'data de nascimento', 'data nascimento', 'aniversario', 'data'],
+};
+export const MEMBERS_CSV_TEMPLATE = 'nome;email;telefone;nascimento\r\nMaria da Silva;maria@exemplo.com;(61) 99999-0000;15/03/1980\r\n';
+
+// Planilha de membros → linhas prontas para gravar, cada uma com os seus erros.
+// "existingEmails": e-mails (minúsculos) que a igreja já tem; essas linhas são puladas.
+export function parseMembersCsv(text, existingEmails = new Set(), today = new Date()) {
+  const [header = [], ...lines] = parseCsv(text);
+  const index = {};
+  header.forEach((h, i) => {
+    const key = Object.keys(COLUMNS).find((k) => COLUMNS[k].includes(fold(h)));
+    if (key && index[key] === undefined) index[key] = i;
+  });
+  if (index.name === undefined) return { error: 'A planilha precisa de uma coluna "nome" na primeira linha.', rows: [] };
+
+  const seen = new Set();
+  const rows = lines.map((cells, i) => {
+    const get = (k) => (index[k] === undefined ? '' : String(cells[index[k]] ?? '').trim());
+    const errors = [];
+    const name = get('name').replace(/\s+/g, ' ');
+    if (name.length < 2 || name.length > 120) errors.push('nome inválido');
+    const email = get('email').toLowerCase() || null;
+    if (email && !EMAIL_RE.test(email)) errors.push('e-mail inválido');
+    const phoneRaw = get('phone');
+    const phone = phoneRaw ? normalizePhone(phoneRaw) : null;
+    if (phoneRaw && !phone) errors.push('telefone inválido');
+    const birthRaw = get('birth_date');
+    const birth_date = birthRaw ? parseBirthDate(birthRaw, today) : null;
+    if (birthRaw && !birth_date) errors.push('data de nascimento inválida');
+    let skip = null;
+    if (email && existingEmails.has(email)) skip = 'já cadastrado';
+    else if (email && seen.has(email)) skip = 'e-mail repetido na planilha';
+    if (email) seen.add(email);
+    return { line: i + 2, name, email, phone, birth_date, errors, skip };
+  });
+  return { rows };
+}

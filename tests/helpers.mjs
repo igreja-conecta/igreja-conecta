@@ -31,9 +31,26 @@ export async function loginAs(request, user) {
     data: { email: testEmail(user), password: testPassword() },
   });
   if (!res.ok()) throw new Error(`Login de ${user} falhou (${res.status()}): ${await res.text()}. Rode supabase/usuarios-de-teste.local.sql.`);
-  const { access_token, user: info } = await res.json();
+  const session = await res.json();
+  const { access_token, user: info } = session;
   return {
     id: info.id,
+    session,
     headers: { apikey: ANON_KEY, Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' },
   };
+}
+
+// Abre o app já logado com uma conta de teste (a sessão vai onde o supabase-js a guarda).
+export async function openLoggedIn(page, session, url) {
+  const ref = new URL(SUPABASE_URL).hostname.split('.')[0];
+  await page.addInitScript(
+    ([key, value]) => {
+      if (!sessionStorage.getItem('__sessao_de_teste')) {
+        localStorage.setItem(key, value);
+        sessionStorage.setItem('__sessao_de_teste', '1');
+      }
+    },
+    [`sb-${ref}-auth-token`, JSON.stringify(session)],
+  );
+  await page.goto(url);
 }

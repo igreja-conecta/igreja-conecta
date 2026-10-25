@@ -16,6 +16,9 @@ test('página da igreja mostra o nome dela, mesmo antes de ganhar a pasta própr
   await expect(page.locator('#app-name')).toHaveText('Igreja Exemplo');
   await expect(page).toHaveTitle('Igreja Exemplo');
   await page.locator('.page').getByRole('link', { name: 'Entrar' }).click();
+  // O link continua dentro da igreja (o <base> da página aponta para a raiz do site).
+  await expect(page).toHaveURL(/\/i\/exemplo\/#\/entrar$/);
+  await expect(page.locator('#app-name')).toHaveText('Igreja Exemplo');
   await expect(page.getByRole('button', { name: 'Receber link de acesso' })).toBeVisible();
 });
 
