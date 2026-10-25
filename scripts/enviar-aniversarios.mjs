@@ -62,7 +62,12 @@ function byLog(rows) {
 }
 
 // ---------------------------------------------------------------------
-// 1. Push de aniversário
+// 1. Mensagem na central de notificações do app (quem tem conta, mesmo sem push)
+// ---------------------------------------------------------------------
+const inApp = await rpc('deliver_birthday_notifications');
+
+// ---------------------------------------------------------------------
+// 2. Push de aniversário
 // ---------------------------------------------------------------------
 for (const r of byLog(await rpc('claim_birthday_push'))) {
   const data = { name: r.name, church: r.church_name, age: r.age };
@@ -79,7 +84,7 @@ for (const r of byLog(await rpc('claim_birthday_push'))) {
 }
 
 // ---------------------------------------------------------------------
-// 2. E-mail de aniversário (só com provedor configurado), dentro do limite diário
+// 3. E-mail de aniversário (só com provedor configurado), dentro do limite diário
 // ---------------------------------------------------------------------
 function emailHtml(r, title, body) {
   return `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#f5f6fa;font-family:Arial,sans-serif;color:#1b1e27">
@@ -131,7 +136,7 @@ if (emailOn) {
 }
 
 // ---------------------------------------------------------------------
-// 3. Resumo para a liderança
+// 4. Resumo para a liderança
 // ---------------------------------------------------------------------
 const weekday = (iso) =>
   new Date(`${iso}T12:00:00-03:00`).toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'America/Sao_Paulo' }).replace('.', '');
@@ -154,7 +159,7 @@ for (const r of byLog(await rpc('claim_leader_summaries'))) {
 }
 
 // ---------------------------------------------------------------------
-// 4. Aviso ao administrador da plataforma quando o limite de e-mails segurou envios
+// 5. Aviso ao administrador da plataforma quando o limite de e-mails segurou envios
 // ---------------------------------------------------------------------
 if (backlog > 0) {
   const msg = {
@@ -167,7 +172,8 @@ if (backlog > 0) {
 }
 
 await rpc('clean_message_log');
+await rpc('clean_notifications');
 
 // Só números: nada de nome ou endereço de aparelho no registro público do GitHub.
-console.log(`Aniversários: ${stats.push} push, ${stats.email} e-mail(s), ${backlog} e-mail(s) para amanhã, ${stats.gone} aparelho(s) removido(s), ${stats.failed} falha(s).`);
+console.log(`Aniversários: ${inApp} na central do app, ${stats.push} push, ${stats.email} e-mail(s), ${backlog} e-mail(s) para amanhã, ${stats.gone} aparelho(s) removido(s), ${stats.failed} falha(s).`);
 if (stats.failed && !stats.push && !stats.email) process.exit(1);

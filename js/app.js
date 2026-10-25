@@ -3,7 +3,7 @@ import { CONFIG } from './config.js';
 import {
   esc, slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone,
   ROLES, isLeaderRole, FEATURES, fold, fmtDate, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
-  renderMessage, MESSAGE_FIELDS,
+  renderMessage, MESSAGE_FIELDS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
 } from './util.js';
 import { resizeImage, resizeLogo, makeIconSet } from './images.js';
 import { maybeSuggestInstall } from './install.js';
@@ -94,6 +94,7 @@ const icon = {
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
   upload: '<svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v4h16v-4"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 5 5"/></svg>',
+  clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
   bell: '<svg viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
   print: '<svg viewBox="0 0 24 24"><path d="M7 9V3.5h10V9M7 17H4.5V9h15v8H17"/><path d="M7 14h10v6.5H7z"/></svg>',
 };
@@ -131,10 +132,13 @@ function renderTabbar(path) {
   }
   const tabs = [
     ['/', icon.home, 'Início'],
+    ...(featureOn('agenda') ? [['/agenda', icon.calendar, 'Agenda']] : []),
+    ...(featureOn('avisos') ? [['/avisos', icon.megaphone, 'Avisos']] : []),
     ...(isLeaderRole(myRole()) ? [['/membros', icon.users, 'Membros']] : []),
     ['/menu', icon.menu, 'Menu'],
   ];
-  const active = ['/', ''].includes(path) ? '/' : path.startsWith('/membros') ? '/membros' : '/menu';
+  const section = tabs.find(([href]) => href !== '/' && path.startsWith(href));
+  const active = ['/', ''].includes(path) ? '/' : section ? section[0] : '/menu';
   bar.innerHTML = tabs
     .map(([href, ic, label]) => `<a href="#${href}" class="${href === active ? 'active' : ''}">${ic}${label}</a>`)
     .join('');
@@ -153,6 +157,20 @@ function renderAccountLink() {
     a.href = '#/entrar';
     a.hidden = false;
   }
+  document.getElementById('notif-link').hidden = !(state.church && isActiveMember());
+}
+
+// Número no sininho: notificações não lidas desta igreja.
+async function refreshUnread() {
+  const badge = document.getElementById('notif-badge');
+  if (!state.church || !isActiveMember()) return (badge.hidden = true);
+  const { count } = await sb
+    .from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('church_id', state.church.id)
+    .is('read_at', null);
+  badge.textContent = count > 9 ? '9+' : String(count || '');
+  badge.hidden = !count;
 }
 
 // ---------------------------------------------------------------------
@@ -221,6 +239,13 @@ const churchRoutes = [
   [/^\/aniversariantes$/, viewBirthdays],
   [/^\/config\/aniversario$/, viewBirthdaySettings],
   [/^\/notificacoes$/, viewNotifications],
+  [/^\/agenda$/, viewAgenda],
+  [/^\/agenda\/novo$/, viewEventForm],
+  [/^\/agenda\/([0-9a-f-]{36})$/, viewEvent],
+  [/^\/agenda\/([0-9a-f-]{36})\/editar$/, viewEventForm],
+  [/^\/avisos$/, viewAnnouncements],
+  [/^\/avisos\/novo$/, viewAnnouncementForm],
+  [/^\/avisos\/([0-9a-f-]{36})\/editar$/, viewAnnouncementForm],
 ];
 
 let renderId = 0;
@@ -230,6 +255,8 @@ async function render() {
   const [path, qs] = raw.split('?');
   const ctx = { params: new URLSearchParams(qs || ''), path, alive: () => id === renderId };
   renderTabbar(path);
+  document.getElementById('notif-link').classList.toggle('active', path === '/notificacoes');
+  if (path !== '/notificacoes') refreshUnread().catch(() => {});
   const routes = state.church ? churchRoutes : rootRoutes;
   for (const [re, view] of routes) {
     const m = path.match(re);
@@ -550,15 +577,16 @@ async function viewChurchHome() {
   }
 
   // As telas destes atalhos chegam nas próximas entregas da Fase 1.
-  // Agenda e avisos chegam na próxima entrega da Fase 1.
   const shortcuts = [
+    ['agenda', icon.calendar, 'Agenda', '#/agenda'],
+    ['avisos', icon.megaphone, 'Avisos', '#/avisos'],
     ['aniversarios', icon.cake, 'Aniversariantes', '#/aniversariantes'],
-    ['agenda', icon.calendar, 'Agenda', null],
-    ['avisos', icon.megaphone, 'Avisos', null],
   ].filter(([k]) => featureOn(k));
   $view.innerHTML = `
     <div class="page">
       ${head}
+      <div id="home-notices"></div>
+      <div id="home-events"></div>
       <div id="week-birthdays"></div>
       ${
         shortcuts.length
@@ -574,6 +602,8 @@ async function viewChurchHome() {
       <div id="push-invite"></div>
       ${aboutCard(c)}
     </div>`;
+  if (featureOn('avisos')) homeNoticesCard(document.getElementById('home-notices')).catch(() => {});
+  if (featureOn('agenda')) homeEventsCard(document.getElementById('home-events')).catch(() => {});
   if (featureOn('aniversarios')) weekBirthdaysCard(document.getElementById('week-birthdays')).catch(() => {});
   pushInvite(document.getElementById('push-invite')).catch(() => {});
   maybeSuggestInstall(c);
@@ -594,7 +624,7 @@ async function viewMenu() {
         ${admin ? `<a class="menu-row" href="#/config">${icon.gear}<span>Configurar a igreja</span>${icon.chevron}</a>` : ''}
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         ${featureOn('aniversarios') ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
-        <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações neste aparelho</span>${icon.chevron}</a>
+        <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações</span>${icon.chevron}</a>
         ${admin && featureOn('aniversarios') ? `<a class="menu-row" href="#/config/aniversario">${icon.cake}<span>Mensagem de aniversário</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/privacidade">${icon.shield}<span>Privacidade</span>${icon.chevron}</a>
         <button class="menu-row" id="logout">${icon.logout}<span>Sair</span></button>
@@ -1254,6 +1284,363 @@ async function viewSettings(ctx) {
 }
 
 // ---------------------------------------------------------------------
+// Agenda (cultos e eventos) e mural de avisos
+// ---------------------------------------------------------------------
+const fmtHour = (d) => `${d.getHours()}h${d.getMinutes() ? String(d.getMinutes()).padStart(2, '0') : ''}`;
+const fmtDayShort = (d) => d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' }).replace(/\./g, '');
+
+function fmtEventWhen(ev) {
+  const s = new Date(ev.starts_at);
+  const e = ev.ends_at ? new Date(ev.ends_at) : null;
+  const label = dayLabel(isoLocal(s));
+  const day = ['Hoje', 'Amanhã'].includes(label) ? label : fmtDayShort(s);
+  if (!e) return `${day} · ${fmtHour(s)}`;
+  return isoLocal(e) === isoLocal(s) ? `${day} · ${fmtHour(s)}–${fmtHour(e)}` : `${day} · ${fmtHour(s)} até ${fmtDayShort(e)} ${fmtHour(e)}`;
+}
+
+const mapsUrl = (place) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}`;
+
+async function fetchEvents(from, to) {
+  const { data, error } = await sb.rpc('events_between', { p_church: state.church.id, p_from: from.toISOString(), p_to: to.toISOString() });
+  if (error) throw error;
+  return data;
+}
+
+function eventCard(ev) {
+  return `
+    <a class="event-card" href="#/agenda/${ev.event_id}?em=${encodeURIComponent(ev.starts_at)}">
+      <span class="event-time">${esc(fmtHour(new Date(ev.starts_at)))}</span>
+      <span><strong>${esc(ev.title)}</strong>
+        ${ev.location ? `<small>${icon.pin}${esc(ev.location)}</small>` : ''}
+        ${ev.repeat_weekly ? '<small>Toda semana</small>' : ''}</span>
+      ${icon.chevron}
+    </a>`;
+}
+
+function requireMemberFeature(next, key) {
+  if (!requireLogin(next)) return false;
+  if (!isActiveMember()) {
+    navigate('/');
+    return false;
+  }
+  if (featureOn(key)) return true;
+  $view.innerHTML = `<div class="empty"><h2>Desligado nesta igreja</h2><a class="btn" href="#/">Voltar</a></div>`;
+  return false;
+}
+
+async function homeEventsCard(el) {
+  if (!isActiveMember()) return;
+  const now = new Date();
+  const rows = (await fetchEvents(now, addDays(now, 8))).slice(0, 3);
+  if (!rows.length || !el.isConnected) return;
+  el.innerHTML = `
+    <section class="card">
+      <h2>${icon.calendar} Próximos eventos</h2>
+      <div class="list">${rows
+        .map(
+          (ev) => `
+        <a class="event-card" href="#/agenda/${ev.event_id}?em=${encodeURIComponent(ev.starts_at)}">
+          <span><strong>${esc(ev.title)}</strong><small>${esc(fmtEventWhen(ev))}</small></span>${icon.chevron}
+        </a>`,
+        )
+        .join('')}</div>
+      <a href="#/agenda">Ver a agenda</a>
+    </section>`;
+}
+
+async function homeNoticesCard(el) {
+  if (!isActiveMember()) return;
+  const { data } = await sb
+    .from('announcements')
+    .select('id, title, body, pinned, created_at')
+    .eq('church_id', state.church.id)
+    .or(`visible_until.is.null,visible_until.gte.${isoLocal(new Date())}`)
+    .order('pinned', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(2);
+  if (!data?.length || !el.isConnected) return;
+  el.innerHTML = `
+    <section class="card">
+      <h2>${icon.megaphone} Avisos</h2>
+      ${data
+        .map(
+          (a) => `
+        <article class="notice-mini">
+          <strong>${a.pinned ? '<span class="tag role">Fixado</span> ' : ''}${esc(a.title)}</strong>
+          <p class="pre clamp">${esc(a.body)}</p>
+        </article>`,
+        )
+        .join('')}
+      <a href="#/avisos">Ver todos os avisos</a>
+    </section>`;
+}
+
+async function viewAgenda(ctx) {
+  if (!requireMemberFeature('/agenda', 'agenda')) return;
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  const rows = await fetchEvents(from, addDays(from, 90));
+  if (!ctx.alive()) return;
+  const byDay = new Map();
+  for (const ev of rows) {
+    const day = isoLocal(new Date(ev.starts_at));
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(ev);
+  }
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Agenda</h1>
+      ${isLeaderRole(myRole()) ? `<div class="actions-row"><a class="btn primary" href="#/agenda/novo">${icon.plus} Novo evento</a></div>` : ''}
+      ${
+        rows.length
+          ? [...byDay]
+              .map(([day, list]) => {
+                const label = dayLabel(day);
+                const long = parseIso(day).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+                return `
+            <section class="agenda-day">
+              <h2>${['Hoje', 'Amanhã'].includes(label) ? `${label}, ${long.split(',')[0]}` : long.charAt(0).toUpperCase() + long.slice(1)}</h2>
+              <div class="list">${list.map(eventCard).join('')}</div>
+            </section>`;
+              })
+              .join('')
+          : `<div class="empty"><p>Nenhum evento nos próximos 3 meses.</p></div>`
+      }
+    </div>`;
+}
+
+function downloadIcs(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/calendar;charset=utf-8' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function viewEvent(ctx, id) {
+  if (!requireMemberFeature(`/agenda/${id}`, 'agenda')) return;
+  const { data: ev, error } = await sb.from('events').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (!ctx.alive()) return;
+  if (!ev) {
+    $view.innerHTML = `<div class="empty"><h2>Evento não encontrado</h2><a class="btn" href="#/agenda">Voltar à agenda</a></div>`;
+    return;
+  }
+  // Ocorrência escolhida na agenda (eventos semanais): mesma duração, outra data.
+  const em = new Date(ctx.params.get('em') || ev.starts_at);
+  const start = Number.isNaN(em.getTime()) ? new Date(ev.starts_at) : em;
+  const dur = ev.ends_at ? new Date(ev.ends_at) - new Date(ev.starts_at) : null;
+  const occ = { ...ev, starts_at: start.toISOString(), ends_at: dur ? new Date(start.getTime() + dur).toISOString() : null };
+  const leader = isLeaderRole(myRole());
+  const remind = REMIND_OPTIONS.find(([m]) => m === ev.remind_minutes)?.[1];
+  const calOpts = { church: state.church.name, url: `${PAGE_URL}#/agenda/${ev.id}` };
+
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/agenda" class="back">← Agenda</a>
+      <h1>${esc(ev.title)}</h1>
+      <p class="meta">${icon.clock}${esc(fmtEventWhen(occ))}</p>
+      ${ev.location ? `<p class="meta">${icon.pin}<a href="${esc(mapsUrl(ev.location))}" target="_blank" rel="noopener">${esc(ev.location)}</a></p>` : ''}
+      ${ev.repeat_weekly ? `<p class="hint">Repete toda semana${ev.repeat_until ? ` até ${esc(fmtDate(ev.repeat_until))}` : ''}.</p>` : ''}
+      ${ev.description ? `<div class="card"><p class="pre">${esc(ev.description)}</p></div>` : ''}
+      ${ev.remind_minutes ? `<p class="hint">${icon.bell} Lembrete por notificação ${esc(remind.toLowerCase())}.</p>` : ''}
+      <div class="actions-row">
+        <button class="btn primary" id="ics">${icon.calendar} Adicionar à agenda</button>
+        <a class="btn" href="${esc(googleCalendarUrl(ev, calOpts))}" target="_blank" rel="noopener">Google Agenda</a>
+      </div>
+      ${ev.repeat_weekly ? '<p class="hint">Na sua agenda, entra a série inteira (toda semana).</p>' : ''}
+      ${
+        leader
+          ? `<div class="actions-row">
+              <a class="btn" href="#/agenda/${ev.id}/editar">Editar</a>
+              <button class="btn danger-outline" id="delete">Excluir</button>
+            </div>`
+          : ''
+      }
+    </div>`;
+
+  document.getElementById('ics').onclick = () => {
+    downloadIcs(`evento-${isoLocal(new Date(ev.starts_at))}.ics`, icsForEvent(ev, calOpts));
+    toast('Abra o arquivo baixado para salvar na agenda do celular.');
+  };
+  document.getElementById('delete')?.addEventListener('click', async () => {
+    if (!confirm(ev.repeat_weekly ? `Excluir "${ev.title}" e todas as repetições?` : `Excluir "${ev.title}"?`)) return;
+    const { data, error: err } = await sb.from('events').delete().eq('id', ev.id).select('id');
+    if (err || !data.length) return toast(err ? errorText(err) : 'Você não tem permissão para excluir.', 'error');
+    toast('Evento excluído.');
+    navigate('/agenda');
+  });
+}
+
+const timeValue = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+async function viewEventForm(ctx, id) {
+  if (!requireMemberFeature(id ? `/agenda/${id}/editar` : '/agenda/novo', 'agenda')) return;
+  if (!isLeaderRole(myRole())) return navigate('/agenda');
+  let ev = { title: '', description: '', location: '', starts_at: null, ends_at: null, repeat_weekly: false, repeat_until: null, remind_minutes: 120 };
+  if (id) {
+    const { data, error } = await sb.from('events').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data) return navigate('/agenda');
+    ev = data;
+  }
+  if (!ctx.alive()) return;
+  const s = ev.starts_at ? new Date(ev.starts_at) : null;
+  const e = ev.ends_at ? new Date(ev.ends_at) : null;
+
+  $view.innerHTML = `
+    <form id="event" class="form page">
+      <a href="${id ? `#/agenda/${id}` : '#/agenda'}" class="back">← ${id ? 'Evento' : 'Agenda'}</a>
+      <h1>${id ? 'Editar evento' : 'Novo evento'}</h1>
+      <label>Título<input name="title" required minlength="3" maxlength="120" value="${esc(ev.title)}" placeholder="Culto de domingo"></label>
+      <label>Data<input name="date" type="date" required value="${s ? isoLocal(s) : ''}"></label>
+      <div class="colors">
+        <label>Começa<input name="start" type="time" required value="${s ? timeValue(s) : ''}"></label>
+        <label>Termina (opcional)<input name="end" type="time" value="${e ? timeValue(e) : ''}"></label>
+      </div>
+      <label>Local (opcional)<input name="location" maxlength="200" value="${esc(ev.location || '')}" placeholder="Templo principal"></label>
+      <label>Descrição (opcional)<textarea name="description" rows="4" maxlength="2000">${esc(ev.description || '')}</textarea></label>
+      <label class="check"><input type="checkbox" name="repeat_weekly" ${ev.repeat_weekly ? 'checked' : ''}> Repetir toda semana</label>
+      <label id="until-box" ${ev.repeat_weekly ? '' : 'hidden'}>Repetir até (opcional)<input name="repeat_until" type="date" value="${esc(ev.repeat_until || '')}"></label>
+      <label>Lembrete por notificação
+        <select name="remind_minutes">${REMIND_OPTIONS.map(([m, label]) => `<option value="${m}" ${ev.remind_minutes === m ? 'selected' : ''}>${label}</option>`).join('')}</select>
+      </label>
+      ${id && ev.repeat_weekly ? '<p class="hint">As mudanças valem para todas as repetições.</p>' : ''}
+      <button class="btn primary big">${id ? 'Salvar' : 'Criar evento'}</button>
+    </form>`;
+
+  const form = document.getElementById('event');
+  form.repeat_weekly.addEventListener('change', () => (document.getElementById('until-box').hidden = !form.repeat_weekly.checked));
+  form.addEventListener('submit', async (evt) => {
+    evt.preventDefault();
+    const start = new Date(`${form.date.value}T${form.start.value}`);
+    let end = form.end.value ? new Date(`${form.date.value}T${form.end.value}`) : null;
+    if (end && end <= start) end = new Date(end.getTime() + 864e5); // termina depois da meia-noite
+    const weekly = form.repeat_weekly.checked;
+    const until = weekly ? form.repeat_until.value || null : null;
+    if (until && until < form.date.value) return toast('"Repetir até" precisa ser depois da data do evento.', 'error');
+    const row = {
+      title: form.title.value.trim(),
+      description: form.description.value.trim() || null,
+      location: form.location.value.trim() || null,
+      starts_at: start.toISOString(),
+      ends_at: end ? end.toISOString() : null,
+      repeat_weekly: weekly,
+      repeat_until: until,
+      remind_minutes: Number(form.remind_minutes.value),
+    };
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { data, error } = id
+      ? await sb.from('events').update({ ...row, updated_at: new Date().toISOString() }).eq('id', id).select('id').single()
+      : await sb.from('events').insert({ ...row, church_id: state.church.id }).select('id').single();
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    toast(id ? 'Evento salvo.' : 'Evento criado.');
+    navigate(`/agenda/${data.id}`);
+  });
+}
+
+async function viewAnnouncements(ctx) {
+  if (!requireMemberFeature('/avisos', 'avisos')) return;
+  const { data: rows, error } = await sb
+    .from('announcements')
+    .select('id, title, body, pinned, visible_until, push, created_at')
+    .eq('church_id', state.church.id)
+    .order('pinned', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  if (!ctx.alive()) return;
+  const leader = isLeaderRole(myRole());
+  const today = isoLocal(new Date());
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Avisos</h1>
+      ${leader ? `<div class="actions-row"><a class="btn primary" href="#/avisos/novo">${icon.plus} Novo aviso</a></div>` : ''}
+      ${
+        rows.length
+          ? rows
+              .map((a) => {
+                const expired = a.visible_until && a.visible_until < today;
+                return `
+            <article class="card announcement ${expired ? 'expired' : ''}">
+              <div class="tags-row">
+                ${a.pinned ? '<span class="tag role">Fixado</span>' : ''}
+                ${expired ? '<span class="tag">Vencido (só a liderança vê)</span>' : a.visible_until && leader ? `<span class="tag">Até ${esc(fmtDate(a.visible_until))}</span>` : ''}
+              </div>
+              <h2>${esc(a.title)}</h2>
+              <p class="pre">${esc(a.body)}</p>
+              <p class="hint">${esc(new Date(a.created_at).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' }))}</p>
+              ${leader ? `<div class="actions-row"><a class="btn small" href="#/avisos/${a.id}/editar">Editar</a><button class="btn small danger-outline" data-delete="${a.id}">Excluir</button></div>` : ''}
+            </article>`;
+              })
+              .join('')
+          : `<div class="empty"><p>Nenhum aviso por enquanto.</p></div>`
+      }
+    </div>`;
+  $view.querySelectorAll('[data-delete]').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm('Excluir este aviso?')) return;
+      const { data, error: err } = await sb.from('announcements').delete().eq('id', b.dataset.delete).select('id');
+      if (err || !data.length) return toast(err ? errorText(err) : 'Você não tem permissão para excluir.', 'error');
+      toast('Aviso excluído.');
+      render();
+    };
+  });
+}
+
+async function viewAnnouncementForm(ctx, id) {
+  if (!requireMemberFeature(id ? `/avisos/${id}/editar` : '/avisos/novo', 'avisos')) return;
+  if (!isLeaderRole(myRole())) return navigate('/avisos');
+  let a = { title: '', body: '', pinned: false, visible_until: null };
+  if (id) {
+    const { data, error } = await sb.from('announcements').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data) return navigate('/avisos');
+    a = data;
+  }
+  if (!ctx.alive()) return;
+  $view.innerHTML = `
+    <form id="notice" class="form page">
+      <a href="#/avisos" class="back">← Avisos</a>
+      <h1>${id ? 'Editar aviso' : 'Novo aviso'}</h1>
+      <label>Título<input name="title" required minlength="3" maxlength="120" value="${esc(a.title)}"></label>
+      <label>Aviso<textarea name="body" required rows="6" maxlength="4000">${esc(a.body)}</textarea></label>
+      <label class="check"><input type="checkbox" name="pinned" ${a.pinned ? 'checked' : ''}> Fixar no topo</label>
+      <label>Mostrar até (opcional)<input name="visible_until" type="date" value="${esc(a.visible_until || '')}">
+        <small class="hint">Depois dessa data, o aviso some para os membros (a liderança continua vendo).</small></label>
+      ${
+        id
+          ? ''
+          : `<label class="check"><input type="checkbox" name="push"> Mandar notificação para os membros</label>
+             <p class="hint">Chega em até uns 15 minutos para quem ativou as notificações, e fica na central de notificações de todos.</p>`
+      }
+      <button class="btn primary big">${id ? 'Salvar' : 'Publicar aviso'}</button>
+    </form>`;
+  const form = document.getElementById('notice');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const row = {
+      title: form.title.value.trim(),
+      body: form.body.value.trim(),
+      pinned: form.pinned.checked,
+      visible_until: form.visible_until.value || null,
+    };
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { error } = id
+      ? await sb.from('announcements').update({ ...row, updated_at: new Date().toISOString() }).eq('id', id)
+      : await sb.from('announcements').insert({ ...row, church_id: state.church.id, push: form.push.checked });
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    toast(id ? 'Aviso salvo.' : 'Aviso publicado.');
+    navigate('/avisos');
+  });
+}
+
+// ---------------------------------------------------------------------
 // Aniversários: cartão da semana, aniversariantes do mês, mensagem da igreja, notificações
 // ---------------------------------------------------------------------
 const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -1366,16 +1753,52 @@ async function viewBirthdays(ctx) {
   document.getElementById('print').onclick = () => window.print();
 }
 
-async function viewNotifications() {
+const NOTIF_ICON = { aniversario: 'cake', resumo_lideres: 'cake', evento: 'calendar', aviso: 'megaphone', sistema: 'bell' };
+
+function timeAgo(iso) {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return 'agora';
+  if (min < 60) return `há ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `há ${h} h`;
+  const d = Math.round(h / 24);
+  return d === 1 ? 'ontem' : d < 7 ? `há ${d} dias` : new Date(iso).toLocaleDateString('pt-BR');
+}
+
+// Central de notificações (desta igreja) e, embaixo, as notificações no celular.
+async function viewNotifications(ctx) {
   if (!requireLogin('/notificacoes')) return;
+  if (!isActiveMember()) return navigate('/');
+  const { data: items, error } = await sb
+    .from('notifications')
+    .select('id, kind, title, body, url, read_at, created_at')
+    .eq('church_id', state.church.id)
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) throw error;
   const support = pushSupport();
   const active = await pushActive();
   const blocked = support === 'ok' && Notification.permission === 'denied';
+  if (!ctx.alive()) return;
   $view.innerHTML = `
     <div class="page">
       <h1>Notificações</h1>
+      ${
+        items.length
+          ? `<div class="list">${items
+              .map(
+                (n) => `
+            <a class="notif-row ${n.read_at ? '' : 'unread'}" href="${esc(n.url && n.url.startsWith('#/') ? n.url : '#/')}">
+              <span class="notif-icon">${icon[NOTIF_ICON[n.kind]] || icon.bell}</span>
+              <span><strong>${esc(n.title)}</strong>${n.body ? `<small class="pre">${esc(n.body)}</small>` : ''}<small>${esc(timeAgo(n.created_at))}</small></span>
+            </a>`,
+              )
+              .join('')}</div>`
+          : `<div class="empty"><p>Nenhuma notificação ainda. Avisos, lembretes da agenda e a sua mensagem de aniversário aparecem aqui.</p></div>`
+      }
       <div class="card">
-        <p>Receba no celular a mensagem de aniversário da igreja${isLeaderRole(myRole()) ? ' e o resumo dos aniversariantes para a liderança' : ''}.</p>
+        <h2>No celular</h2>
+        <p>Receba avisos, lembretes da agenda e a mensagem de aniversário mesmo com o app fechado${isLeaderRole(myRole()) ? ', e o resumo dos aniversariantes para a liderança' : ''}.</p>
         ${
           support === 'ios-instalar'
             ? `<div class="notice"><strong>No iPhone, instale o app primeiro.</strong><p>Toque em Compartilhar e depois em "Adicionar à Tela de Início". Abra o app pelo ícone e volte aqui.</p></div>`
@@ -1388,6 +1811,15 @@ async function viewNotifications() {
         }
       </div>
     </div>`;
+  // Abrir a central marca tudo como lido.
+  if (items.some((n) => !n.read_at)) {
+    sb.from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('church_id', state.church.id)
+      .is('read_at', null)
+      .then(() => refreshUnread())
+      .catch(() => {});
+  }
   document.getElementById('toggle')?.addEventListener('click', async (e) => {
     e.currentTarget.disabled = true;
     try {

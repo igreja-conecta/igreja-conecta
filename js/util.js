@@ -220,3 +220,82 @@ export function joinNames(names) {
   const list = names.map(firstName);
   return list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} e ${list.at(-1)}`;
 }
+
+// ---------------------------------------------------------------------
+// "Adicionar à agenda": arquivo .ics (iPhone, Android, Outlook) e link do Google Agenda
+// ---------------------------------------------------------------------
+// 2027-03-14T22:00:00Z → 20270314T220000Z
+const icsStamp = (d) => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+const endOf = (ev) => ev.ends_at || new Date(new Date(ev.starts_at).getTime() + 2 * 3600e3).toISOString();
+const untilStamp = (date) => `${date.replace(/-/g, '')}T235959Z`;
+
+const icsText = (t) => String(t ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+// Linhas do .ics têm no máximo 75 bytes; o resto continua na linha seguinte, começando com espaço.
+function icsFold(line) {
+  const enc = new TextEncoder();
+  if (enc.encode(line).length <= 75) return line;
+  const out = [];
+  let chunk = '';
+  let size = 0;
+  for (const ch of line) {
+    const n = enc.encode(ch).length;
+    if (size + n > (out.length ? 74 : 75)) {
+      out.push(chunk);
+      chunk = '';
+      size = 0;
+    }
+    chunk += ch;
+    size += n;
+  }
+  out.push(chunk);
+  return out.join('\r\n ');
+}
+
+export function icsForEvent(ev, { church, url, now = new Date() }) {
+  const rrule = ev.repeat_weekly ? [`RRULE:FREQ=WEEKLY${ev.repeat_until ? `;UNTIL=${untilStamp(ev.repeat_until)}` : ''}`] : [];
+  const alarm = ev.remind_minutes
+    ? ['BEGIN:VALARM', 'ACTION:DISPLAY', `TRIGGER:-PT${ev.remind_minutes}M`, `DESCRIPTION:${icsText(ev.title)}`, 'END:VALARM']
+    : [];
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Igreja Conecta//PT-BR',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${ev.event_id || ev.id}@igreja-conecta`,
+    `DTSTAMP:${icsStamp(now)}`,
+    `DTSTART:${icsStamp(ev.starts_at)}`,
+    `DTEND:${icsStamp(endOf(ev))}`,
+    ...rrule,
+    `SUMMARY:${icsText(ev.title)}`,
+    ...(ev.location ? [`LOCATION:${icsText(ev.location)}`] : []),
+    `DESCRIPTION:${icsText(`${ev.description ? `${ev.description}\n\n` : ''}${church}: ${url}`)}`,
+    `URL:${url}`,
+    ...alarm,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ];
+  return lines.map(icsFold).join('\r\n') + '\r\n';
+}
+
+export function googleCalendarUrl(ev, { church, url }) {
+  const q = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: ev.title,
+    dates: `${icsStamp(ev.starts_at)}/${icsStamp(endOf(ev))}`,
+    details: `${ev.description ? `${ev.description}\n\n` : ''}${church}: ${url}`,
+    ctz: 'America/Sao_Paulo',
+  });
+  if (ev.location) q.set('location', ev.location);
+  if (ev.repeat_weekly) q.set('recur', `RRULE:FREQ=WEEKLY${ev.repeat_until ? `;UNTIL=${untilStamp(ev.repeat_until)}` : ''}`);
+  return `https://calendar.google.com/calendar/render?${q}`;
+}
+
+export const REMIND_OPTIONS = [
+  [0, 'Sem lembrete'],
+  [60, '1 hora antes'],
+  [120, '2 horas antes'],
+  [180, '3 horas antes'],
+  [1440, '1 dia antes'],
+];
