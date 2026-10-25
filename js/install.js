@@ -24,6 +24,26 @@ function write(key, value) {
   } catch {}
 }
 
+// Para a tela de Ajuda: 'instalado' | 'android' (o navegador oferece instalar) | 'iphone' | 'manual'.
+export function installState() {
+  if (isStandalone()) return 'instalado';
+  if (deferredPrompt) return 'android';
+  if (isIOS()) return 'iphone';
+  return 'manual';
+}
+
+// Abre a instalação do navegador (Android) ou o tutorial do iPhone. Devolve true se instalou.
+export async function installNow() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    return outcome === 'accepted';
+  }
+  if (isIOS()) showIOSTutorial();
+  return false;
+}
+
 export function maybeSuggestInstall(church) {
   if (!church || isStandalone()) return;
   if (Date.now() - readNumber('install-dismissed') < 14 * 24 * 3600 * 1000) return;
