@@ -3,9 +3,11 @@ import { CONFIG } from './config.js';
 import {
   esc, slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone,
   ROLES, isLeaderRole, FEATURES, fold, fmtDate, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
+  renderMessage, MESSAGE_FIELDS,
 } from './util.js';
 import { resizeImage, resizeLogo, makeIconSet } from './images.js';
 import { maybeSuggestInstall } from './install.js';
+import { pushSupport, pushActive, enablePush, disablePush, syncPush } from './push.js';
 
 const $view = document.getElementById('view');
 const configured = !CONFIG.SUPABASE_ANON_KEY.includes('COLE-AQUI');
@@ -92,6 +94,8 @@ const icon = {
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
   upload: '<svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v4h16v-4"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 5 5"/></svg>',
+  bell: '<svg viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
+  print: '<svg viewBox="0 0 24 24"><path d="M7 9V3.5h10V9M7 17H4.5V9h15v8H17"/><path d="M7 14h10v6.5H7z"/></svg>',
 };
 
 const SOCIAL = [
@@ -189,6 +193,8 @@ async function setUser(user) {
   state.user = user;
   await loadMemberships();
   renderAccountLink();
+  // Aparelho que já aceitou notificações: garante que a inscrição está nesta conta.
+  if (user) syncPush(sb).catch(() => {});
 }
 
 // ---------------------------------------------------------------------
@@ -212,6 +218,9 @@ const churchRoutes = [
   [/^\/membros\/importar$/, viewImport],
   [/^\/membros\/([0-9a-f-]{36})$/, viewMemberForm],
   [/^\/privacidade$/, viewChurchPrivacy],
+  [/^\/aniversariantes$/, viewBirthdays],
+  [/^\/config\/aniversario$/, viewBirthdaySettings],
+  [/^\/notificacoes$/, viewNotifications],
 ];
 
 let renderId = 0;
@@ -541,21 +550,32 @@ async function viewChurchHome() {
   }
 
   // As telas destes atalhos chegam nas próximas entregas da Fase 1.
+  // Agenda e avisos chegam na próxima entrega da Fase 1.
   const shortcuts = [
-    ['aniversarios', icon.cake, 'Aniversariantes'],
-    ['agenda', icon.calendar, 'Agenda'],
-    ['avisos', icon.megaphone, 'Avisos'],
+    ['aniversarios', icon.cake, 'Aniversariantes', '#/aniversariantes'],
+    ['agenda', icon.calendar, 'Agenda', null],
+    ['avisos', icon.megaphone, 'Avisos', null],
   ].filter(([k]) => featureOn(k));
   $view.innerHTML = `
     <div class="page">
       ${head}
+      <div id="week-birthdays"></div>
       ${
         shortcuts.length
-          ? `<div class="shortcuts">${shortcuts.map(([, ic, label]) => `<div class="shortcut soon">${ic}<span>${label}</span><small>Em breve</small></div>`).join('')}</div>`
+          ? `<div class="shortcuts">${shortcuts
+              .map(([, ic, label, href]) =>
+                href
+                  ? `<a class="shortcut" href="${href}">${ic}<span>${label}</span></a>`
+                  : `<div class="shortcut soon">${ic}<span>${label}</span><small>Em breve</small></div>`,
+              )
+              .join('')}</div>`
           : ''
       }
+      <div id="push-invite"></div>
       ${aboutCard(c)}
     </div>`;
+  if (featureOn('aniversarios')) weekBirthdaysCard(document.getElementById('week-birthdays')).catch(() => {});
+  pushInvite(document.getElementById('push-invite')).catch(() => {});
   maybeSuggestInstall(c);
 }
 
@@ -573,6 +593,9 @@ async function viewMenu() {
         ${isLeaderRole(m.role) ? `<a class="menu-row" href="#/membros">${icon.users}<span>Membros</span>${icon.chevron}</a>` : ''}
         ${admin ? `<a class="menu-row" href="#/config">${icon.gear}<span>Configurar a igreja</span>${icon.chevron}</a>` : ''}
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
+        ${featureOn('aniversarios') ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
+        <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações neste aparelho</span>${icon.chevron}</a>
+        ${admin && featureOn('aniversarios') ? `<a class="menu-row" href="#/config/aniversario">${icon.cake}<span>Mensagem de aniversário</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/privacidade">${icon.shield}<span>Privacidade</span>${icon.chevron}</a>
         <button class="menu-row" id="logout">${icon.logout}<span>Sair</span></button>
       </div>
@@ -1091,6 +1114,7 @@ async function viewSettings(ctx) {
   $view.innerHTML = `
     <form id="settings" class="form page">
       <h1>Configurar a igreja</h1>
+      ${featureOn('aniversarios') ? `<a class="menu-row" href="#/config/aniversario">${icon.cake}<span>Mensagem de aniversário</span>${icon.chevron}</a>` : ''}
 
       <fieldset class="card">
         <legend>Aparência</legend>
@@ -1225,6 +1249,332 @@ async function viewSettings(ctx) {
       toast(errorText(err), 'error');
       btn.disabled = false;
       btn.textContent = 'Salvar';
+    }
+  });
+}
+
+// ---------------------------------------------------------------------
+// Aniversários: cartão da semana, aniversariantes do mês, mensagem da igreja, notificações
+// ---------------------------------------------------------------------
+const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const parseIso = (s) => {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+function dayLabel(iso) {
+  const today = new Date();
+  if (iso === isoLocal(today)) return 'Hoje';
+  if (iso === isoLocal(addDays(today, 1))) return 'Amanhã';
+  return parseIso(iso).toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'numeric' }).replace('.', '');
+}
+
+// A regra de quem aparece fica no banco: liderança vê todos (com a idade); membros, só quem autorizou.
+async function fetchBirthdays(from, to) {
+  const { data, error } = await sb.rpc('birthdays_between', { p_church: state.church.id, p_from: from, p_to: to });
+  if (error) throw error;
+  return data;
+}
+
+async function weekBirthdaysCard(el) {
+  if (!isActiveMember()) return;
+  const today = new Date();
+  const todayIso = isoLocal(today);
+  const rows = await fetchBirthdays(todayIso, isoLocal(addDays(today, 6)));
+  if (!rows.length || !el.isConnected) return;
+  const minis = await signedPhotos(rows.filter((r) => r.photo_path).map((r) => miniOf(r.photo_path)));
+  const anyToday = rows.some((r) => r.on_date === todayIso);
+  el.innerHTML = `
+    <section class="card birthday-card">
+      <h2>${icon.cake} ${anyToday ? 'Aniversariantes de hoje e da semana' : 'Aniversariantes da semana'}</h2>
+      <ul class="bday-list">
+        ${rows
+          .slice(0, 8)
+          .map(
+            (r) => `
+          <li class="${r.on_date === todayIso ? 'today' : ''}">
+            ${avatar(r.name, r.photo_path && minis[miniOf(r.photo_path)])}
+            <span><strong>${esc(r.name)}</strong><small>${esc(dayLabel(r.on_date))}${r.age ? ` · ${r.age} anos` : ''}</small></span>
+          </li>`,
+          )
+          .join('')}
+      </ul>
+      <a href="#/aniversariantes">Ver os aniversariantes do mês</a>
+    </section>`;
+}
+
+async function viewBirthdays(ctx) {
+  if (!requireLogin('/aniversariantes')) return;
+  if (!isActiveMember()) return navigate('/');
+  const now = new Date();
+  const [y, m] = (ctx.params.get('mes') || '').match(/^\d{4}-\d{2}$/)
+    ? ctx.params.get('mes').split('-').map(Number)
+    : [now.getFullYear(), now.getMonth() + 1];
+  const first = new Date(y, m - 1, 1);
+  const last = new Date(y, m, 0);
+  const rows = await fetchBirthdays(isoLocal(first), isoLocal(last));
+  const minis = await signedPhotos(rows.filter((r) => r.photo_path).map((r) => miniOf(r.photo_path)));
+  if (!ctx.alive()) return;
+
+  const month = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const leader = isLeaderRole(myRole());
+  const byDay = new Map();
+  for (const r of rows) {
+    if (!byDay.has(r.on_date)) byDay.set(r.on_date, []);
+    byDay.get(r.on_date).push(r);
+  }
+  const todayIso = isoLocal(now);
+
+  $view.innerHTML = `
+    <div class="page birthdays-page">
+      <div class="month-nav no-print">
+        <a class="btn small" href="#/aniversariantes?mes=${month(new Date(y, m - 2, 1))}" aria-label="Mês anterior">‹</a>
+        <h1>Aniversariantes de ${MONTHS[m - 1]}</h1>
+        <a class="btn small" href="#/aniversariantes?mes=${month(new Date(y, m, 1))}" aria-label="Próximo mês">›</a>
+      </div>
+      <h1 class="print-only">${esc(state.church.name)}: aniversariantes de ${MONTHS[m - 1]} de ${y}</h1>
+      <p class="hint">${
+        leader
+          ? `${rows.length} ${rows.length === 1 ? 'aniversariante' : 'aniversariantes'}. Como liderança, você vê todos os membros ativos.`
+          : 'Aparecem só os membros que autorizaram mostrar o aniversário.'
+      }</p>
+      ${
+        rows.length
+          ? `<div class="bday-month">${[...byDay]
+              .map(
+                ([iso, list]) => `
+            <section class="bday-day ${iso === todayIso ? 'today' : ''}">
+              <div class="bday-date"><strong>${parseIso(iso).getDate()}</strong><small>${parseIso(iso).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')}</small></div>
+              <ul class="bday-list">
+                ${list
+                  .map(
+                    (r) => `
+                  <li>${avatar(r.name, r.photo_path && minis[miniOf(r.photo_path)])}
+                    <span><strong>${esc(r.name)}</strong>${r.age ? `<small>faz ${r.age} anos</small>` : ''}</span></li>`,
+                  )
+                  .join('')}
+              </ul>
+            </section>`,
+              )
+              .join('')}</div>`
+          : `<div class="empty"><p>Nenhum aniversariante em ${MONTHS[m - 1]}.</p></div>`
+      }
+      <button class="btn no-print" id="print">${icon.print} Imprimir</button>
+    </div>`;
+  document.getElementById('print').onclick = () => window.print();
+}
+
+async function viewNotifications() {
+  if (!requireLogin('/notificacoes')) return;
+  const support = pushSupport();
+  const active = await pushActive();
+  const blocked = support === 'ok' && Notification.permission === 'denied';
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Notificações</h1>
+      <div class="card">
+        <p>Receba no celular a mensagem de aniversário da igreja${isLeaderRole(myRole()) ? ' e o resumo dos aniversariantes para a liderança' : ''}.</p>
+        ${
+          support === 'ios-instalar'
+            ? `<div class="notice"><strong>No iPhone, instale o app primeiro.</strong><p>Toque em Compartilhar e depois em "Adicionar à Tela de Início". Abra o app pelo ícone e volte aqui.</p></div>`
+            : support !== 'ok'
+              ? `<p class="hint warn">Este navegador não recebe notificações. Tente pelo Chrome (Android) ou pelo app instalado (iPhone).</p>`
+              : blocked
+                ? `<p class="hint warn">As notificações estão bloqueadas para este site. Libere nas configurações do navegador e volte aqui.</p>`
+                : `<p><strong>${active ? 'Ativadas neste aparelho.' : 'Desativadas neste aparelho.'}</strong></p>
+                   <button class="btn ${active ? '' : 'primary'} big" id="toggle">${active ? 'Desativar neste aparelho' : 'Ativar neste aparelho'}</button>`
+        }
+      </div>
+    </div>`;
+  document.getElementById('toggle')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    try {
+      if (active) {
+        await disablePush(sb);
+        toast('Notificações desativadas neste aparelho.');
+      } else {
+        const res = await enablePush(sb, CONFIG.VAPID_PUBLIC_KEY);
+        toast(res === 'ativo' ? 'Pronto! As notificações estão ativadas.' : 'Sem permissão para notificações.', res === 'ativo' ? '' : 'error');
+      }
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+    render();
+  });
+}
+
+// Convite discreto na página inicial para ativar as notificações (some por 30 dias ao fechar).
+async function pushInvite(el) {
+  if (!isActiveMember() || pushSupport() !== 'ok' || Notification.permission !== 'default' || (await pushActive())) return;
+  try {
+    if (Date.now() - Number(localStorage.getItem('push-invite-dismissed') || 0) < 30 * 864e5) return;
+  } catch {}
+  if (!el.isConnected) return;
+  el.innerHTML = `
+    <div class="notice push-invite">
+      ${icon.bell}
+      <span><strong>Receba as mensagens da igreja no celular</strong><small>Como a mensagem no dia do seu aniversário.</small></span>
+      <button class="btn primary small" id="push-yes">Ativar</button>
+      <button class="close" aria-label="Agora não" id="push-no">&times;</button>
+    </div>`;
+  document.getElementById('push-no').onclick = () => {
+    try {
+      localStorage.setItem('push-invite-dismissed', String(Date.now()));
+    } catch {}
+    el.innerHTML = '';
+  };
+  document.getElementById('push-yes').onclick = async () => {
+    try {
+      const res = await enablePush(sb, CONFIG.VAPID_PUBLIC_KEY);
+      toast(res === 'ativo' ? 'Pronto! As notificações estão ativadas.' : 'Sem permissão para notificações.', res === 'ativo' ? '' : 'error');
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+    el.innerHTML = '';
+  };
+}
+
+async function viewBirthdaySettings(ctx) {
+  if (!requireLogin('/config/aniversario')) return;
+  if (myRole() !== 'admin') {
+    $view.innerHTML = `<div class="empty"><h2>Só para o administrador</h2><a class="btn" href="#/">Voltar</a></div>`;
+    return;
+  }
+  const { data, error } = await sb.from('message_templates').select('*').eq('church_id', state.church.id).in('kind', ['aniversario', 'resumo_lideres']);
+  if (error) throw error;
+  if (!ctx.alive()) return;
+  const t = data.find((r) => r.kind === 'aniversario');
+  const summary = data.find((r) => r.kind === 'resumo_lideres');
+  if (!t || !summary) throw new Error('Os modelos de mensagem não foram encontrados. Rode o supabase/004_aniversarios.sql.');
+  const sample = { name: myMember()?.name || 'Maria da Silva', church: state.church.name, age: 30 };
+
+  $view.innerHTML = `
+    <form id="bday" class="form page">
+      <a href="#/menu" class="back">← Menu</a>
+      <h1>Mensagem de aniversário</h1>
+      <p class="hint">Vai às 7h (horário de Brasília) para quem faz aniversário. Quem nasceu em 29/02 recebe em 28/02 nos anos que não são bissextos.</p>
+      <label class="check"><input type="checkbox" name="enabled" ${t.enabled ? 'checked' : ''}> Enviar a mensagem de aniversário</label>
+
+      <fieldset class="card">
+        <legend>Texto</legend>
+        <label>Título<input name="title" required maxlength="120" value="${esc(t.title)}"></label>
+        <label>Mensagem<textarea name="body" required rows="5" maxlength="1000">${esc(t.body)}</textarea></label>
+        <div class="chips" aria-label="Campos para a mensagem">
+          ${MESSAGE_FIELDS.map((f) => `<button type="button" class="chip" data-field="${f}">{${f}}</button>`).join('')}
+        </div>
+        <p class="hint">Toque num campo para colocá-lo no texto. {idade} é a idade que a pessoa completa.</p>
+      </fieldset>
+
+      <fieldset class="card">
+        <legend>Imagem (opcional)</legend>
+        <div class="bday-image" id="image-box">${t.image_url ? `<img src="${esc(t.image_url)}" alt="">` : '<p class="hint">Sem imagem.</p>'}</div>
+        <div class="actions-row">
+          <label class="btn small">${t.image_url ? 'Trocar a imagem' : 'Escolher imagem'}<input type="file" name="image" accept="image/*" hidden></label>
+          <button type="button" class="btn link small" id="image-remove" ${t.image_url ? '' : 'hidden'}>Remover imagem</button>
+        </div>
+      </fieldset>
+
+      <fieldset class="card">
+        <legend>Como enviar</legend>
+        <label class="check"><input type="checkbox" name="send_push" ${t.send_push ? 'checked' : ''}> Notificação no celular (para quem ativou)</label>
+        <label class="check"><input type="checkbox" name="send_email" ${t.send_email ? 'checked' : ''}> E-mail</label>
+        <p class="hint">O e-mail começa a sair quando a plataforma ligar o provedor de e-mail. Até lá, só a notificação.</p>
+      </fieldset>
+
+      <fieldset class="card">
+        <legend>Liderança</legend>
+        <label class="check"><input type="checkbox" name="summary" ${summary.enabled ? 'checked' : ''}> Resumo para a liderança às 7h: aniversariantes do dia e, às segundas, os da semana</label>
+      </fieldset>
+
+      <section class="card preview">
+        <h2>Prévia</h2>
+        <div class="push-preview">
+          <img src="${esc(state.church.logo_url || 'icons/icon-192.png')}" alt="" width="36" height="36">
+          <div><strong id="pv-title"></strong><p id="pv-body"></p></div>
+        </div>
+        <p class="hint">Assim chega para ${esc(sample.name.split(' ')[0])}, se fizesse ${sample.age} anos hoje.</p>
+      </section>
+
+      <button class="btn primary big">Salvar</button>
+    </form>`;
+
+  const form = document.getElementById('bday');
+  let imageFile = null;
+  let removeImage = false;
+  let lastField = form.body;
+  const preview = () => {
+    document.getElementById('pv-title').textContent = renderMessage(form.title.value, sample);
+    document.getElementById('pv-body').textContent = renderMessage(form.body.value, sample);
+  };
+  preview();
+  form.title.addEventListener('input', preview);
+  form.body.addEventListener('input', preview);
+  form.title.addEventListener('focus', () => (lastField = form.title));
+  form.body.addEventListener('focus', () => (lastField = form.body));
+  form.querySelectorAll('[data-field]').forEach((b) => {
+    b.onclick = () => {
+      const el = lastField;
+      const text = `{${b.dataset.field}}`;
+      const [s, e] = [el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length];
+      el.value = el.value.slice(0, s) + text + el.value.slice(e);
+      el.focus();
+      el.setSelectionRange(s + text.length, s + text.length);
+      preview();
+    };
+  });
+  form.image.addEventListener('change', () => {
+    imageFile = form.image.files[0] || null;
+    if (!imageFile) return;
+    removeImage = false;
+    document.getElementById('image-box').innerHTML = `<img src="${URL.createObjectURL(imageFile)}" alt="">`;
+    document.getElementById('image-remove').hidden = false;
+  });
+  document.getElementById('image-remove').onclick = () => {
+    imageFile = null;
+    removeImage = true;
+    form.image.value = '';
+    document.getElementById('image-box').innerHTML = '<p class="hint">Sem imagem.</p>';
+    document.getElementById('image-remove').hidden = true;
+  };
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    try {
+      const bucket = sb.storage.from('igrejas');
+      const patch = {
+        enabled: form.enabled.checked,
+        title: form.title.value.trim(),
+        body: form.body.value.trim(),
+        send_push: form.send_push.checked,
+        send_email: form.send_email.checked,
+        updated_at: new Date().toISOString(),
+      };
+      if (imageFile) {
+        const img = await resizeImage(imageFile, 1080, 0.82);
+        const path = `${state.church.id}/aniversario/imagem-${Date.now()}.${img.type === 'image/webp' ? 'webp' : 'jpg'}`;
+        const up = await bucket.upload(path, img, { contentType: img.type, cacheControl: '31536000' });
+        if (up.error) throw up.error;
+        patch.image_url = bucket.getPublicUrl(path).data.publicUrl;
+      } else if (removeImage) patch.image_url = null;
+
+      const save = (kind, p) => sb.from('message_templates').update(p).eq('church_id', state.church.id).eq('kind', kind).select('kind');
+      const [a, b] = await Promise.all([save('aniversario', patch), save('resumo_lideres', { enabled: form.summary.checked, updated_at: patch.updated_at })]);
+      for (const r of [a, b]) {
+        if (r.error) throw r.error;
+        if (!r.data.length) throw new Error('Você não tem permissão para mudar a mensagem.');
+      }
+      // A imagem antiga não é mais usada.
+      const oldPath = (imageFile || removeImage) && t.image_url?.split('/object/public/igrejas/')[1];
+      if (oldPath) await bucket.remove([decodeURIComponent(oldPath)]);
+      toast('Mensagem salva.');
+      render();
+    } catch (err) {
+      toast(errorText(err), 'error');
+      btn.disabled = false;
     }
   });
 }

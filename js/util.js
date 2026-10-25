@@ -201,3 +201,22 @@ export function parseMembersCsv(text, existingEmails = new Set(), today = new Da
   });
   return { rows };
 }
+
+export const firstName = (name) => String(name ?? '').trim().split(/\s+/)[0] || '';
+
+// Campos da mensagem de aniversário: {nome}, {primeiro_nome}, {igreja}, {idade}.
+export const MESSAGE_FIELDS = ['nome', 'primeiro_nome', 'igreja', 'idade'];
+
+export function renderMessage(template, { name, church, age }) {
+  const values = { nome: name, primeiro_nome: firstName(name), igreja: church, idade: age ?? '' };
+  return String(template ?? '')
+    .replace(/\{(\w+)\}/g, (all, key) => (key in values ? String(values[key]) : all))
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+// "Hoje: Ana e João" / "Ana, João e Maria"
+export function joinNames(names) {
+  const list = names.map(firstName);
+  return list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} e ${list.at(-1)}`;
+}

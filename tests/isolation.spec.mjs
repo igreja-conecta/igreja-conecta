@@ -275,3 +275,76 @@ test.describe('Cadastro de membros (003)', () => {
     expect((await rpc('adm-a', 'unlink_member_account', { p_member: me.id })).ok()).toBe(false);
   });
 });
+
+test.describe('Aniversários (004)', () => {
+  const between = async (who, churchKey, from, to) => {
+    const res = await rpc(who, 'birthdays_between', { p_church: church[churchKey], p_from: from, p_to: to });
+    expect(res.ok(), `${who}: ${await res.text()}`).toBe(true);
+    return res.json();
+  };
+
+  test('a liderança vê todos os aniversariantes, com a idade', async () => {
+    const rows = await between('lider-a', 'a', '2027-03-15', '2027-03-15');
+    expect(rows).toEqual([expect.objectContaining({ name: 'Fulano da A', on_date: '2027-03-15', age: 47 })]);
+  });
+
+  test('o membro vê só quem autorizou, e sem a idade', async () => {
+    expect(await between('membro-a', 'a', '2027-03-15', '2027-03-15')).toEqual([]);
+    const rows = await between('membro-a', 'a', '2027-02-01', '2027-02-28');
+    expect(rows).toEqual([expect.objectContaining({ name: 'Bissexto da A', on_date: '2027-02-28', age: null })]);
+  });
+
+  test('quem nasceu em 29/02 faz aniversário em 28/02 nos anos que não são bissextos', async () => {
+    const days = async (from, to) =>
+      (await between('lider-a', 'a', from, to)).filter((r) => r.name === 'Bissexto da A').map((r) => r.on_date);
+    expect(await days('2027-02-27', '2027-03-01')).toEqual(['2027-02-28']);
+    expect(await days('2028-02-27', '2028-03-01')).toEqual(['2028-02-29']);
+  });
+
+  test('outra igreja e quem não é de nenhuma não veem os aniversariantes', async () => {
+    expect(await between('adm-b', 'a', '2027-03-01', '2027-03-31')).toEqual([]);
+    expect(await between('sem-igreja', 'a', '2027-03-01', '2027-03-31')).toEqual([]);
+  });
+
+  test('período longo demais é recusado', async () => {
+    const res = await rpc('lider-a', 'birthdays_between', { p_church: church.a, p_from: '2027-01-01', p_to: '2027-12-31' });
+    expect(res.ok()).toBe(false);
+  });
+
+  test('a mensagem de aniversário: só o admin da igreja edita; a outra igreja nem lê', async () => {
+    const mine = await get('adm-a', `message_templates?select=kind,title&church_id=eq.${church.a}`);
+    expect(mine.map((r) => r.kind).sort()).toEqual(['aniversario', 'resumo_lideres']);
+    expect(await get('adm-b', `message_templates?select=kind&church_id=eq.${church.a}`)).toEqual([]);
+    expect(await get('membro-a', `message_templates?select=kind&church_id=eq.${church.a}`)).toEqual([]);
+    for (const who of ['adm-b', 'lider-a']) {
+      const res = await api.patch(rest(`message_templates?church_id=eq.${church.a}`), { headers: returning(as[who].headers), data: { title: 'Invadido' } });
+      if (res.ok()) expect(await res.json(), who).toEqual([]);
+    }
+    const title = mine.find((r) => r.kind === 'aniversario').title;
+    const own = await api.patch(rest(`message_templates?church_id=eq.${church.a}&kind=eq.aniversario`), {
+      headers: returning(as['adm-a'].headers),
+      data: { title },
+    });
+    expect(await own.json()).toHaveLength(1);
+  });
+
+  test('cada pessoa vê só os próprios aparelhos; o registro de envios não é aberto aos membros', async () => {
+    const endpoint = `https://push.exemplo.invalid/teste-${Date.now()}`;
+    const saved = await rpc('membro-a', 'save_push_subscription', { p_endpoint: endpoint, p_p256dh: 'chave', p_auth: 'auth' });
+    expect(saved.ok()).toBe(true);
+    const q = `push_subscriptions?select=endpoint&endpoint=eq.${encodeURIComponent(endpoint)}`;
+    try {
+      expect(await get('membro-a', q)).toHaveLength(1);
+      expect(await get('adm-a', q)).toEqual([]);
+    } finally {
+      await api.delete(rest(`push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`), { headers: as['membro-a'].headers });
+    }
+    expect(await get('membro-a', 'message_log?select=id')).toEqual([]);
+  });
+
+  test('as funções de envio não respondem sem a senha, nem para quem está logado', async () => {
+    for (const fn of ['claim_birthday_push', 'claim_birthday_email', 'claim_leader_summaries', 'platform_push_targets', 'birthday_email_backlog', 'clean_message_log']) {
+      expect((await rpc('adm-a', fn, { p_secret: 'errada' })).ok(), fn).toBe(false);
+    }
+  });
+});

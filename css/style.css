@@ -258,3 +258,42 @@ select:disabled, input:disabled { opacity: .65; }
 .preview-table tr.bad td { color: var(--danger); }
 .preview-table tr.skip td { color: var(--muted); }
 .warn-box { color: var(--warn); }
+
+/* ---------- Aniversários ---------- */
+.birthday-card h2 { display: flex; align-items: center; gap: 8px; }
+.bday-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.bday-list li { display: flex; align-items: center; gap: 12px; }
+.bday-list li span { display: flex; flex-direction: column; min-width: 0; }
+.bday-list small { color: var(--muted); }
+.bday-list li.today strong { color: var(--link); }
+.month-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.month-nav h1 { font-size: 1.25rem; text-align: center; margin: 0; }
+.month-nav .btn { min-width: 44px; font-size: 1.3rem; }
+.bday-month { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 16px; }
+.bday-day { display: flex; gap: 14px; padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); break-inside: avoid; }
+.bday-day.today { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.bday-day .bday-list { margin: 0; flex: 1; }
+.bday-date { width: 44px; flex: none; text-align: center; display: flex; flex-direction: column; }
+.bday-date strong { font-size: 1.5rem; line-height: 1.1; color: var(--link); }
+.bday-date small { color: var(--muted); text-transform: capitalize; }
+.push-invite { display: flex; align-items: center; gap: 10px; }
+.push-invite > svg { width: 24px; height: 24px; color: var(--link); }
+.push-invite span { flex: 1; display: flex; flex-direction: column; }
+.push-invite small { color: var(--muted); }
+.push-invite .close { border: 0; background: none; color: var(--muted); font-size: 1.5rem; cursor: pointer; }
+.push-preview { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
+.push-preview img { border-radius: 8px; object-fit: contain; background: #fff; }
+.push-preview p { margin: 2px 0 0; white-space: pre-line; }
+.bday-image img { display: block; max-width: 100%; max-height: 240px; border-radius: 10px; }
+.chips button.chip { border: 0; cursor: pointer; font: inherit; font-size: .85rem; color: var(--link); }
+.print-only { display: none; }
+
+@media print {
+  .topbar, .tabbar, .toast, .install-banner, .no-print { display: none !important; }
+  .print-only { display: block; font-size: 1.3rem; }
+  body { background: #fff; color: #000; padding: 0; }
+  .view { max-width: none; padding: 0; }
+  .bday-day { border: 1px solid #ccc; box-shadow: none; }
+  .bday-month { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .avatar { border: 1px solid #ccc; }
+}
