@@ -223,3 +223,55 @@ test.describe('Arquivos por igreja', () => {
     await expectDenied(await upload('lider-a', 'membros', `${church.b}/testes/isolamento.webp`), 'lider-a na pasta da B');
   });
 });
+
+test.describe('Cadastro de membros (003)', () => {
+  const memberOf = async (who) => (await get(who, `members?select=id,church_id,email&user_id=eq.${as[who].id}`))[0];
+
+  test('o membro envia a própria foto, mas não na pasta de outro membro', async () => {
+    const me = await memberOf('membro-a');
+    const mine = `${church.a}/${me.id}/foto.webp`;
+    const ok = await upload('membro-a', 'membros', mine);
+    expect(ok.ok(), await ok.text()).toBe(true);
+    await removeFile('membro-a', 'membros', mine);
+    const [fulano] = await get('adm-a', 'members?select=id&name=eq.Fulano da A');
+    await expectDenied(await upload('membro-a', 'membros', `${church.a}/${fulano.id}/foto.webp`), 'pasta do Fulano');
+    await expectDenied(await upload('membro-a', 'membros', `${church.b}/${me.id}/foto.webp`), 'pasta na B');
+  });
+
+  test('a foto do cadastro precisa estar na pasta do próprio membro', async () => {
+    const me = await memberOf('membro-a');
+    const [fulano] = await get('adm-a', 'members?select=id&name=eq.Fulano da A');
+    const res = await api.patch(rest(`members?id=eq.${me.id}`), {
+      headers: as['membro-a'].headers,
+      data: { photo_path: `${church.a}/${fulano.id}/foto.webp` },
+    });
+    expect(res.ok()).toBe(false);
+  });
+
+  test('o e-mail de quem já entrou no app não muda sem desligar a conta', async () => {
+    const me = await memberOf('membro-a');
+    const res = await api.patch(rest(`members?id=eq.${me.id}`), { headers: as['adm-a'].headers, data: { email: 'novo@teste.igrejaconecta.invalid' } });
+    expect(res.ok()).toBe(false);
+  });
+
+  test('só o administrador da própria igreja desliga uma conta, e a pessoa volta ao aceitar de novo', async () => {
+    const me = await memberOf('membro-a');
+    for (const who of ['lider-a', 'adm-b', 'membro-a']) {
+      expect((await rpc(who, 'unlink_member_account', { p_member: me.id })).ok(), who).toBe(false);
+    }
+    expect((await rpc('adm-a', 'unlink_member_account', { p_member: me.id })).ok()).toBe(true);
+    try {
+      expect(await (await rpc('membro-a', 'my_church_ids')).json()).toEqual([]);
+    } finally {
+      // Entrar de novo liga a conta; aceitar o convite devolve o acesso.
+      expect(await (await rpc('membro-a', 'link_my_account')).json()).toBe(1);
+      expect((await rpc('membro-a', 'respond_to_church', { p_church: church.a, p_accept: true })).ok()).toBe(true);
+    }
+    expect(await (await rpc('membro-a', 'my_church_ids')).json()).toEqual([church.a]);
+  });
+
+  test('o último administrador não é desligado', async () => {
+    const me = await memberOf('adm-a');
+    expect((await rpc('adm-a', 'unlink_member_account', { p_member: me.id })).ok()).toBe(false);
+  });
+});

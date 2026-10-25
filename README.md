@@ -47,6 +47,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 |---|---|
 | `001_base.sql` | Igrejas, membros, papéis, regras de acesso (RLS), pastas de arquivos e a Igreja Exemplo |
 | `002_igrejas_de_teste.sql` | Igrejas Teste A e Teste B, usadas pelos testes de separação (não ganham página pública) |
+| `003_membros.sql` | Foto do membro na pasta dele, o membro troca a própria foto, e-mail de quem já entrou só muda após desligar a conta, admin desliga contas |
 
 ## Contas de teste
 

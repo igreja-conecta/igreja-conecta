@@ -38,3 +38,45 @@ test('telefone no formato do banco', () => {
 test('textos escapados antes de ir para a tela', () => {
   expect(esc('<img src=x onerror="alert(1)">')).toBe('&lt;img src=x onerror=&quot;alert(1)&quot;&gt;');
 });
+
+test('datas de nascimento digitadas de vários jeitos', async () => {
+  const { parseBirthDate, fmtDate } = await import('../js/util.js');
+  const today = new Date('2026-10-25T12:00:00Z');
+  expect(parseBirthDate('15/03/1980', today)).toBe('1980-03-15');
+  expect(parseBirthDate('5/3/80', today)).toBe('1980-03-05');
+  expect(parseBirthDate('01-02-05', today)).toBe('2005-02-01');
+  expect(parseBirthDate('1980-03-15', today)).toBe('1980-03-15');
+  expect(parseBirthDate('29/02/2000', today)).toBe('2000-02-29');
+  for (const bad of ['29/02/2001', '32/01/1990', '15/13/1990', '01/01/1899', '01/01/2030', 'ontem', '']) {
+    expect(parseBirthDate(bad, today), bad).toBe(null);
+  }
+  expect(fmtDate('1980-03-15')).toBe('15/03/1980');
+});
+
+test('planilha CSV do Excel e do Google Planilhas', async () => {
+  const { parseCsv } = await import('../js/util.js');
+  expect(parseCsv('﻿nome;email\r\nAna;ana@x.com\r\n\r\n')).toEqual([['nome', 'email'], ['Ana', 'ana@x.com']]);
+  expect(parseCsv('nome,obs\n"Silva, João","disse ""oi""\nem duas linhas"')).toEqual([
+    ['nome', 'obs'],
+    ['Silva, João', 'disse "oi"\nem duas linhas'],
+  ]);
+  expect(parseCsv('nome\tidade\nAna\t30')).toEqual([['nome', 'idade'], ['Ana', '30']]);
+});
+
+test('importação de membros: colunas, erros e repetidos', async () => {
+  const { parseMembersCsv } = await import('../js/util.js');
+  const csv = [
+    'Nome Completo;E-mail;Celular;Data de Nascimento',
+    'Maria  da Silva;MARIA@x.com;(61) 99999-0000;15/03/1980',
+    'J;joao@;123;31/02/1990',
+    'Pedro;maria@x.com;;',
+    'Ana;ana@igreja.com;;',
+  ].join('\n');
+  const { rows, error } = parseMembersCsv(csv, new Set(['ana@igreja.com']), new Date('2026-10-25'));
+  expect(error).toBeUndefined();
+  expect(rows[0]).toEqual({ line: 2, name: 'Maria da Silva', email: 'maria@x.com', phone: '5561999990000', birth_date: '1980-03-15', errors: [], skip: null });
+  expect(rows[1].errors).toEqual(['nome inválido', 'e-mail inválido', 'telefone inválido', 'data de nascimento inválida']);
+  expect(rows[2].skip).toBe('e-mail repetido na planilha');
+  expect(rows[3].skip).toBe('já cadastrado');
+  expect(parseMembersCsv('email;telefone\na@b.com;1').error).toMatch(/coluna "nome"/);
+});
