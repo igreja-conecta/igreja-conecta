@@ -92,6 +92,8 @@ test.describe('Banco: visitante sem login (aniversários)', () => {
       expect((await rpc(request, fn, { p_secret: 'errada' })).ok(), fn).toBe(false);
     }
     expect((await rpc(request, 'events_between', { p_church: UUID, p_from: '2027-01-01T00:00:00Z', p_to: '2027-01-31T00:00:00Z' })).ok()).toBe(false);
+    for (const fn of ['export_my_data', 'delete_my_account']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
+    expect((await rpc(request, 'leave_church', { p_church: UUID })).ok()).toBe(false);
     for (const table of ['push_subscriptions', 'message_log', 'message_templates', 'events', 'announcements', 'notifications']) {
       const res = await request.get(rest(`${table}?select=*`), { headers });
       if (res.ok()) expect(await res.json(), table).toEqual([]);

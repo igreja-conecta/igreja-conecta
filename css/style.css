@@ -334,3 +334,9 @@ select:disabled, input:disabled { opacity: .65; }
 .notif-row > span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .notif-row small { color: var(--muted); }
 .notif-icon { width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--brand-soft); color: var(--link); }
+
+/* ---------- Privacidade ---------- */
+.legal-page h2 { margin-top: 1.6em; }
+.legal-page li { margin: .35em 0; }
+.danger-zone { border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+.danger-zone h2 { color: var(--danger); }

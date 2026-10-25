@@ -5,7 +5,7 @@
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 const OUT = '_site';
-const STATIC = ['index.html', '404.html', 'privacidade.html', 'manifest.webmanifest', 'sw.js', 'css', 'js', 'icons'];
+const STATIC = ['index.html', '404.html', 'privacidade.html', 'termos.html', 'manifest.webmanifest', 'sw.js', 'css', 'js', 'icons'];
 const ICONS = ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 
 rmSync(OUT, { recursive: true, force: true });
