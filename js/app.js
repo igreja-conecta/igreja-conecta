@@ -686,10 +686,12 @@ async function viewMyData() {
       </section>
     </div>`;
 
-  document.getElementById('export').onclick = async (e) => {
-    e.currentTarget.disabled = true;
+  // O botão fica numa variável: depois do "await", e.currentTarget já é null.
+  const exportBtn = document.getElementById('export');
+  exportBtn.onclick = async () => {
+    exportBtn.disabled = true;
     const { data, error } = await sb.rpc('export_my_data');
-    e.currentTarget.disabled = false;
+    exportBtn.disabled = false;
     if (error) return toast(errorText(error), 'error');
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
     const a = Object.assign(document.createElement('a'), { href: url, download: `meus-dados-${isoLocal(new Date())}.json` });
@@ -700,9 +702,10 @@ async function viewMyData() {
     toast('Arquivo baixado.');
   };
 
-  document.getElementById('leave')?.addEventListener('click', async (e) => {
+  const leaveBtn = document.getElementById('leave');
+  leaveBtn?.addEventListener('click', async () => {
     if (!confirm(`Sair da ${state.church.name}? O seu cadastro nesta igreja será apagado.`)) return;
-    e.currentTarget.disabled = true;
+    leaveBtn.disabled = true;
     try {
       if (here.consent_at) await removeMemberPhotos(state.church.id, here.id);
       const { error } = await sb.rpc('leave_church', { p_church: state.church.id });
@@ -712,7 +715,7 @@ async function viewMyData() {
       location.href = ROOT_URL;
     } catch (err) {
       toast(errorText(err), 'error');
-      e.currentTarget.disabled = false;
+      leaveBtn.disabled = false;
     }
   });
 
