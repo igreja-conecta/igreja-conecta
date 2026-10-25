@@ -340,3 +340,19 @@ select:disabled, input:disabled { opacity: .65; }
 .legal-page li { margin: .35em 0; }
 .danger-zone { border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
 .danger-zone h2 { color: var(--danger); }
+
+/* ---------- Ajuda ---------- */
+.help-page h2 { margin: 22px 0 8px; font-size: 1rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.help-item { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 8px; }
+.help-item summary { padding: 14px 16px; font-weight: 600; cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+.help-item summary::-webkit-details-marker { display: none; }
+.help-item summary::after { content: "+"; color: var(--link); font-size: 1.3rem; line-height: 1; }
+.help-item[open] summary::after { content: "−"; }
+.help-body { padding: 0 16px 14px; }
+.help-body p:first-child { margin-top: 0; }
+.help-table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+.help-table th, .help-table td { text-align: left; vertical-align: top; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+.help-table th { white-space: nowrap; }
+.copy-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.copy-row code { word-break: break-all; padding: 6px 8px; }
+.ok { color: color-mix(in srgb, #2f9e44 75%, var(--ink)); font-weight: 600; }

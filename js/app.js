@@ -6,7 +6,7 @@ import {
   renderMessage, MESSAGE_FIELDS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
 } from './util.js';
 import { resizeImage, resizeLogo, makeIconSet } from './images.js';
-import { maybeSuggestInstall } from './install.js';
+import { maybeSuggestInstall, installState, installNow } from './install.js';
 import { pushSupport, pushActive, enablePush, disablePush, syncPush } from './push.js';
 
 const $view = document.getElementById('view');
@@ -95,6 +95,7 @@ const icon = {
   upload: '<svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v4h16v-4"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 5 5"/></svg>',
   clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+  help: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.1-2.4 3.6M12 17h.01"/></svg>',
   bell: '<svg viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
   print: '<svg viewBox="0 0 24 24"><path d="M7 9V3.5h10V9M7 17H4.5V9h15v8H17"/><path d="M7 14h10v6.5H7z"/></svg>',
 };
@@ -238,6 +239,7 @@ const churchRoutes = [
   [/^\/membros\/([0-9a-f-]{36})$/, viewMemberForm],
   [/^\/privacidade$/, viewChurchPrivacy],
   [/^\/meus-dados$/, viewMyData],
+  [/^\/ajuda$/, viewHelp],
   [/^\/aniversariantes$/, viewBirthdays],
   [/^\/config\/aniversario$/, viewBirthdaySettings],
   [/^\/notificacoes$/, viewNotifications],
@@ -631,6 +633,7 @@ async function viewMenu() {
         <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações</span>${icon.chevron}</a>
         ${admin && featureOn('aniversarios') ? `<a class="menu-row" href="#/config/aniversario">${icon.cake}<span>Mensagem de aniversário</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/meus-dados">${icon.user}<span>Meus dados: baixar ou excluir</span>${icon.chevron}</a>
+        <a class="menu-row" href="#/ajuda">${icon.help}<span>Ajuda: como funciona</span>${icon.chevron}</a>
         <a class="menu-row" href="#/privacidade">${icon.shield}<span>Privacidade e termos</span>${icon.chevron}</a>
         <button class="menu-row" id="logout">${icon.logout}<span>Sair</span></button>
       </div>
@@ -739,6 +742,208 @@ async function viewMyData() {
       del.textContent = 'Excluir minha conta para sempre';
     }
   };
+}
+
+// ---------------------------------------------------------------------
+// Ajuda: como funciona e como configurar, conforme o papel de quem lê
+// ---------------------------------------------------------------------
+// Cada tópico: [título, texto em HTML]. Os textos não têm dados de ninguém, só explicações.
+function helpTopics() {
+  const c = state.church;
+  const features = (k) => featureOn(k);
+  const everyone = [
+    [
+      'Instalar o app no celular',
+      `<p>Com o app na tela inicial, ele abre com um toque, com o nome e a logo da ${esc(c.name)}.</p>
+       <ul class="bullets">
+         <li><strong>Android (Chrome):</strong> toque nos três pontinhos ⋮ e em <em>Instalar app</em> ou <em>Adicionar à tela inicial</em>.</li>
+         <li><strong>iPhone (Safari):</strong> toque em Compartilhar (o quadrado com a seta) e em <em>Adicionar à Tela de Início</em>.</li>
+       </ul>
+       <p>Depois, abra sempre pelo ícone.</p>
+       <div id="help-install"></div>`,
+    ],
+    [
+      'Entrar no app',
+      `<p>Use <strong>o mesmo e-mail que você deu à secretaria</strong>. É por ele que o app encontra o seu cadastro.</p>
+       <ul class="bullets">
+         <li><strong>Entrar com Google:</strong> o jeito mais rápido, se o seu e-mail for do Gmail.</li>
+         <li><strong>Link pelo e-mail:</strong> você recebe um link; abra no mesmo aparelho e navegador em que pediu.</li>
+       </ul>
+       <p>Na primeira vez, aparece um convite: toque em <em>Aceito participar</em>. Se não for da igreja, toque em <em>Não sou desta igreja</em> e o seu e-mail sai do cadastro.</p>`,
+    ],
+    [
+      'Notificações no celular',
+      `<p>Em <a href="#/notificacoes">Menu &gt; Notificações</a>, toque em <em>Ativar neste aparelho</em>. Você recebe:</p>
+       <ul class="bullets">
+         ${features('aniversarios') ? '<li>a mensagem da igreja no dia do seu aniversário, às 7h;</li>' : ''}
+         ${features('agenda') ? '<li>os lembretes dos eventos da agenda;</li>' : ''}
+         ${features('avisos') ? '<li>os avisos que a liderança mandar com notificação (chegam em até uns 15 minutos).</li>' : ''}
+       </ul>
+       <p><strong>No iPhone</strong>, as notificações só funcionam com o app instalado na tela inicial. O sininho no topo guarda tudo, mesmo sem ativar no celular.</p>
+       <p>Bloqueou sem querer? Libere as notificações deste site nas configurações do navegador e ative de novo.</p>`,
+    ],
+    ...(features('agenda')
+      ? [[
+          'Agenda',
+          `<p>A aba <a href="#/agenda">Agenda</a> mostra os cultos e eventos dos próximos 3 meses. Toque num evento para ver os detalhes e o local (que abre no mapa).</p>
+           <p><strong>Adicionar à agenda</strong> baixa um arquivo: abra-o para salvar na agenda do celular. Cultos que se repetem entram na agenda toda semana. Se preferir, use o botão <em>Google Agenda</em>.</p>`,
+        ]]
+      : []),
+    ...(features('avisos')
+      ? [['Avisos', '<p>A aba <a href="#/avisos">Avisos</a> traz os recados da igreja. Os mais importantes ficam fixados no topo, e alguns somem depois de uma data.</p>']]
+      : []),
+    ...(features('aniversarios')
+      ? [[
+          'Aniversariantes',
+          `<p>Em <a href="#/aniversariantes">Menu &gt; Aniversariantes do mês</a> você vê quem faz aniversário, mês a mês, e pode imprimir a lista.</p>
+           <p>O seu aniversário só aparece para os outros membros se você autorizar em <em>Meu cadastro</em>, e só o dia e o mês, nunca o ano. A liderança sempre vê.</p>`,
+        ]]
+      : []),
+    [
+      'Meu cadastro e privacidade',
+      `<p>Em <a href="#/perfil">Menu &gt; Meu cadastro</a> você corrige o nome, o telefone, a data de nascimento e a foto, e escolhe se os outros membros veem o seu aniversário e o seu telefone. Para trocar o e-mail, fale com a secretaria.</p>
+       <p>Em <a href="#/meus-dados">Menu &gt; Meus dados</a> você baixa tudo o que o app guarda sobre você, sai desta igreja ou exclui a sua conta.</p>`,
+    ],
+    [
+      'Participo de mais de uma igreja',
+      '<p>Cada igreja tem o seu endereço e o seu ícone no celular. Para ir de uma para outra, use <em>Menu &gt; Trocar de igreja</em>.</p>',
+    ],
+    [
+      'Problemas comuns',
+      `<ul class="bullets">
+         <li><strong>O link de acesso não chegou:</strong> olhe a caixa de spam. Se pedir muitas vezes, o envio espera alguns minutos. Se o seu e-mail for do Gmail, prefira <em>Entrar com Google</em>.</li>
+         <li><strong>"Ainda não encontramos seu cadastro":</strong> você entrou com um e-mail diferente do que a secretaria tem. Peça para conferir.</li>
+         <li><strong>O app parece desatualizado:</strong> feche e abra de novo.</li>
+         <li><strong>A notificação não chega:</strong> confira em <em>Menu &gt; Notificações</em> se está ativada neste aparelho e, no iPhone, se você abriu pelo ícone da tela inicial.</li>
+       </ul>`,
+    ],
+  ];
+
+  const leaders = [
+    [
+      'O que cada papel faz',
+      `<table class="help-table">
+         <tr><th>Administrador</th><td>Tudo da liderança, mais: configura a igreja, define os papéis, desliga contas e escreve a mensagem de aniversário.</td></tr>
+         <tr><th>Secretaria</th><td>Cadastra, edita, inativa e exclui membros; publica eventos e avisos.</td></tr>
+         <tr><th>Líder</th><td>Cadastra, edita e inativa membros (não exclui); publica eventos e avisos.</td></tr>
+         <tr><th>Membro</th><td>Vê a agenda, os avisos e os aniversariantes que autorizaram; edita os próprios dados.</td></tr>
+       </table>
+       <p>Administrador, secretaria e líderes formam a liderança: veem o cadastro completo de todos e recebem o resumo dos aniversariantes. Use esse acesso só para cuidar da igreja.</p>`,
+    ],
+    [
+      'Cadastrar membros',
+      `<p>Na aba <a href="#/membros">Membros</a>, toque em <em>Novo membro</em>. Só o nome é obrigatório, mas <strong>sem e-mail a pessoa não consegue entrar no app</strong>. Marque que a pessoa concordou em ter os dados no app.</p>
+       <p>A etiqueta de cada pessoa mostra a situação:</p>
+       <ul class="bullets">
+         <li><strong>Ainda não entrou:</strong> tem e-mail, mas ainda não abriu o app. Mande o endereço do app para ela.</li>
+         <li><strong>Convite pendente:</strong> já entrou, falta tocar em <em>Aceito participar</em>.</li>
+         <li><strong>No app:</strong> tudo certo.</li>
+         <li><strong>Sem e-mail:</strong> não entra no app, mas aparece na lista de membros e nos aniversariantes.</li>
+       </ul>
+       <p>Quem saiu da igreja pode ficar <em>Inativo</em>: some das listas e não acessa o app, mas o cadastro fica guardado.</p>`,
+    ],
+    [
+      'Importar uma planilha de membros',
+      `<p>Em <a href="#/membros/importar">Membros &gt; Importar planilha</a>, toque em <em>Baixar modelo</em> e preencha no Excel ou no Google Planilhas, com as colunas <strong>nome</strong>, <strong>email</strong>, <strong>telefone</strong> e <strong>nascimento</strong> (datas como 15/03/1980).</p>
+       <p>Salve como <strong>CSV</strong> e escolha o arquivo. O app mostra uma prévia antes de gravar: as linhas com erro são explicadas, e quem já tem o e-mail cadastrado é pulado.</p>`,
+    ],
+    ...(features('agenda')
+      ? [[
+          'Criar eventos e cultos',
+          `<p>Na <a href="#/agenda">Agenda</a>, toque em <em>Novo evento</em>. Para os cultos fixos, marque <strong>Repetir toda semana</strong> (e, se quiser, até quando).</p>
+           <p>Escolha o <strong>lembrete</strong>: os membros com notificação ativada recebem 1 hora, 2 horas, 3 horas ou 1 dia antes. Editar ou excluir um evento que se repete vale para todas as semanas.</p>`,
+        ]]
+      : []),
+    ...(features('avisos')
+      ? [[
+          'Publicar avisos',
+          `<p>Em <a href="#/avisos">Avisos</a>, toque em <em>Novo aviso</em>. Você pode <strong>fixar no topo</strong> e escolher <strong>até quando</strong> ele aparece (depois some para os membros, mas a liderança continua vendo).</p>
+           <p>Marque <strong>Mandar notificação para os membros</strong> só nos avisos importantes. Isso só pode ser escolhido ao publicar.</p>`,
+        ]]
+      : []),
+  ];
+
+  const admins = [
+    [
+      'Configurar a igreja',
+      `<p>Em <a href="#/config">Menu &gt; Configurar a igreja</a>:</p>
+       <ul class="bullets">
+         <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
+         <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos e os aniversariantes.</li>
+         <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
+       </ul>
+       <p>O nome e o ícone do app instalado mudam na próxima publicação do site (em até uma hora). Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
+    ],
+    ...(features('aniversarios')
+      ? [[
+          'Mensagem de aniversário',
+          `<p>Em <a href="#/config/aniversario">Menu &gt; Mensagem de aniversário</a>, escreva o título e o texto. Toque nos campos para colocar no texto: <code>{nome}</code>, <code>{primeiro_nome}</code>, <code>{igreja}</code> e <code>{idade}</code>. A prévia mostra como fica.</p>
+           <p>A mensagem sai às 7h (horário de Brasília). Quem nasceu em 29/02 recebe em 28/02 nos anos que não são bissextos. Você pode pôr uma imagem e ligar o <strong>resumo para a liderança</strong> (aniversariantes do dia e, às segundas, os da semana).</p>
+           <p>O envio por e-mail começa quando a plataforma ligar o provedor de e-mail. Até lá, vai a notificação e fica na central do app.</p>`,
+        ]]
+      : []),
+    [
+      'Papéis, contas e exclusões',
+      `<ul class="bullets">
+         <li>Para mudar o papel de alguém, abra a ficha em <em>Membros</em> e escolha o papel. A igreja precisa ter sempre pelo menos um administrador.</li>
+         <li>Se a pessoa errada entrou com um e-mail, use <em>Desligar a conta do app</em> na ficha. Depois você pode corrigir o e-mail.</li>
+         <li><em>Excluir cadastro</em> apaga os dados e a foto de vez (administrador e secretaria).</li>
+       </ul>`,
+    ],
+    [
+      'Divulgar o app para a igreja',
+      `<p>Mande este endereço pelo WhatsApp ou mostre no telão. Cada pessoa entra com o e-mail que a secretaria cadastrou.</p>
+       <div class="copy-row"><code id="app-url">${esc(PAGE_URL)}</code><button class="btn small" id="copy-url" type="button">Copiar</button></div>`,
+    ],
+  ];
+
+  const role = myRole();
+  return [
+    { title: 'Para todos', items: everyone },
+    ...(isLeaderRole(role) ? [{ title: 'Para a liderança', items: leaders }] : []),
+    ...(role === 'admin' ? [{ title: 'Para o administrador', items: admins }] : []),
+  ];
+}
+
+async function viewHelp() {
+  if (!requireLogin('/ajuda')) return;
+  if (!isActiveMember()) return navigate('/');
+  const groups = helpTopics();
+  $view.innerHTML = `
+    <div class="page help-page">
+      <h1>Ajuda</h1>
+      <p class="hint">Como usar o app da ${esc(state.church.name)}. Toque num assunto para abrir.</p>
+      ${groups
+        .map(
+          (g) => `
+        <h2>${g.title}</h2>
+        ${g.items.map(([title, body]) => `<details class="help-item"><summary>${esc(title)}</summary><div class="help-body">${body}</div></details>`).join('')}`,
+        )
+        .join('')}
+      ${state.platformAdmin ? `<p class="hint">Administrador da plataforma: novas igrejas são criadas em <a href="${esc(ROOT_URL)}#/plataforma">Plataforma</a>.</p>` : ''}
+      <p class="hint">Ainda com dúvida? Fale com a secretaria da igreja.</p>
+    </div>`;
+
+  const installBox = document.getElementById('help-install');
+  const st = installState();
+  installBox.innerHTML =
+    st === 'instalado'
+      ? '<p class="ok">✓ Você já está usando o app instalado.</p>'
+      : st === 'android' || st === 'iphone'
+        ? '<button class="btn primary small" id="install-now" type="button">Instalar agora</button>'
+        : '';
+  document.getElementById('install-now')?.addEventListener('click', async () => {
+    if (await installNow()) toast('App instalado.');
+  });
+  document.getElementById('copy-url')?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(PAGE_URL);
+      toast('Endereço copiado.');
+    } catch {
+      toast('Não foi possível copiar. Selecione o endereço e copie.', 'error');
+    }
+  });
 }
 
 // Sem nenhuma igreja, este aparelho não tem por que continuar recebendo notificações.
