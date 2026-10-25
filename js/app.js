@@ -223,6 +223,7 @@ const rootRoutes = [
   [/^\/entrar$/, viewLogin],
   [/^\/conta$/, viewAccount],
   [/^\/plataforma$/, viewPlatform],
+  [/^\/meus-dados$/, viewMyData],
 ];
 
 const churchRoutes = [
@@ -236,6 +237,7 @@ const churchRoutes = [
   [/^\/membros\/importar$/, viewImport],
   [/^\/membros\/([0-9a-f-]{36})$/, viewMemberForm],
   [/^\/privacidade$/, viewChurchPrivacy],
+  [/^\/meus-dados$/, viewMyData],
   [/^\/aniversariantes$/, viewBirthdays],
   [/^\/config\/aniversario$/, viewBirthdaySettings],
   [/^\/notificacoes$/, viewNotifications],
@@ -302,7 +304,7 @@ async function viewLogin(ctx) {
         <label>Seu e-mail<input type="email" name="email" required autocomplete="email" placeholder="voce@exemplo.com"></label>
         <button class="btn primary big">Receber link de acesso</button>
       </form>
-      <p class="legal">Ao entrar, você concorda com a <a href="privacidade.html">Política de Privacidade</a>.</p>
+      <p class="legal">Ao entrar, você concorda com os <a href="termos.html">Termos de uso</a> e a <a href="privacidade.html">Política de Privacidade</a>.</p>
     </div>`;
 
   // O botão do Google só aparece quando o login com Google está ligado no Supabase.
@@ -386,7 +388,9 @@ async function viewAccount() {
       <div class="list">
         <a class="menu-row" href="#/">${icon.church}<span>Suas igrejas</span>${icon.chevron}</a>
         ${state.platformAdmin ? `<a class="menu-row" href="#/plataforma">${icon.shield}<span>Administração da plataforma</span>${icon.chevron}</a>` : ''}
+        <a class="menu-row" href="#/meus-dados">${icon.user}<span>Meus dados</span>${icon.chevron}</a>
         <a class="menu-row" href="privacidade.html">${icon.shield}<span>Política de privacidade</span>${icon.chevron}</a>
+        <a class="menu-row" href="termos.html">${icon.shield}<span>Termos de uso</span>${icon.chevron}</a>
         <button class="menu-row" id="logout">${icon.logout}<span>Sair</span></button>
       </div>
     </div>`;
@@ -518,7 +522,7 @@ function viewInvite(m) {
           <li>A data de nascimento e o telefone ficam visíveis só para a liderança, a não ser que você autorize no seu cadastro.</li>
           <li>Você pode ver, corrigir, exportar e excluir os seus dados quando quiser.</li>
         </ul>
-        <p class="hint">Leia a <a href="privacidade.html" target="_blank">Política de Privacidade</a>${c.privacy_text ? ` e o <a href="#/privacidade">complemento da igreja</a>` : ''}.</p>
+        <p class="hint">Leia a <a href="privacidade.html" target="_blank">Política de Privacidade</a>, os <a href="termos.html" target="_blank">Termos de uso</a>${c.privacy_text ? ` e o <a href="#/privacidade">complemento da igreja</a>` : ''}.</p>
         <button class="btn primary big" id="accept">Aceito participar</button>
         <button class="btn link" id="decline">Não sou desta igreja</button>
       </div>
@@ -626,7 +630,8 @@ async function viewMenu() {
         ${featureOn('aniversarios') ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações</span>${icon.chevron}</a>
         ${admin && featureOn('aniversarios') ? `<a class="menu-row" href="#/config/aniversario">${icon.cake}<span>Mensagem de aniversário</span>${icon.chevron}</a>` : ''}
-        <a class="menu-row" href="#/privacidade">${icon.shield}<span>Privacidade</span>${icon.chevron}</a>
+        <a class="menu-row" href="#/meus-dados">${icon.user}<span>Meus dados: baixar ou excluir</span>${icon.chevron}</a>
+        <a class="menu-row" href="#/privacidade">${icon.shield}<span>Privacidade e termos</span>${icon.chevron}</a>
         <button class="menu-row" id="logout">${icon.logout}<span>Sair</span></button>
       </div>
     </div>`;
@@ -638,10 +643,105 @@ async function viewChurchPrivacy() {
   $view.innerHTML = `
     <div class="page">
       <h1>Privacidade</h1>
-      <p>O app segue a <a href="privacidade.html">Política de Privacidade</a> do ${esc(CONFIG.APP_NAME)}.</p>
+      <p>O app segue a <a href="privacidade.html">Política de Privacidade</a> e os <a href="termos.html">Termos de uso</a> do ${esc(CONFIG.APP_NAME)}.</p>
       ${c.privacy_text ? `<section class="card"><h2>Complemento de ${esc(c.name)}</h2><p class="pre">${esc(c.privacy_text)}</p></section>` : ''}
       ${c.privacy_email ? `<p>Pedidos sobre os seus dados nesta igreja: <a href="mailto:${esc(c.privacy_email)}">${esc(c.privacy_email)}</a>.</p>` : ''}
+      ${state.user ? `<a class="btn" href="#/meus-dados">${icon.user} Baixar ou excluir os meus dados</a>` : ''}
     </div>`;
+}
+
+// ---------------------------------------------------------------------
+// Meus dados (LGPD): baixar, sair desta igreja, excluir a conta
+// ---------------------------------------------------------------------
+async function viewMyData() {
+  if (!requireLogin('/meus-dados')) return;
+  const here = state.church ? myMember() : null;
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Meus dados</h1>
+      <p class="hint">${esc(state.user.email)}</p>
+
+      <section class="card">
+        <h2>${icon.upload} Baixar meus dados</h2>
+        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
+        <button class="btn" id="export">Baixar arquivo</button>
+        <p class="hint">Para corrigir algum dado, use "Meu cadastro" ou fale com a secretaria da igreja.</p>
+      </section>
+
+      ${
+        here
+          ? `<section class="card">
+              <h2>Sair da ${esc(state.church.name)}</h2>
+              <p>O seu cadastro e a sua foto nesta igreja são apagados, e você deixa de receber as mensagens dela. A sua conta e as outras igrejas continuam.</p>
+              <button class="btn danger-outline" id="leave">Sair desta igreja</button>
+            </section>`
+          : ''
+      }
+
+      <section class="card danger-zone">
+        <h2>Excluir minha conta</h2>
+        <p>Apaga a sua conta e os seus cadastros em <strong>todas</strong> as igrejas, com fotos, notificações e aparelhos. Não dá para desfazer. Os eventos e avisos que você publicou continuam na igreja, sem o seu nome.</p>
+        <label>Para confirmar, digite EXCLUIR<input id="confirm-delete" autocomplete="off" autocapitalize="characters"></label>
+        <button class="btn danger-outline" id="delete" disabled>Excluir minha conta para sempre</button>
+      </section>
+    </div>`;
+
+  document.getElementById('export').onclick = async (e) => {
+    e.currentTarget.disabled = true;
+    const { data, error } = await sb.rpc('export_my_data');
+    e.currentTarget.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: `meus-dados-${isoLocal(new Date())}.json` });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('Arquivo baixado.');
+  };
+
+  document.getElementById('leave')?.addEventListener('click', async (e) => {
+    if (!confirm(`Sair da ${state.church.name}? O seu cadastro nesta igreja será apagado.`)) return;
+    e.currentTarget.disabled = true;
+    try {
+      if (here.consent_at) await removeMemberPhotos(state.church.id, here.id);
+      const { error } = await sb.rpc('leave_church', { p_church: state.church.id });
+      if (error) throw error;
+      await disablePushIfNoChurches();
+      toast(`Você saiu da ${state.church.name}.`);
+      location.href = ROOT_URL;
+    } catch (err) {
+      toast(errorText(err), 'error');
+      e.currentTarget.disabled = false;
+    }
+  });
+
+  const confirmInput = document.getElementById('confirm-delete');
+  const del = document.getElementById('delete');
+  confirmInput.addEventListener('input', () => (del.disabled = confirmInput.value.trim().toUpperCase() !== 'EXCLUIR'));
+  del.onclick = async () => {
+    del.disabled = true;
+    del.textContent = 'Excluindo…';
+    try {
+      for (const m of state.memberships.filter((x) => x.consent_at)) await removeMemberPhotos(m.church.id, m.id);
+      await disablePush(sb).catch(() => {});
+      const { error } = await sb.rpc('delete_my_account');
+      if (error) throw error;
+      await sb.auth.signOut({ scope: 'local' });
+      alert('Sua conta foi excluída.');
+      location.href = ROOT_URL;
+    } catch (err) {
+      toast(errorText(err), 'error');
+      del.disabled = false;
+      del.textContent = 'Excluir minha conta para sempre';
+    }
+  };
+}
+
+// Sem nenhuma igreja, este aparelho não tem por que continuar recebendo notificações.
+async function disablePushIfNoChurches() {
+  await loadMemberships();
+  if (!state.memberships.length) await disablePush(sb).catch(() => {});
 }
 
 // ---------------------------------------------------------------------

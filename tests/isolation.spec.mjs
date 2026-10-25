@@ -432,3 +432,47 @@ test.describe('Agenda, avisos e central de notificações (005)', () => {
     }
   });
 });
+
+test.describe('Os próprios dados: exportar, sair e excluir (006)', () => {
+  test('o arquivo exportado traz só os dados da própria pessoa', async () => {
+    const res = await rpc('membro-a', 'export_my_data');
+    expect(res.ok(), await res.text()).toBe(true);
+    const data = await res.json();
+    expect(data.conta.email).toBe('membro-a@teste.igrejaconecta.invalid');
+    expect(data.igrejas).toHaveLength(1);
+    expect(data.igrejas[0]).toMatchObject({ igreja: 'Igreja Teste A', papel: 'membro', cadastro: { nome: 'Membro da A' } });
+    const text = JSON.stringify(data);
+    for (const other of ['Fulano', 'Bissexto', 'Admin da A', 'Teste B', '5561999990001']) expect(text, other).not.toContain(other);
+  });
+
+  test('o único administrador não sai da igreja nem exclui a conta', async () => {
+    expect((await rpc('adm-a', 'leave_church', { p_church: church.a })).ok()).toBe(false);
+    const del = await rpc('adm-a', 'delete_my_account');
+    expect(del.ok()).toBe(false);
+    expect(await del.text()).toContain('único administrador');
+    expect(await (await rpc('adm-a', 'my_church_ids')).json()).toEqual([church.a]);
+  });
+
+  test('quem sai de uma igreja perde o acesso e o cadastro dela é apagado', async () => {
+    const email = 'sem-igreja@teste.igrejaconecta.invalid';
+    const created = await api.post(rest('members'), {
+      headers: returning(as['lider-a'].headers),
+      data: { church_id: church.a, name: 'Temporário da saída', email },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    const [row] = await created.json();
+    try {
+      expect(await (await rpc('sem-igreja', 'link_my_account')).json()).toBe(1);
+      expect((await rpc('sem-igreja', 'respond_to_church', { p_church: church.a, p_accept: true })).ok()).toBe(true);
+      expect(await (await rpc('sem-igreja', 'my_church_ids')).json()).toEqual([church.a]);
+      // Sair de outra igreja não mexe em nada; sair da A apaga o cadastro.
+      expect((await rpc('sem-igreja', 'leave_church', { p_church: church.b })).ok()).toBe(true);
+      expect(await get('lider-a', `members?select=id&id=eq.${row.id}`)).toHaveLength(1);
+      expect((await rpc('sem-igreja', 'leave_church', { p_church: church.a })).ok()).toBe(true);
+      expect(await (await rpc('sem-igreja', 'my_church_ids')).json()).toEqual([]);
+      expect(await get('lider-a', `members?select=id&id=eq.${row.id}`)).toEqual([]);
+    } finally {
+      await api.delete(rest(`members?id=eq.${row.id}`), { headers: as['adm-a'].headers });
+    }
+  });
+});

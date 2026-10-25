@@ -50,6 +50,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `003_membros.sql` | Foto do membro na pasta dele, o membro troca a própria foto, e-mail de quem já entrou só muda após desligar a conta, admin desliga contas |
 | `004_aniversarios.sql` | Mensagem de aniversário por igreja, aparelhos com notificação, registro de envios (sem repetir), limite de 100 e-mails/dia, resumo da liderança, aniversariantes do mês |
 | `005_agenda_avisos.sql` | Agenda (eventos que podem repetir toda semana), mural de avisos, central de notificações, lembretes e avisos por push |
+| `006_privacidade.sql` | Exportar os próprios dados, sair de uma igreja e excluir a conta (com proteção do último administrador) |
 
 ## Contas de teste
 
