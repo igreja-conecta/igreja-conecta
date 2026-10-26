@@ -1,6 +1,7 @@
 // Funções puras do app, testadas sem navegador.
 import { test, expect } from '@playwright/test';
 import { slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone, esc } from '../js/util.js';
+import { pixPayload, normalizePixKey, guessPixType, crc16, parseAmount } from '../js/pix.js';
 
 test('endereço da igreja a partir do nome', () => {
   expect(slugify('Igreja Batista Central')).toBe('igreja-batista-central');
@@ -121,4 +122,46 @@ test('adicionar à agenda: arquivo .ics e link do Google Agenda', async () => {
   expect(once).not.toContain('RRULE');
   expect(once).not.toContain('VALARM');
   expect(once).not.toContain('LOCATION');
+});
+
+test.describe('Pix (BR Code)', () => {
+  test('gera exatamente o exemplo do manual do Banco Central', () => {
+    expect(pixPayload({ key: '123e4567-e12b-12d1-a456-426655440000', name: 'Fulano de Tal', city: 'BRASILIA' })).toBe(
+      '00020126580014br.gov.bcb.pix0136123e4567-e12b-12d1-a456-4266554400005204000053039865802BR5913Fulano de Tal6008BRASILIA62070503***63041D3D',
+    );
+  });
+
+  test('inclui o valor e remove acentos do nome e da cidade', () => {
+    const p = pixPayload({ key: '+5561999998888', name: 'Comunidade Cristã São João', city: 'Brasília', amount: 150.5 });
+    expect(p).toContain('5406150.50');
+    expect(p).toContain('5925Comunidade Crista Sao Joa');
+    expect(p).toContain('6008Brasilia');
+    expect(p.slice(-4)).toBe(crc16(p.slice(0, -4)));
+  });
+
+  test('sem valor, quem oferta digita no banco', () => {
+    expect(pixPayload({ key: 'a@b.com', name: 'X', amount: 0 })).not.toContain('5406');
+  });
+
+  test('normaliza e valida chaves', () => {
+    expect(normalizePixKey('celular', '(61) 99999-8888')).toBe('+5561999998888');
+    expect(normalizePixKey('celular', '+55 61 99999-8888')).toBe('+5561999998888');
+    expect(normalizePixKey('cpf', '12.345.678/0001-90')).toBe('12345678000190');
+    expect(normalizePixKey('email', ' Igreja@Mail.com ')).toBe('igreja@mail.com');
+    expect(normalizePixKey('aleatoria', '123E4567-E12B-12D1-A456-426655440000')).toBe('123e4567-e12b-12d1-a456-426655440000');
+    expect(normalizePixKey('cpf', '123')).toBeNull();
+    expect(normalizePixKey('email', 'sem-arroba')).toBeNull();
+    expect(guessPixType('+5561999998888')).toBe('celular');
+    expect(guessPixType('12345678000190')).toBe('cpf');
+  });
+
+  test('valor digitado em reais', () => {
+    expect(parseAmount('')).toBe(0);
+    expect(parseAmount('50')).toBe(50);
+    expect(parseAmount('50,5')).toBe(50.5);
+    expect(parseAmount('R$ 1.234,56')).toBe(1234.56);
+    expect(parseAmount('10.5')).toBe(10.5);
+    expect(parseAmount('1.234')).toBe(1234);
+    for (const bad of ['abc', '-5', '0', '1,234', '12,345', '1.23.4']) expect(parseAmount(bad), bad).toBeNull();
+  });
 });

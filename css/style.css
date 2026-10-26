@@ -359,3 +359,10 @@ select:disabled, input:disabled { opacity: .65; }
 .copy-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .copy-row code { word-break: break-all; padding: 6px 8px; }
 .ok { color: color-mix(in srgb, #2f9e44 75%, var(--ink)); font-weight: 600; }
+
+/* Dízimos e ofertas (Pix) */
+.pix-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; }
+@media (max-width: 480px) { .pix-row { grid-template-columns: 1fr; } }
+.offer .qr { display: grid; place-items: center; min-height: 240px; background: #fff; border-radius: 12px; padding: 8px; color: #333; margin: 12px 0; }
+.offer .qr svg { width: min(260px, 100%); height: auto; }
+.offer .key { font-size: 1.05em; word-break: break-all; }

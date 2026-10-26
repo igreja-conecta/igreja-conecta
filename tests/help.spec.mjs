@@ -69,3 +69,27 @@ test('a configuração mostra o nome que vai embaixo do ícone do app', async ({
   await page.getByLabel('Nome curto (embaixo do ícone no celular)').fill('Minha Igreja');
   await expect(iconName).toHaveText('Minha Igreja');
 });
+
+// Só confere as validações da tela: nada é gravado na Teste A.
+test('a configuração do Pix valida a chave antes de salvar', async ({ page }) => {
+  let saved = false;
+  await page.route('**/rest/v1/churches?*', (route) => {
+    if (route.request().method() === 'PATCH') saved = true;
+    return route.continue();
+  });
+  await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config');
+  const save = page.getByRole('button', { name: 'Salvar' });
+
+  await page.getByLabel('Dízimos e ofertas por Pix').check();
+  await page.getByLabel('Chave Pix').fill('');
+  await save.click();
+  await expect(page.locator('#toast')).toHaveText('Para ligar Dízimos e ofertas, preencha a chave Pix da igreja.');
+
+  await page.getByLabel('Tipo de chave').selectOption('cpf');
+  await page.getByLabel('Chave Pix').fill('123.456.789-09');
+  await expect(page.getByText('ele fica público')).toBeVisible();
+  await page.getByLabel('Chave Pix').fill('123');
+  await save.click();
+  await expect(page.locator('#toast')).toHaveText('Chave Pix inválida para o tipo "CPF ou CNPJ".');
+  expect(saved).toBe(false);
+});
