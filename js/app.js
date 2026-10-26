@@ -3,7 +3,7 @@ import { CONFIG } from './config.js';
 import {
   esc, slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone,
   ROLES, isLeaderRole, FEATURES, fold, fmtDate, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
-  renderMessage, MESSAGE_FIELDS, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
+  renderMessage, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
 } from './util.js';
 import { resizeImage, resizeLogo, makeIconSet } from './images.js';
 import { maybeSuggestInstall, installState, installNow, iconReady, ICON_PREPARING } from './install.js';
@@ -37,6 +37,19 @@ const myMember = () => state.memberships.find((m) => m.church.id === state.churc
 const isActiveMember = () => !!myMember()?.consent_at;
 const myRole = () => (isActiveMember() ? myMember().role : null);
 const featureOn = (key) => !!state.church?.features?.[key];
+// Datas comemoradas: aniversário (funcionalidade "aniversarios") e casamento e batismo ("datas_especiais").
+const MESSAGE_KINDS = {
+  aniversario: { feature: 'aniversarios', menu: 'Mensagem de aniversário', emoji: '🎂', label: 'Aniversário' },
+  casamento: { feature: 'datas_especiais', menu: 'Mensagem de casamento', emoji: '💍', label: 'Casamento' },
+  batismo: { feature: 'datas_especiais', menu: 'Mensagem de batismo', emoji: '🕊️', label: 'Batismo' },
+};
+const messageKindsOn = () => Object.keys(MESSAGE_KINDS).filter((k) => featureOn(MESSAGE_KINDS[k].feature));
+const datesOn = () => featureOn('aniversarios') || featureOn('datas_especiais');
+// Atalhos do administrador para as mensagens das datas ligadas.
+const messageLinks = () =>
+  messageKindsOn()
+    .map((k) => `<a class="menu-row" href="#/config/${k}">${icon.cake}<span>${MESSAGE_KINDS[k].menu}</span>${icon.chevron}</a>`)
+    .join('');
 // Tela de ofertas: funcionalidade ligada e chave Pix preenchida.
 const offerReady = () => featureOn('pix') && !!state.church?.pix_key;
 
@@ -245,7 +258,7 @@ const churchRoutes = [
   [/^\/meus-dados$/, viewMyData],
   [/^\/ajuda$/, viewHelp],
   [/^\/aniversariantes$/, viewBirthdays],
-  [/^\/config\/aniversario$/, viewBirthdaySettings],
+  [/^\/config\/(aniversario|casamento|batismo)$/, viewMessageSettings],
   [/^\/notificacoes$/, viewNotifications],
   [/^\/agenda$/, viewAgenda],
   [/^\/agenda\/novo$/, viewEventForm],
@@ -525,9 +538,9 @@ function viewInvite(m) {
       <h1>Bem-vindo, ${esc(m.name.split(' ')[0])}!</h1>
       <div class="card">
         <p><strong>${esc(c.name)}</strong> cadastrou você no app da igreja.</p>
-        <p>Para participar, a igreja guarda o seu nome, e-mail e, se você informou, telefone, data de nascimento e foto. Isso serve para os avisos, a agenda e as mensagens de aniversário.</p>
+        <p>Para participar, a igreja guarda o seu nome, e-mail e, se você informou, telefone, data de nascimento${featureOn('datas_especiais') ? ', datas de casamento e de batismo' : ''} e foto. Isso serve para os avisos, a agenda e as mensagens de aniversário.</p>
         <ul class="bullets">
-          <li>A data de nascimento e o telefone ficam visíveis só para a liderança, a não ser que você autorize no seu cadastro.</li>
+          <li>As datas e o telefone ficam visíveis só para a liderança, a não ser que você autorize no seu cadastro.</li>
           <li>Você pode ver, corrigir, exportar e excluir os seus dados quando quiser.</li>
         </ul>
         <p class="hint">Leia a <a href="privacidade.html" target="_blank">Política de Privacidade</a>, os <a href="termos.html" target="_blank">Termos de uso</a>${c.privacy_text ? ` e o <a href="#/privacidade">complemento da igreja</a>` : ''}.</p>
@@ -595,7 +608,7 @@ async function viewChurchHome() {
     ['avisos', icon.megaphone, 'Avisos', '#/avisos'],
     ['aniversarios', icon.cake, 'Aniversariantes', '#/aniversariantes'],
     ['pix', icon.pix, 'Ofertar', '#/ofertar'],
-  ].filter(([k]) => (k === 'pix' ? offerReady() : featureOn(k)));
+  ].filter(([k]) => (k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : featureOn(k)));
   $view.innerHTML = `
     <div class="page">
       ${head}
@@ -618,7 +631,7 @@ async function viewChurchHome() {
     </div>`;
   if (featureOn('avisos')) homeNoticesCard(document.getElementById('home-notices')).catch(() => {});
   if (featureOn('agenda')) homeEventsCard(document.getElementById('home-events')).catch(() => {});
-  if (featureOn('aniversarios')) weekBirthdaysCard(document.getElementById('week-birthdays')).catch(() => {});
+  if (datesOn()) weekBirthdaysCard(document.getElementById('week-birthdays')).catch(() => {});
   pushInvite(document.getElementById('push-invite')).catch(() => {});
   maybeSuggestInstall(c);
   prefetchMembers();
@@ -638,10 +651,10 @@ async function viewMenu() {
         ${isLeaderRole(m.role) ? `<a class="menu-row" href="#/membros">${icon.users}<span>Membros</span>${icon.chevron}</a>` : ''}
         ${admin ? `<a class="menu-row" href="#/config">${icon.gear}<span>Configurar a igreja</span>${icon.chevron}</a>` : ''}
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
-        ${featureOn('aniversarios') ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
+        ${datesOn() ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
         ${offerReady() ? `<a class="menu-row" href="#/ofertar">${icon.pix}<span>Dízimos e ofertas</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações</span>${icon.chevron}</a>
-        ${admin && featureOn('aniversarios') ? `<a class="menu-row" href="#/config/aniversario">${icon.cake}<span>Mensagem de aniversário</span>${icon.chevron}</a>` : ''}
+        ${admin ? messageLinks() : ''}
         <a class="menu-row" href="#/meus-dados">${icon.user}<span>Meus dados: baixar ou excluir</span>${icon.chevron}</a>
         <a class="menu-row" href="#/ajuda">${icon.help}<span>Ajuda: como funciona</span>${icon.chevron}</a>
         <a class="menu-row" href="#/privacidade">${icon.shield}<span>Privacidade e termos</span>${icon.chevron}</a>
@@ -788,6 +801,7 @@ function helpTopics() {
       `<p>Em <a href="#/notificacoes">Menu &gt; Notificações</a>, toque em <em>Ativar neste aparelho</em>. Você recebe:</p>
        <ul class="bullets">
          ${features('aniversarios') ? '<li>a mensagem da igreja no dia do seu aniversário, às 7h;</li>' : ''}
+         ${features('datas_especiais') ? '<li>a mensagem no aniversário do seu casamento e do seu batismo, às 7h;</li>' : ''}
          ${features('agenda') ? '<li>os lembretes dos eventos da agenda;</li>' : ''}
          ${features('avisos') ? '<li>os avisos que a liderança mandar com notificação (chegam em até uns 15 minutos).</li>' : ''}
        </ul>
@@ -804,11 +818,11 @@ function helpTopics() {
     ...(features('avisos')
       ? [['Avisos', '<p>A aba <a href="#/avisos">Avisos</a> traz os recados da igreja. Os mais importantes ficam fixados no topo, e alguns somem depois de uma data.</p>']]
       : []),
-    ...(features('aniversarios')
+    ...(datesOn()
       ? [[
           'Aniversariantes',
-          `<p>Em <a href="#/aniversariantes">Menu &gt; Aniversariantes do mês</a> você vê quem faz aniversário, mês a mês, e pode imprimir a lista.</p>
-           <p>O seu aniversário só aparece para os outros membros se você autorizar em <em>Meu cadastro</em>, e só o dia e o mês, nunca o ano. A liderança sempre vê.</p>`,
+          `<p>Em <a href="#/aniversariantes">Menu &gt; Aniversariantes do mês</a> você vê quem faz aniversário${features('datas_especiais') ? ' (de vida, de casamento e de batismo)' : ''}, mês a mês, e pode imprimir a lista.</p>
+           <p>As suas datas só aparecem para os outros membros se você autorizar em <em>Meu cadastro</em>, e só o dia e o mês, nunca o ano. A liderança sempre vê.</p>`,
         ]]
       : []),
     ...(offerReady()
@@ -820,7 +834,7 @@ function helpTopics() {
       : []),
     [
       'Meu cadastro e privacidade',
-      `<p>Em <a href="#/perfil">Menu &gt; Meu cadastro</a> você corrige o nome, o telefone, a data de nascimento e a foto, e escolhe se os outros membros veem o seu aniversário e o seu telefone. Para trocar o e-mail, fale com a secretaria.</p>
+      `<p>Em <a href="#/perfil">Menu &gt; Meu cadastro</a> você corrige o nome, o telefone, a data de nascimento${features('datas_especiais') ? ', as datas de casamento e de batismo' : ''} e a foto, e escolhe se os outros membros veem essas datas e o seu telefone. Para trocar o e-mail, fale com a secretaria.</p>
        <p>Em <a href="#/meus-dados">Menu &gt; Meus dados</a> você baixa tudo o que o app guarda sobre você, sai desta igreja ou exclui a sua conta.</p>`,
     ],
     [
@@ -863,7 +877,7 @@ function helpTopics() {
     ],
     [
       'Importar uma planilha de membros',
-      `<p>Em <a href="#/membros/importar">Membros &gt; Importar planilha</a>, toque em <em>Baixar modelo</em> e preencha no Excel ou no Google Planilhas, com as colunas <strong>nome</strong>, <strong>email</strong>, <strong>telefone</strong> e <strong>nascimento</strong> (datas como 15/03/1980).</p>
+      `<p>Em <a href="#/membros/importar">Membros &gt; Importar planilha</a>, toque em <em>Baixar modelo</em> e preencha no Excel ou no Google Planilhas, com as colunas <strong>nome</strong>, <strong>email</strong>, <strong>telefone</strong> e <strong>nascimento</strong> (datas como 15/03/1980)${features('datas_especiais') ? '. Se quiser, acrescente <strong>casamento</strong> e <strong>batismo</strong>' : ''}.</p>
        <p>Salve como <strong>CSV</strong> e escolha o arquivo. O app mostra uma prévia antes de gravar: as linhas com erro são explicadas, e quem já tem o e-mail cadastrado é pulado.</p>`,
     ],
     ...(features('agenda')
@@ -901,6 +915,14 @@ function helpTopics() {
           `<p>Em <a href="#/config/aniversario">Menu &gt; Mensagem de aniversário</a>, escreva o título e o texto. Toque nos campos para colocar no texto: <code>{nome}</code>, <code>{primeiro_nome}</code>, <code>{igreja}</code> e <code>{idade}</code>. A prévia mostra como fica. Para alegrar, toque nos emojis embaixo (🎂 🎉 🙏…) ou use os do teclado do celular.</p>
            <p>A mensagem sai às 7h (horário de Brasília). Quem nasceu em 29/02 recebe em 28/02 nos anos que não são bissextos. Você pode pôr uma imagem e ligar o <strong>resumo para a liderança</strong> (aniversariantes do dia e, às segundas, os da semana).</p>
            <p>Ela vai por notificação no celular (para quem ativou), fica na central do app e vai por e-mail para quem tem e-mail no cadastro.</p>`,
+        ]]
+      : []),
+    ...(features('datas_especiais')
+      ? [[
+          'Aniversário de casamento e de batismo',
+          `<p>A secretaria (ou o próprio membro, em <em>Meu cadastro</em>) preenche a <strong>data de casamento</strong> e a <strong>data de batismo</strong>. No aniversário dessas datas, às 7h, a pessoa recebe a mensagem da igreja, do mesmo jeito que no aniversário: notificação, central do app e e-mail.</p>
+           <p>Os textos ficam em <a href="#/config/casamento">Menu &gt; Mensagem de casamento</a> e <a href="#/config/batismo">Menu &gt; Mensagem de batismo</a>. Use <code>{anos}</code> para o tempo que a pessoa completa (vira "1 ano", "10 anos"). No casamento, cada cônjuge recebe a sua mensagem.</p>
+           <p>As datas também entram no resumo da liderança e na lista do mês. Os e-mails dividem o limite diário com os aniversários: o que passar sai no dia seguinte.</p>`,
         ]]
       : []),
     [
@@ -974,6 +996,23 @@ async function disablePushIfNoChurches() {
   if (!state.memberships.length) await disablePush(sb).catch(() => {});
 }
 
+// Datas de casamento e batismo (com a funcionalidade "datas_especiais" ligada).
+function specialDateFields(m) {
+  if (!featureOn('datas_especiais')) return '';
+  return `
+      <label>Data de casamento<input name="wedding_date" type="date" min="1900-01-01" value="${esc(m.wedding_date || '')}"></label>
+      <label>Data de batismo<input name="baptism_date" type="date" min="1900-01-01" value="${esc(m.baptism_date || '')}"></label>`;
+}
+
+function specialDatesPatch(form, withConsent = false) {
+  if (!form.wedding_date) return {};
+  return {
+    wedding_date: form.wedding_date.value || null,
+    baptism_date: form.baptism_date.value || null,
+    ...(withConsent ? { show_wedding: form.show_wedding.checked, show_baptism: form.show_baptism.checked } : {}),
+  };
+}
+
 // ---------------------------------------------------------------------
 // Meu cadastro: o membro edita os próprios dados e as autorizações
 // ---------------------------------------------------------------------
@@ -993,10 +1032,17 @@ async function viewProfile(ctx) {
       <label>Nome<input name="name" required minlength="2" maxlength="120" value="${esc(m.name)}"></label>
       <label>Telefone com DDD<input name="phone" type="tel" inputmode="tel" placeholder="(61) 99999-9999" value="${esc(fmtPhone(m.phone))}"></label>
       <label>Data de nascimento<input name="birth_date" type="date" min="1900-01-01" value="${esc(m.birth_date || '')}"></label>
+      ${specialDateFields(m)}
       <fieldset class="card">
         <legend>O que os outros membros veem</legend>
         <p class="hint">A liderança da igreja sempre vê os seus dados. Os outros membros veem só o seu nome, a não ser que você autorize:</p>
         <label class="check"><input type="checkbox" name="show_birthday" ${m.show_birthday ? 'checked' : ''}> Meu aniversário (dia e mês, nunca o ano)</label>
+        ${
+          featureOn('datas_especiais')
+            ? `<label class="check"><input type="checkbox" name="show_wedding" ${m.show_wedding ? 'checked' : ''}> Meu aniversário de casamento (dia e mês)</label>
+               <label class="check"><input type="checkbox" name="show_baptism" ${m.show_baptism ? 'checked' : ''}> Meu aniversário de batismo (dia e mês)</label>`
+            : ''
+        }
         <label class="check"><input type="checkbox" name="show_phone" ${m.show_phone ? 'checked' : ''}> Meu telefone</label>
       </fieldset>
       <button class="btn primary big">Salvar</button>
@@ -1018,6 +1064,7 @@ async function viewProfile(ctx) {
         birth_date: form.birth_date.value || null,
         show_birthday: form.show_birthday.checked,
         show_phone: form.show_phone.checked,
+        ...specialDatesPatch(form, true),
       };
       if (photo.file) patch.photo_path = await uploadMemberPhoto(m.church_id, m.id, photo.file);
       else if (photo.removed && m.photo_path) {
@@ -1200,7 +1247,7 @@ function accountStatus(m) {
   return { cls: '', label: 'Sem e-mail' };
 }
 
-const MEMBER_COLUMNS = 'id, church_id, name, email, phone, birth_date, role, status, user_id, consent_at, photo_path, show_birthday, show_phone';
+const MEMBER_COLUMNS = 'id, church_id, name, email, phone, birth_date, role, status, user_id, consent_at, photo_path, show_birthday, show_phone, wedding_date, baptism_date, show_wedding, show_baptism';
 
 async function viewMembers(ctx) {
   if (!requireLeader('/membros')) return;
@@ -1322,6 +1369,7 @@ async function viewMemberForm(ctx, id) {
       </label>
       <label>Telefone com DDD<input name="phone" type="tel" inputmode="tel" placeholder="(61) 99999-9999" value="${esc(fmtPhone(m.phone))}"></label>
       <label>Data de nascimento<input name="birth_date" type="date" min="1900-01-01" value="${esc(m.birth_date || '')}"></label>
+      ${specialDateFields(m)}
       <label>Papel na igreja
         <select name="role" ${admin ? '' : 'disabled'}>
           ${Object.entries(ROLES).map(([k, label]) => `<option value="${k}" ${m.role === k ? 'selected' : ''}>${label}</option>`).join('')}
@@ -1337,7 +1385,7 @@ async function viewMemberForm(ctx, id) {
                 <option value="inativo" ${m.status === 'inativo' ? 'selected' : ''}>Inativo (não acessa o app)</option>
               </select>
             </label>
-            <p class="hint">Autorizações do membro: aniversário ${m.show_birthday ? 'visível' : 'oculto'} e telefone ${m.show_phone ? 'visível' : 'oculto'} para os outros membros.</p>`
+            <p class="hint">Autorizações do membro: aniversário ${m.show_birthday ? 'visível' : 'oculto'}${featureOn('datas_especiais') ? `, casamento ${m.show_wedding ? 'visível' : 'oculto'}, batismo ${m.show_baptism ? 'visível' : 'oculto'}` : ''} e telefone ${m.show_phone ? 'visível' : 'oculto'} para os outros membros.</p>`
       }
       <button class="btn primary big">${isNew ? 'Cadastrar' : 'Salvar'}</button>
       ${admin && linked ? '<button type="button" class="btn" id="unlink">Desligar a conta do app</button>' : ''}
@@ -1360,7 +1408,7 @@ async function viewMemberForm(ctx, id) {
     const memberId = isNew ? crypto.randomUUID() : m.id;
     let uploaded = false;
     try {
-      const row = { name: form.name.value.trim(), phone, birth_date: form.birth_date.value || null };
+      const row = { name: form.name.value.trim(), phone, birth_date: form.birth_date.value || null, ...specialDatesPatch(form) };
       if (!linked) row.email = email;
       if (admin) row.role = form.role.value;
       if (!isNew) row.status = form.status.value;
@@ -1446,7 +1494,7 @@ async function viewImport(ctx) {
       <a href="#/membros" class="back">← Membros</a>
       <h1>Importar planilha</h1>
       <div class="card">
-        <p>Use uma planilha com as colunas <strong>nome</strong>, <strong>email</strong>, <strong>telefone</strong> e <strong>nascimento</strong> na primeira linha. Só o nome é obrigatório.</p>
+        <p>Use uma planilha com as colunas <strong>nome</strong>, <strong>email</strong>, <strong>telefone</strong> e <strong>nascimento</strong>${featureOn('datas_especiais') ? ' (e, se quiser, <strong>casamento</strong> e <strong>batismo</strong>)' : ''} na primeira linha. Só o nome é obrigatório.</p>
         <p class="hint">No Excel ou no Google Planilhas, salve como <strong>CSV</strong>. Datas como 15/03/1980. Quem já tem o e-mail cadastrado é pulado.</p>
         <div class="actions-row">
           <button class="btn small" id="template">Baixar modelo</button>
@@ -1470,6 +1518,7 @@ async function viewImport(ctx) {
     const ok = rows.filter((r) => !r.errors.length && !r.skip);
     const bad = rows.filter((r) => r.errors.length);
     const skipped = rows.filter((r) => !r.errors.length && r.skip);
+    const special = rows.some((r) => r.wedding_date || r.baptism_date);
     const tooMany = ok.length > Math.min(room, IMPORT_MAX);
 
     box.innerHTML = `
@@ -1480,7 +1529,7 @@ async function viewImport(ctx) {
         ${tooMany ? `<p class="hint warn">A igreja pode cadastrar mais ${Math.max(room, 0)} pessoa(s) no plano atual (e até ${IMPORT_MAX} por planilha).</p>` : ''}
         <div class="table-wrap">
           <table class="preview-table">
-            <thead><tr><th>Linha</th><th>Situação</th><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Nascimento</th></tr></thead>
+            <thead><tr><th>Linha</th><th>Situação</th><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Nascimento</th>${special ? '<th>Casamento</th><th>Batismo</th>' : ''}</tr></thead>
             <tbody>
               ${rows
                 .slice(0, 300)
@@ -1490,6 +1539,7 @@ async function viewImport(ctx) {
                   <td>${r.line}</td><td>${esc(r.errors.join(', ') || r.skip || 'ok')}</td>
                   <td>${esc(r.name)}</td><td>${esc(r.email || '')}</td>
                   <td>${esc(fmtPhone(r.phone))}</td><td>${esc(fmtDate(r.birth_date))}</td>
+                  ${special ? `<td>${esc(fmtDate(r.wedding_date))}</td><td>${esc(fmtDate(r.baptism_date))}</td>` : ''}
                 </tr>`,
                 )
                 .join('')}
@@ -1520,6 +1570,8 @@ async function viewImport(ctx) {
             email: r.email,
             phone: r.phone,
             birth_date: r.birth_date,
+            ...(r.wedding_date ? { wedding_date: r.wedding_date } : {}),
+            ...(r.baptism_date ? { baptism_date: r.baptism_date } : {}),
           }));
           const { error: err } = await sb.from('members').insert(batch);
           if (err) throw err;
@@ -1556,7 +1608,7 @@ async function viewSettings(ctx) {
   $view.innerHTML = `
     <form id="settings" class="form page">
       <h1>Configurar a igreja</h1>
-      ${featureOn('aniversarios') ? `<a class="menu-row" href="#/config/aniversario">${icon.cake}<span>Mensagem de aniversário</span>${icon.chevron}</a>` : ''}
+      ${messageLinks()}
 
       <fieldset class="card">
         <legend>Aparência</legend>
@@ -2170,6 +2222,13 @@ const parseIso = (s) => {
   return new Date(y, m - 1, d);
 };
 
+// "faz 30 anos", "💍 Casamento · 10 anos", "🕊️ Batismo" (os anos só para a liderança).
+function celebrationNote(r, sep = '') {
+  if (r.kind === 'aniversario') return r.years ? `${sep}faz ${r.years} anos` : '';
+  const k = MESSAGE_KINDS[r.kind];
+  return `${sep}${k.emoji} ${k.label}${r.years ? ` · ${yearsText(r.years)}` : ''}`;
+}
+
 function dayLabel(iso) {
   const today = new Date();
   if (iso === isoLocal(today)) return 'Hoje';
@@ -2177,9 +2236,10 @@ function dayLabel(iso) {
   return parseIso(iso).toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'numeric' }).replace('.', '');
 }
 
-// A regra de quem aparece fica no banco: liderança vê todos (com a idade); membros, só quem autorizou.
+// A regra de quem aparece fica no banco: liderança vê todos (com a idade e os anos); membros, só quem autorizou.
+// Cada linha tem o tipo: aniversario, casamento ou batismo.
 async function fetchBirthdays(from, to) {
-  const { data, error } = await sb.rpc('birthdays_between', { p_church: state.church.id, p_from: from, p_to: to });
+  const { data, error } = await sb.rpc('celebrations_between', { p_church: state.church.id, p_from: from, p_to: to });
   if (error) throw error;
   return data;
 }
@@ -2202,7 +2262,7 @@ async function weekBirthdaysCard(el) {
             (r) => `
           <li class="${r.on_date === todayIso ? 'today' : ''}">
             ${avatar(r.name, r.photo_path && minis[miniOf(r.photo_path)])}
-            <span><strong>${esc(r.name)}</strong><small>${esc(dayLabel(r.on_date))}${r.age ? ` · ${r.age} anos` : ''}</small></span>
+            <span><strong>${esc(r.name)}</strong><small>${esc(dayLabel(r.on_date))}${celebrationNote(r, ' · ')}</small></span>
           </li>`,
           )
           .join('')}
@@ -2243,8 +2303,8 @@ async function viewBirthdays(ctx) {
       <h1 class="print-only">${esc(state.church.name)}: aniversariantes de ${MONTHS[m - 1]} de ${y}</h1>
       <p class="hint">${
         leader
-          ? `${rows.length} ${rows.length === 1 ? 'aniversariante' : 'aniversariantes'}. Como liderança, você vê todos os membros ativos.`
-          : 'Aparecem só os membros que autorizaram mostrar o aniversário.'
+          ? `${rows.length} ${rows.length === 1 ? 'data' : 'datas'}. Como liderança, você vê todos os membros ativos.`
+          : `Aparecem só os membros que autorizaram mostrar o aniversário${featureOn('datas_especiais') ? ', o casamento ou o batismo' : ''}.`
       }</p>
       ${
         rows.length
@@ -2258,7 +2318,7 @@ async function viewBirthdays(ctx) {
                   .map(
                     (r) => `
                   <li>${avatar(r.name, r.photo_path && minis[miniOf(r.photo_path)])}
-                    <span><strong>${esc(r.name)}</strong>${r.age ? `<small>faz ${r.age} anos</small>` : ''}</span></li>`,
+                    <span><strong>${esc(r.name)}</strong>${celebrationNote(r) ? `<small>${celebrationNote(r)}</small>` : ''}</span></li>`,
                   )
                   .join('')}
               </ul>
@@ -2272,7 +2332,7 @@ async function viewBirthdays(ctx) {
   document.getElementById('print').onclick = () => window.print();
 }
 
-const NOTIF_ICON = { aniversario: 'cake', resumo_lideres: 'cake', evento: 'calendar', aviso: 'megaphone', sistema: 'bell' };
+const NOTIF_ICON = { aniversario: 'cake', casamento: 'cake', batismo: 'cake', resumo_lideres: 'cake', evento: 'calendar', aviso: 'megaphone', sistema: 'bell' };
 
 function timeAgo(iso) {
   const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -2387,35 +2447,69 @@ async function pushInvite(el) {
   };
 }
 
-async function viewBirthdaySettings(ctx) {
-  if (!requireLogin('/config/aniversario')) return;
+// Textos da tela de cada mensagem.
+const MESSAGE_SCREEN = {
+  aniversario: {
+    intro: 'Vai às 7h (horário de Brasília) para quem faz aniversário. Quem nasceu em 29/02 recebe em 28/02 nos anos que não são bissextos.',
+    send: 'Enviar a mensagem de aniversário',
+    fields: MESSAGE_FIELDS,
+    fieldsHint: '{idade} é a idade que a pessoa completa.',
+    sample: (age) => `se fizesse ${age} anos hoje`,
+    age: 30,
+  },
+  casamento: {
+    intro: 'Vai às 7h (horário de Brasília) no aniversário de casamento, para quem tem a data de casamento no cadastro. Cada cônjuge recebe a sua mensagem.',
+    send: 'Enviar a mensagem de aniversário de casamento',
+    fields: SPECIAL_FIELDS,
+    fieldsHint: '{anos} vira "1 ano", "10 anos"…: quanto tempo de casamento a pessoa completa.',
+    sample: (n) => `se completasse ${yearsText(n)} de casamento hoje`,
+    age: 10,
+  },
+  batismo: {
+    intro: 'Vai às 7h (horário de Brasília) no aniversário de batismo, para quem tem a data de batismo no cadastro.',
+    send: 'Enviar a mensagem de aniversário de batismo',
+    fields: SPECIAL_FIELDS,
+    fieldsHint: '{anos} vira "1 ano", "10 anos"…: quanto tempo de batismo a pessoa completa.',
+    sample: (n) => `se completasse ${yearsText(n)} de batismo hoje`,
+    age: 5,
+  },
+};
+
+async function viewMessageSettings(ctx, kind) {
+  if (!requireLogin(`/config/${kind}`)) return;
   if (myRole() !== 'admin') {
     $view.innerHTML = `<div class="empty"><h2>Só para o administrador</h2><a class="btn" href="#/">Voltar</a></div>`;
     return;
   }
-  const { data, error } = await sb.from('message_templates').select('*').eq('church_id', state.church.id).in('kind', ['aniversario', 'resumo_lideres']);
+  const info = MESSAGE_KINDS[kind];
+  const screen = MESSAGE_SCREEN[kind];
+  if (!featureOn(info.feature)) {
+    $view.innerHTML = `<div class="empty"><h2>${esc(info.menu)}</h2><p>Ligue a funcionalidade em Configurar a igreja.</p><a class="btn" href="#/config">Configurar a igreja</a></div>`;
+    return;
+  }
+  const { data, error } = await sb.from('message_templates').select('*').eq('church_id', state.church.id).in('kind', [kind, 'resumo_lideres']);
   if (error) throw error;
   if (!ctx.alive()) return;
-  const t = data.find((r) => r.kind === 'aniversario');
+  const t = data.find((r) => r.kind === kind);
   const summary = data.find((r) => r.kind === 'resumo_lideres');
-  if (!t || !summary) throw new Error('Os modelos de mensagem não foram encontrados. Rode o supabase/004_aniversarios.sql.');
-  const sample = { name: myMember()?.name || 'Maria da Silva', church: state.church.name, age: 30 };
+  if (!t || !summary) throw new Error('Os modelos de mensagem não foram encontrados. Rode o supabase/008_datas_especiais.sql.');
+  const sample = { name: myMember()?.name || 'Maria da Silva', church: state.church.name, age: screen.age };
 
   $view.innerHTML = `
     <form id="bday" class="form page">
       <a href="#/menu" class="back">← Menu</a>
-      <h1>Mensagem de aniversário</h1>
-      <p class="hint">Vai às 7h (horário de Brasília) para quem faz aniversário. Quem nasceu em 29/02 recebe em 28/02 nos anos que não são bissextos.</p>
-      <label class="check"><input type="checkbox" name="enabled" ${t.enabled ? 'checked' : ''}> Enviar a mensagem de aniversário</label>
+      <h1>${esc(info.menu)}</h1>
+      <p class="hint">${esc(screen.intro)}</p>
+      <label class="check"><input type="checkbox" name="enabled" ${t.enabled ? 'checked' : ''}> ${esc(screen.send)}</label>
 
       <fieldset class="card">
         <legend>Texto</legend>
         <label>Título<input name="title" required maxlength="120" value="${esc(t.title)}"></label>
         <label>Mensagem<textarea name="body" required rows="5" maxlength="1000">${esc(t.body)}</textarea></label>
         <div class="chips" aria-label="Campos para a mensagem">
-          ${MESSAGE_FIELDS.map((f) => `<button type="button" class="chip" data-field="${f}">{${f}}</button>`).join('')}
+          ${screen.fields.map((f) => `<button type="button" class="chip" data-field="${f}">{${f}}</button>`).join('')}
         </div>
-        <p class="hint">Toque num campo para colocá-lo no texto. {idade} é a idade que a pessoa completa.</p>
+        <p class="hint">Toque num campo para colocá-lo no texto. ${esc(screen.fieldsHint)}</p>
         <div class="chips emojis" aria-label="Emojis para a mensagem">
           ${MESSAGE_EMOJIS.map((em) => `<button type="button" class="chip" data-insert="${em}" aria-label="Colocar ${em}">${em}</button>`).join('')}
         </div>
@@ -2440,7 +2534,8 @@ async function viewBirthdaySettings(ctx) {
 
       <fieldset class="card">
         <legend>Liderança</legend>
-        <label class="check"><input type="checkbox" name="summary" ${summary.enabled ? 'checked' : ''}> Resumo para a liderança às 7h: aniversariantes do dia e, às segundas, os da semana</label>
+        <label class="check"><input type="checkbox" name="summary" ${summary.enabled ? 'checked' : ''}> Resumo para a liderança às 7h: as datas do dia (aniversários${featureOn('datas_especiais') ? ', casamentos e batismos' : ''}) e, às segundas, as da semana</label>
+        <p class="hint">O resumo é um só para todas as datas: ligar ou desligar aqui vale também nas outras mensagens.</p>
       </fieldset>
 
       <section class="card preview">
@@ -2449,7 +2544,7 @@ async function viewBirthdaySettings(ctx) {
           <img src="${esc(state.church.logo_url || 'icons/icon-192.png')}" alt="" width="36" height="36">
           <div><strong id="pv-title"></strong><p id="pv-body"></p></div>
         </div>
-        <p class="hint">Assim chega para ${esc(sample.name.split(' ')[0])}, se fizesse ${sample.age} anos hoje.</p>
+        <p class="hint">Assim chega para ${esc(sample.name.split(' ')[0])}, ${esc(screen.sample(sample.age))}.</p>
       </section>
 
       <button class="btn primary big">Salvar</button>
@@ -2510,14 +2605,14 @@ async function viewBirthdaySettings(ctx) {
       };
       if (imageFile) {
         const img = await resizeImage(imageFile, 1080, 0.82);
-        const path = `${state.church.id}/aniversario/imagem-${Date.now()}.${img.type === 'image/webp' ? 'webp' : 'jpg'}`;
+        const path = `${state.church.id}/${kind}/imagem-${Date.now()}.${img.type === 'image/webp' ? 'webp' : 'jpg'}`;
         const up = await bucket.upload(path, img, { contentType: img.type, cacheControl: '31536000' });
         if (up.error) throw up.error;
         patch.image_url = bucket.getPublicUrl(path).data.publicUrl;
       } else if (removeImage) patch.image_url = null;
 
       const save = (kind, p) => sb.from('message_templates').update(p).eq('church_id', state.church.id).eq('kind', kind).select('kind');
-      const [a, b] = await Promise.all([save('aniversario', patch), save('resumo_lideres', { enabled: form.summary.checked, updated_at: patch.updated_at })]);
+      const [a, b] = await Promise.all([save(kind, patch), save('resumo_lideres', { enabled: form.summary.checked, updated_at: patch.updated_at })]);
       for (const r of [a, b]) {
         if (r.error) throw r.error;
         if (!r.data.length) throw new Error('Você não tem permissão para mudar a mensagem.');

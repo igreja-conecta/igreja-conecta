@@ -75,11 +75,19 @@ test('importação de membros: colunas, erros e repetidos', async () => {
   ].join('\n');
   const { rows, error } = parseMembersCsv(csv, new Set(['ana@igreja.com']), new Date('2026-10-25'));
   expect(error).toBeUndefined();
-  expect(rows[0]).toEqual({ line: 2, name: 'Maria da Silva', email: 'maria@x.com', phone: '5561999990000', birth_date: '1980-03-15', errors: [], skip: null });
+  expect(rows[0]).toEqual({ line: 2, name: 'Maria da Silva', email: 'maria@x.com', phone: '5561999990000', birth_date: '1980-03-15', wedding_date: null, baptism_date: null, errors: [], skip: null });
   expect(rows[1].errors).toEqual(['nome inválido', 'e-mail inválido', 'telefone inválido', 'data de nascimento inválida']);
   expect(rows[2].skip).toBe('e-mail repetido na planilha');
   expect(rows[3].skip).toBe('já cadastrado');
   expect(parseMembersCsv('email;telefone\na@b.com;1').error).toMatch(/coluna "nome"/);
+});
+
+test('importação de membros com as datas de casamento e batismo', async () => {
+  const { parseMembersCsv } = await import('../js/util.js');
+  const csv = 'nome;nascimento;casamento;Data de Batismo\nAna Souza;15/03/1980;12/06/2005;20/06/1995\nBia;;31/02/2005;2030-01-01';
+  const { rows } = parseMembersCsv(csv, new Set(), new Date('2026-10-25'));
+  expect(rows[0]).toMatchObject({ birth_date: '1980-03-15', wedding_date: '2005-06-12', baptism_date: '1995-06-20', errors: [] });
+  expect(rows[1].errors).toEqual(['data de casamento inválida', 'data de batismo inválida']);
 });
 
 test('mensagem de aniversário com os campos da igreja', async () => {
@@ -88,6 +96,8 @@ test('mensagem de aniversário com os campos da igreja', async () => {
   expect(renderMessage('Feliz aniversário, {primeiro_nome}!', data)).toBe('Feliz aniversário, Maria!');
   expect(renderMessage('{nome} faz {idade} anos na {igreja}. {outro}', data)).toBe('Maria da Silva faz 40 anos na Igreja Exemplo. {outro}');
   expect(renderMessage('Parabéns {primeiro_nome} {idade}', { name: 'Ana', church: 'X' })).toBe('Parabéns Ana');
+  expect(renderMessage('Hoje você completa {anos} de casamento!', { ...data, age: 10 })).toBe('Hoje você completa 10 anos de casamento!');
+  expect(renderMessage('{anos} de batismo', { ...data, age: 1 })).toBe('1 ano de batismo');
   expect(joinNames(['Ana Souza'])).toBe('Ana');
   expect(joinNames(['Ana Souza', 'João', 'Maria Clara'])).toBe('Ana, João e Maria');
 });

@@ -314,7 +314,7 @@ test.describe('Aniversários (004)', () => {
 
   test('a mensagem de aniversário: só o admin da igreja edita; a outra igreja nem lê', async () => {
     const mine = await get('adm-a', `message_templates?select=kind,title&church_id=eq.${church.a}`);
-    expect(mine.map((r) => r.kind).sort()).toEqual(['aniversario', 'resumo_lideres']);
+    expect(mine.map((r) => r.kind).sort()).toEqual(['aniversario', 'batismo', 'casamento', 'resumo_lideres']);
     expect(await get('adm-b', `message_templates?select=kind&church_id=eq.${church.a}`)).toEqual([]);
     expect(await get('membro-a', `message_templates?select=kind&church_id=eq.${church.a}`)).toEqual([]);
     for (const who of ['adm-b', 'lider-a']) {
@@ -346,6 +346,60 @@ test.describe('Aniversários (004)', () => {
   test('as funções de envio não respondem sem a senha, nem para quem está logado', async () => {
     for (const fn of ['claim_birthday_push', 'claim_birthday_email', 'claim_leader_summaries', 'platform_push_targets', 'birthday_email_backlog', 'clean_message_log']) {
       expect((await rpc('adm-a', fn, { p_secret: 'errada' })).ok(), fn).toBe(false);
+    }
+  });
+});
+
+test.describe('Datas especiais: casamento e batismo (008)', () => {
+  const between = async (who, churchKey, from, to) => {
+    const res = await rpc(who, 'celebrations_between', { p_church: church[churchKey], p_from: from, p_to: to });
+    expect(res.ok(), `${who}: ${await res.text()}`).toBe(true);
+    return res.json();
+  };
+  const special = (rows) => rows.filter((r) => r.kind !== 'aniversario');
+
+  test('a liderança vê o casamento e o batismo, com os anos', async () => {
+    const rows = special(await between('lider-a', 'a', '2027-06-01', '2027-06-30'));
+    expect(rows).toEqual([
+      expect.objectContaining({ name: 'Casada da A', kind: 'casamento', on_date: '2027-06-12', years: 17 }),
+      expect.objectContaining({ name: 'Batizado da A', kind: 'batismo', on_date: '2027-06-20', years: 7 }),
+    ]);
+  });
+
+  test('o membro vê só a data que a pessoa autorizou, e sem os anos', async () => {
+    const rows = special(await between('membro-a', 'a', '2027-06-01', '2027-06-30'));
+    expect(rows).toEqual([expect.objectContaining({ name: 'Casada da A', kind: 'casamento', years: null })]);
+  });
+
+  test('no próprio ano da data ainda não é aniversário', async () => {
+    expect(special(await between('lider-a', 'a', '2010-06-01', '2010-06-30'))).toEqual([]);
+  });
+
+  test('a lista também traz os aniversários, como antes', async () => {
+    const rows = await between('lider-a', 'a', '2027-03-15', '2027-03-15');
+    expect(rows).toEqual([expect.objectContaining({ name: 'Fulano da A', kind: 'aniversario', years: 47 })]);
+  });
+
+  test('outra igreja e quem não é de nenhuma não veem as datas', async () => {
+    expect(await between('adm-b', 'a', '2027-06-01', '2027-06-30')).toEqual([]);
+    expect(await between('sem-igreja', 'a', '2027-06-01', '2027-06-30')).toEqual([]);
+    const res = await rpc('lider-a', 'celebrations_between', { p_church: church.a, p_from: '2027-01-01', p_to: '2027-12-31' });
+    expect(res.ok()).toBe(false);
+  });
+
+  test('o membro preenche as próprias datas e as autorizações', async () => {
+    const id = as['membro-a'].id;
+    const patch = (data) => api.patch(rest(`members?user_id=eq.${id}`), { headers: returning(as['membro-a'].headers), data });
+    const res = await patch({ wedding_date: '2001-05-05', baptism_date: '1999-09-09', show_wedding: true, show_baptism: true });
+    expect(res.ok(), await res.text()).toBe(true);
+    expect(await res.json()).toEqual([expect.objectContaining({ wedding_date: '2001-05-05', show_baptism: true })]);
+    const back = await patch({ wedding_date: null, baptism_date: null, show_wedding: false, show_baptism: false });
+    expect(back.ok()).toBe(true);
+  });
+
+  test('a lista de quem comemora hoje não é aberta pelo app', async () => {
+    for (const who of ['adm-a', 'sem-igreja']) {
+      expect((await rpc(who, 'celebration_candidates', { p_day: '2027-06-12' })).ok(), who).toBe(false);
     }
   });
 });
@@ -443,7 +497,9 @@ test.describe('Os próprios dados: exportar, sair e excluir (006)', () => {
     expect(data.igrejas).toHaveLength(1);
     expect(data.igrejas[0]).toMatchObject({ igreja: 'Igreja Teste A', papel: 'membro', cadastro: { nome: 'Membro da A' } });
     const text = JSON.stringify(data);
-    for (const other of ['Fulano', 'Bissexto', 'Admin da A', 'Teste B', '5561999990001']) expect(text, other).not.toContain(other);
+    for (const other of ['Fulano', 'Bissexto', 'Casada', 'Batizado', 'Admin da A', 'Teste B', '5561999990001']) expect(text, other).not.toContain(other);
+    expect(data.igrejas[0].cadastro).toHaveProperty('casamento');
+    expect(data.igrejas[0].cadastro).toHaveProperty('mostra_batismo_aos_membros');
   });
 
   test('o único administrador não sai da igreja nem exclui a conta', async () => {

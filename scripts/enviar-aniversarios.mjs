@@ -1,4 +1,4 @@
-// Envia as mensagens de aniversário do dia (push e e-mail) e o resumo para a liderança.
+// Envia as mensagens do dia (aniversário, casamento e batismo, por push e e-mail) e o resumo para a liderança.
 // Roda no GitHub Actions (.github/workflows/aniversarios.yml) às 7h de Brasília. Precisa de:
 //   ENVIO_SECRET e VAPID_PRIVATE_KEY (segredos do GitHub) e SITE_URL.
 // E-mail sai por um Gmail (variável GMAIL_USER + segredo GMAIL_APP_PASSWORD) ou, com domínio
@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs';
 import webpush from 'web-push';
 import nodemailer from 'nodemailer';
-import { renderMessage, joinNames, firstName, esc } from '../js/util.js';
+import { renderMessage, joinNames, firstName, yearsText, esc } from '../js/util.js';
 
 const config = readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
 const pick = (key) => config.match(new RegExp(`${key}:\\s*'([^']+)'`))?.[1];
@@ -116,7 +116,7 @@ for (const r of byLog(await rpc('claim_birthday_push'))) {
     title: renderMessage(r.title, data),
     body: renderMessage(r.body, data),
     url: churchUrl(r.church_slug, '#/'),
-    tag: `aniversario-${r.log_id}`,
+    tag: `${r.kind}-${r.log_id}`,
     icon: churchUrl(r.church_slug, 'icon-192.png'),
     image: r.image_url || undefined,
   };
@@ -177,17 +177,27 @@ gmail?.close();
 // ---------------------------------------------------------------------
 // 4. Resumo para a liderança
 // ---------------------------------------------------------------------
+const KIND_LABEL = { aniversario: 'aniversário', casamento: 'casamento', batismo: 'batismo' };
 const weekday = (iso) =>
   new Date(`${iso}T12:00:00-03:00`).toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'America/Sao_Paulo' }).replace('.', '');
 
 for (const r of byLog(await rpc('claim_leader_summaries'))) {
   const today = r.today_names || [];
+  const special = r.today_special || [];
   const week = r.week || [];
+  const onlyBirthdays = !special.length && week.every((w) => w.kind === 'aniversario');
   const parts = [];
-  if (today.length) parts.push(`Hoje: ${joinNames(today)}.`);
-  if (week.length) parts.push(`Nesta semana: ${week.map((w) => `${firstName(w.name)} (${weekday(w.date)})`).join(', ')}.`);
+  if (today.length) parts.push(`${onlyBirthdays ? 'Hoje' : 'Aniversário hoje'}: ${joinNames(today)}.`);
+  for (const kind of ['casamento', 'batismo']) {
+    const list = special.filter((x) => x.kind === kind);
+    if (list.length) parts.push(`${kind === 'casamento' ? 'Casamento' : 'Batismo'} hoje: ${list.map((x) => `${firstName(x.name)} (${yearsText(x.years)})`).join(', ')}.`);
+  }
+  const weekItem = (w) => `${firstName(w.name)} (${w.kind === 'aniversario' ? '' : `${KIND_LABEL[w.kind]}, `}${weekday(w.date)})`;
+  if (week.length) parts.push(`Nesta semana: ${week.map(weekItem).join(', ')}.`);
+  const anyToday = today.length || special.length;
+  const what = onlyBirthdays ? 'Aniversariantes' : 'Datas especiais';
   const msg = {
-    title: today.length ? `Aniversariantes de hoje na ${r.church_name}` : `Aniversariantes da semana na ${r.church_name}`,
+    title: anyToday ? `${what} de hoje na ${r.church_name}` : `${what} da semana na ${r.church_name}`,
     body: parts.join(' '),
     url: churchUrl(r.church_slug, '#/aniversariantes'),
     tag: `resumo-${r.church_slug}`,
@@ -203,7 +213,7 @@ for (const r of byLog(await rpc('claim_leader_summaries'))) {
 if (backlog > 0) {
   const msg = {
     title: 'Limite diário de e-mails atingido',
-    body: `${backlog} mensagem(ns) de aniversário ficaram para amanhã. O push saiu normalmente.`,
+    body: `${backlog} mensagem(ns) de aniversário, casamento ou batismo ficaram para amanhã. O push saiu normalmente.`,
     url: `${SITE_URL}/#/plataforma`,
     tag: 'limite-email',
   };
@@ -214,5 +224,5 @@ await rpc('clean_message_log');
 await rpc('clean_notifications');
 
 // Só números: nada de nome ou endereço de aparelho no registro público do GitHub.
-console.log(`Aniversários: ${inApp} na central do app, ${stats.push} push, ${stats.email} e-mail(s), ${backlog} e-mail(s) para amanhã, ${stats.gone} aparelho(s) removido(s), ${stats.failed} falha(s).`);
+console.log(`Aniversários e datas especiais: ${inApp} na central do app, ${stats.push} push, ${stats.email} e-mail(s), ${backlog} e-mail(s) para amanhã, ${stats.gone} aparelho(s) removido(s), ${stats.failed} falha(s).`);
 if (stats.failed && !stats.push && !stats.email) process.exit(1);
