@@ -1,7 +1,11 @@
 // Service worker: deixa o app abrir rápido e funcionar com internet ruim.
-// Arquivos do app: rede primeiro, cache como reserva. Dados do Supabase: sempre da rede.
-// Troque o nome do cache a cada versão publicada.
-const CACHE = 'igreja-conecta-v10';
+// Arquivos do app (SHELL): saem do aparelho na hora. Cada versão publicada tem um cache próprio,
+// baixado inteiro quando este arquivo muda, então nunca se misturam arquivos de versões diferentes.
+// Páginas das igrejas e ícones: do aparelho na hora, atualizados em segundo plano para a próxima vez.
+// Dados do Supabase: sempre da rede.
+// O build (scripts/build-site.mjs) acrescenta ao nome do cache um código do conteúdo do app:
+// qualquer mudança de código gera uma versão nova sozinha.
+const CACHE = 'igreja-conecta-v11';
 const ANDROID = /android/i.test(self.navigator.userAgent);
 const SHELL = [
   './',
@@ -16,9 +20,15 @@ const SHELL = [
   'manifest.webmanifest',
   'icons/icon-192.png',
 ];
+const SHELL_URLS = new Set(SHELL.map((u) => new URL(u, self.location).href));
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' pula o cache do navegador: a versão nova vem inteira do servidor.
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -51,17 +61,28 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // "no-cache" revalida com o servidor: uma versão nova publicada chega na hora.
+  // Arquivo do app desta versão: direto do aparelho.
+  if (SHELL_URLS.has(url.href.split('#')[0])) {
+    e.respondWith(caches.match(url.href.split('#')[0], { cacheName: CACHE }).then((hit) => hit || fetch(req)));
+    return;
+  }
+
+  // Resto (página da igreja, manifest, ícones): mostra o que tem e busca a versão nova para a próxima vez.
+  const fresh = fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }).then((res) => {
+    if (res.ok) {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(req.url, copy));
+    }
+    return res;
+  });
   e.respondWith(
-    fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
-      .then((res) => {
-        if (res.ok) {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
-        }
-        return res;
-      })
-      .catch(() => caches.match(req).then((hit) => hit || caches.match('./'))),
+    caches.match(req.url, { ignoreVary: true }).then((hit) => {
+      if (hit) {
+        e.waitUntil(fresh.catch(() => {}));
+        return hit;
+      }
+      return fresh.catch(() => caches.match('./'));
+    }),
   );
 });
 
