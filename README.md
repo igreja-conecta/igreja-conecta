@@ -72,10 +72,14 @@ Segredos do GitHub (**Settings > Secrets and variables > Actions**):
 |---|---|---|
 | `ENVIO_SECRET` | Segredo | Senha das funções de envio |
 | `VAPID_PRIVATE_KEY` | Segredo | Chave privada das notificações (a pública fica em `js/config.js`) |
-| `RESEND_API_KEY` | Segredo (opcional) | E-mail pelo Resend. Sem ele, só sai o push |
-| `EMAIL_FROM` | Variável (opcional) | Remetente, ex.: `aniversario@seudominio.com.br` (domínio verificado no Resend) |
+| `GMAIL_USER` | Variável (opcional) | Gmail que envia os e-mails, ex.: `aniversarios.suaigreja@gmail.com` |
+| `GMAIL_APP_PASSWORD` | Segredo (opcional) | Senha de app desse Gmail (não é a senha normal). Sem ela, só sai o push |
+| `RESEND_API_KEY` | Segredo (opcional) | Alternativa com domínio próprio: e-mail pelo Resend (o Gmail tem prioridade) |
+| `EMAIL_FROM` | Variável (opcional) | Remetente do Resend, ex.: `aniversario@seudominio.com.br` |
 
-O e-mail respeita o limite de 100 por dia para todas as igrejas juntas. O que passar fica para o dia seguinte (até 2 dias de atraso), e o administrador da plataforma recebe um aviso no celular.
+Para criar a senha de app: na conta Google do Gmail, ative a **Verificação em duas etapas** e abra https://myaccount.google.com/apppasswords. Depois de gravar os dois itens, teste em **Actions > Mensagens de aniversário > Run workflow**, marcando "Só mandar um e-mail de teste": chega um e-mail no próprio Gmail e nada vai para os membros. Os e-mails saem com o nome da igreja e o endereço do Gmail.
+
+O e-mail respeita o limite de 100 por dia para todas as igrejas juntas (o Gmail aceita uns 500). O que passar fica para o dia seguinte (até 2 dias de atraso), e o administrador da plataforma recebe um aviso no celular.
 
 ## Lembretes da agenda e avisos
 
@@ -100,5 +104,5 @@ Rodam também no GitHub Actions a cada mudança. A publicação só acontece se 
 | Supabase banco | 500 MB | Fotos ficam no Storage |
 | Supabase Storage | 1 GB | Logo em até 512 px; fotos reduzidas no celular |
 | Supabase sem uso | Pausa após 7 dias | O envio diário dos aniversários mantém acordado |
-| E-mail (Resend) | ~100/dia | O app controla o limite |
+| E-mail (Gmail) | ~500/dia | O app manda no máximo 100 |
 | GitHub Actions | Grátis em repositório público | Publicação a cada hora para atualizar ícones |
