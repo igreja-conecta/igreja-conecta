@@ -1461,9 +1461,13 @@ async function viewSettings(ctx) {
         <legend>Aparência</legend>
         <label>Nome da igreja<input name="name" required minlength="2" maxlength="80" value="${esc(c.name)}"></label>
         <label>Nome curto (embaixo do ícone no celular)<input name="short_name" maxlength="20" value="${esc(c.short_name || '')}" placeholder="${esc(c.name.slice(0, 20))}"></label>
+        <p class="hint">É o nome que aparece embaixo do ícone do app instalado. Deixe em branco para usar o começo do nome da igreja.</p>
         <div class="logo-picker">
-          <div class="icon-preview" id="icon-preview" style="background:${esc(c.icon_background)}">
-            <img id="logo-preview" src="${esc(c.logo_url || 'icons/icon-192.png')}" alt="">
+          <div class="icon-with-name">
+            <div class="icon-preview" id="icon-preview" style="background:${esc(c.icon_background)}">
+              <img id="logo-preview" src="${esc(c.logo_url || 'icons/icon-192.png')}" alt="">
+            </div>
+            <span id="icon-name" aria-label="Nome embaixo do ícone">${esc(c.short_name || c.name.slice(0, 20))}</span>
           </div>
           <div>
             <label class="btn small">Trocar a logo<input type="file" name="logo" accept="image/png,image/jpeg,image/webp" hidden></label>
@@ -1517,6 +1521,14 @@ async function viewSettings(ctx) {
   colorWarn();
   form.primary_color.addEventListener('input', colorWarn);
   form.icon_background.addEventListener('input', () => (document.getElementById('icon-preview').style.background = form.icon_background.value));
+  // Nome embaixo do ícone no celular: o nome curto, ou o começo do nome da igreja.
+  const iconName = () => {
+    const name = form.name.value.trim();
+    document.getElementById('icon-name').textContent = form.short_name.value.trim() || name.slice(0, 20);
+    form.short_name.placeholder = name.slice(0, 20);
+  };
+  form.name.addEventListener('input', iconName);
+  form.short_name.addEventListener('input', iconName);
   form.logo.addEventListener('change', () => {
     logoFile = form.logo.files[0] || null;
     if (logoFile) document.getElementById('logo-preview').src = URL.createObjectURL(logoFile);

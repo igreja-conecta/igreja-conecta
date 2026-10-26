@@ -59,3 +59,13 @@ test('o administrador vê tudo, com o endereço do app para divulgar', async ({ 
   await page.getByText('Divulgar o app para a igreja').click();
   await expect(page.locator('#app-url')).toHaveText(/\/i\/teste-a\/$/);
 });
+
+test('a configuração mostra o nome que vai embaixo do ícone do app', async ({ page }) => {
+  await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config');
+  const iconName = page.getByLabel('Nome embaixo do ícone');
+  await expect(iconName).toHaveText('Teste A');
+  await page.getByLabel('Nome curto (embaixo do ícone no celular)').fill('');
+  await expect(iconName).toHaveText('Igreja Teste A');
+  await page.getByLabel('Nome curto (embaixo do ícone no celular)').fill('Minha Igreja');
+  await expect(iconName).toHaveText('Minha Igreja');
+});
