@@ -3,7 +3,7 @@ import { CONFIG } from './config.js';
 import {
   esc, slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone,
   ROLES, isLeaderRole, FEATURES, fold, fmtDate, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
-  renderMessage, MESSAGE_FIELDS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
+  renderMessage, MESSAGE_FIELDS, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
 } from './util.js';
 import { resizeImage, resizeLogo, makeIconSet } from './images.js';
 import { maybeSuggestInstall, installState, installNow } from './install.js';
@@ -878,9 +878,9 @@ function helpTopics() {
     ...(features('aniversarios')
       ? [[
           'Mensagem de aniversário',
-          `<p>Em <a href="#/config/aniversario">Menu &gt; Mensagem de aniversário</a>, escreva o título e o texto. Toque nos campos para colocar no texto: <code>{nome}</code>, <code>{primeiro_nome}</code>, <code>{igreja}</code> e <code>{idade}</code>. A prévia mostra como fica.</p>
+          `<p>Em <a href="#/config/aniversario">Menu &gt; Mensagem de aniversário</a>, escreva o título e o texto. Toque nos campos para colocar no texto: <code>{nome}</code>, <code>{primeiro_nome}</code>, <code>{igreja}</code> e <code>{idade}</code>. A prévia mostra como fica. Para alegrar, toque nos emojis embaixo (🎂 🎉 🙏…) ou use os do teclado do celular.</p>
            <p>A mensagem sai às 7h (horário de Brasília). Quem nasceu em 29/02 recebe em 28/02 nos anos que não são bissextos. Você pode pôr uma imagem e ligar o <strong>resumo para a liderança</strong> (aniversariantes do dia e, às segundas, os da semana).</p>
-           <p>O envio por e-mail começa quando a plataforma ligar o provedor de e-mail. Até lá, vai a notificação e fica na central do app.</p>`,
+           <p>Ela vai por notificação no celular (para quem ativou), fica na central do app e vai por e-mail para quem tem e-mail no cadastro.</p>`,
         ]]
       : []),
     [
@@ -2205,6 +2205,10 @@ async function viewBirthdaySettings(ctx) {
           ${MESSAGE_FIELDS.map((f) => `<button type="button" class="chip" data-field="${f}">{${f}}</button>`).join('')}
         </div>
         <p class="hint">Toque num campo para colocá-lo no texto. {idade} é a idade que a pessoa completa.</p>
+        <div class="chips emojis" aria-label="Emojis para a mensagem">
+          ${MESSAGE_EMOJIS.map((em) => `<button type="button" class="chip" data-insert="${em}" aria-label="Colocar ${em}">${em}</button>`).join('')}
+        </div>
+        <p class="hint">Toque num emoji para colocá-lo onde está o cursor, no título ou na mensagem. Pelo teclado do celular dá para pôr qualquer outro.</p>
       </fieldset>
 
       <fieldset class="card">
@@ -2220,7 +2224,7 @@ async function viewBirthdaySettings(ctx) {
         <legend>Como enviar</legend>
         <label class="check"><input type="checkbox" name="send_push" ${t.send_push ? 'checked' : ''}> Notificação no celular (para quem ativou)</label>
         <label class="check"><input type="checkbox" name="send_email" ${t.send_email ? 'checked' : ''}> E-mail</label>
-        <p class="hint">O e-mail começa a sair quando a plataforma ligar o provedor de e-mail. Até lá, só a notificação.</p>
+        <p class="hint">O e-mail vai para quem tem e-mail no cadastro, mesmo sem ter entrado no app.</p>
       </fieldset>
 
       <fieldset class="card">
@@ -2253,10 +2257,10 @@ async function viewBirthdaySettings(ctx) {
   form.body.addEventListener('input', preview);
   form.title.addEventListener('focus', () => (lastField = form.title));
   form.body.addEventListener('focus', () => (lastField = form.body));
-  form.querySelectorAll('[data-field]').forEach((b) => {
+  form.querySelectorAll('[data-field], [data-insert]').forEach((b) => {
     b.onclick = () => {
       const el = lastField;
-      const text = `{${b.dataset.field}}`;
+      const text = b.dataset.insert ?? `{${b.dataset.field}}`;
       const [s, e] = [el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length];
       el.value = el.value.slice(0, s) + text + el.value.slice(e);
       el.focus();

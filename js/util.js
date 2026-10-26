@@ -207,6 +207,9 @@ export const firstName = (name) => String(name ?? '').trim().split(/\s+/)[0] || 
 // Campos da mensagem de aniversário: {nome}, {primeiro_nome}, {igreja}, {idade}.
 export const MESSAGE_FIELDS = ['nome', 'primeiro_nome', 'igreja', 'idade'];
 
+// Atalhos na tela da mensagem; o teclado do celular também põe qualquer outro emoji.
+export const MESSAGE_EMOJIS = ['🎂', '🎉', '🎈', '🎁', '🥳', '🙏', '🙌', '❤️', '😊', '✨', '🌟', '🌷', '🕊️', '✝️', '📖', '🎶'];
+
 export function renderMessage(template, { name, church, age }) {
   const values = { nome: name, primeiro_nome: firstName(name), igreja: church, idade: age ?? '' };
   return String(template ?? '')
