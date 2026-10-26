@@ -41,4 +41,10 @@ test('o admin vê a prévia da mensagem com os campos trocados', async ({ page }
   await expect(page.locator('#pv-title')).toHaveText('Parabéns, Admin');
   await page.getByRole('textbox', { name: 'Mensagem', exact: true }).fill('{igreja} deseja feliz {idade} anos!');
   await expect(page.locator('#pv-body')).toHaveText('Igreja Teste A deseja feliz 30 anos!');
+  // Emoji entra onde está o cursor (aqui, no fim da mensagem).
+  await page.getByRole('button', { name: 'Colocar 🎂' }).click();
+  await expect(page.locator('#pv-body')).toHaveText('Igreja Teste A deseja feliz 30 anos!🎂');
+  await page.getByLabel('Título').focus();
+  await page.getByRole('button', { name: 'Colocar 🎉' }).click();
+  await expect(page.locator('#pv-title')).toHaveText('Parabéns, Admin🎉');
 });
