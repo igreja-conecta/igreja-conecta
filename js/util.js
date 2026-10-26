@@ -73,23 +73,23 @@ export const ROLES = {
 };
 export const isLeaderRole = (role) => ['admin', 'secretaria', 'lider'].includes(role);
 
-// Funcionalidades que cada igreja liga ou desliga. "phase" > 1: ainda não disponível.
+// Funcionalidades que cada igreja liga ou desliga. "soon": ainda não disponível.
 export const FEATURES = [
   { key: 'aniversarios', label: 'Aniversariantes', phase: 1 },
   { key: 'agenda', label: 'Agenda de cultos e eventos', phase: 1 },
   { key: 'avisos', label: 'Mural de avisos', phase: 1 },
-  { key: 'datas_especiais', label: 'Aniversário de casamento e batismo', phase: 2 },
-  { key: 'oracao', label: 'Pedidos de oração', phase: 2 },
-  { key: 'escalas', label: 'Escalas de ministérios', phase: 2 },
+  { key: 'datas_especiais', label: 'Aniversário de casamento e batismo', phase: 2, soon: true },
+  { key: 'oracao', label: 'Pedidos de oração', phase: 2, soon: true },
+  { key: 'escalas', label: 'Escalas de ministérios', phase: 2, soon: true },
   { key: 'pix', label: 'Dízimos e ofertas por Pix', phase: 2 },
-  { key: 'visitantes', label: 'Cadastro de visitantes', phase: 2 },
-  { key: 'celulas', label: 'Células e pequenos grupos', phase: 3 },
-  { key: 'inscricoes', label: 'Inscrições em eventos', phase: 3 },
-  { key: 'infantil', label: 'Check-in do ministério infantil', phase: 3 },
-  { key: 'carteirinha', label: 'Carteirinha digital', phase: 3 },
-  { key: 'relatorios', label: 'Relatórios', phase: 3 },
-  { key: 'galeria', label: 'Galeria de fotos', phase: 3 },
-  { key: 'devocional', label: 'Devocional e plano de leitura', phase: 3 },
+  { key: 'visitantes', label: 'Cadastro de visitantes', phase: 2, soon: true },
+  { key: 'celulas', label: 'Células e pequenos grupos', phase: 3, soon: true },
+  { key: 'inscricoes', label: 'Inscrições em eventos', phase: 3, soon: true },
+  { key: 'infantil', label: 'Check-in do ministério infantil', phase: 3, soon: true },
+  { key: 'carteirinha', label: 'Carteirinha digital', phase: 3, soon: true },
+  { key: 'relatorios', label: 'Relatórios', phase: 3, soon: true },
+  { key: 'galeria', label: 'Galeria de fotos', phase: 3, soon: true },
+  { key: 'devocional', label: 'Devocional e plano de leitura', phase: 3, soon: true },
 ];
 
 // Texto sem acentos e em minúsculas, para buscas e nomes de colunas.

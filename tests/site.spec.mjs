@@ -69,3 +69,44 @@ test('textos da igreja não viram código na tela', async ({ page }) => {
   await expect(page.locator('.church-hero p')).toContainText('<img');
   expect(await page.evaluate(() => window.__xss)).toBeUndefined();
 });
+
+// Dízimos e ofertas: a Teste A ganha (só nesta aba do navegador) a funcionalidade e uma chave Pix.
+test('dízimos e ofertas: QR Code e código Pix, mesmo sem entrar', async ({ page }) => {
+  const key = '123e4567-e12b-12d1-a456-426655440000';
+  await page.route('**/rest/v1/churches?*', async (route) => {
+    const res = await route.fetch();
+    const data = await res.json();
+    const pix = (r) => ({ ...r, pix_key: key, pix_name: 'Igreja Teste A', city: 'Brasília', features: { ...r.features, pix: true } });
+    await route.fulfill({ response: res, json: Array.isArray(data) ? data.map(pix) : pix(data) });
+  });
+  await page.addInitScript(() => {
+    window.__copied = [];
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => window.__copied.push(t) } });
+  });
+  await page.goto('/i/teste-a/');
+  await page.getByRole('link', { name: 'Dízimos e ofertas' }).click();
+  await expect(page.getByRole('heading', { name: 'Dízimos e ofertas' })).toBeVisible();
+  await expect(page.locator('#offer-qr svg')).toBeVisible();
+  await expect(page.locator('.offer .key')).toHaveText(key);
+
+  await page.getByLabel('Valor (opcional)').fill('50,00');
+  await page.getByRole('button', { name: 'Copiar código Pix (copia e cola)' }).click();
+  await page.getByRole('button', { name: 'Copiar chave' }).click();
+  const [code, copiedKey] = await page.evaluate(() => window.__copied);
+  expect(code).toContain('br.gov.bcb.pix');
+  expect(code).toContain(key);
+  expect(code).toContain('540550.00');
+  expect(code).toContain('6008Brasilia');
+  expect(copiedKey).toBe(key);
+
+  await page.getByLabel('Valor (opcional)').fill('abc');
+  await expect(page.getByText('Valor inválido')).toBeVisible();
+});
+
+test('dízimos e ofertas some com a funcionalidade desligada', async ({ page }) => {
+  await page.goto('/i/teste-a/');
+  await expect(page.locator('.church-hero h1')).toHaveText('Igreja Teste A');
+  await expect(page.getByRole('link', { name: 'Dízimos e ofertas' })).toHaveCount(0);
+  await page.goto('/i/teste-a/#/ofertar');
+  await expect(page.getByText('A igreja ainda não informou uma chave Pix.')).toBeVisible();
+});

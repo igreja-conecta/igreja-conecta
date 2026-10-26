@@ -8,6 +8,7 @@ import {
 import { resizeImage, resizeLogo, makeIconSet } from './images.js';
 import { maybeSuggestInstall, installState, installNow, iconReady, ICON_PREPARING } from './install.js';
 import { pushSupport, pushActive, enablePush, disablePush, syncPush } from './push.js';
+import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg } from './pix.js';
 
 const $view = document.getElementById('view');
 const configured = !CONFIG.SUPABASE_ANON_KEY.includes('COLE-AQUI');
@@ -36,6 +37,8 @@ const myMember = () => state.memberships.find((m) => m.church.id === state.churc
 const isActiveMember = () => !!myMember()?.consent_at;
 const myRole = () => (isActiveMember() ? myMember().role : null);
 const featureOn = (key) => !!state.church?.features?.[key];
+// Tela de ofertas: funcionalidade ligada e chave Pix preenchida.
+const offerReady = () => featureOn('pix') && !!state.church?.pix_key;
 
 // ---------------------------------------------------------------------
 // Utilidades da tela
@@ -98,6 +101,7 @@ const icon = {
   help: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.1-2.4 3.6M12 17h.01"/></svg>',
   bell: '<svg viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
   print: '<svg viewBox="0 0 24 24"><path d="M7 9V3.5h10V9M7 17H4.5V9h15v8H17"/><path d="M7 14h10v6.5H7z"/></svg>',
+  pix: '<svg viewBox="0 0 24 24"><path d="M12 3.5 20.5 12 12 20.5 3.5 12z"/><path d="M8 12h8"/></svg>',
 };
 
 const SOCIAL = [
@@ -250,6 +254,7 @@ const churchRoutes = [
   [/^\/avisos$/, viewAnnouncements],
   [/^\/avisos\/novo$/, viewAnnouncementForm],
   [/^\/avisos\/([0-9a-f-]{36})\/editar$/, viewAnnouncementForm],
+  [/^\/ofertar$/, viewOffer],
 ];
 
 let renderId = 0;
@@ -566,6 +571,7 @@ async function viewChurchHome() {
         ${head}
         <a class="btn primary big" href="#/entrar">Entrar</a>
         <p class="hint center">Entre com o e-mail que você deu à secretaria da igreja.</p>
+        ${offerReady() ? `<a class="btn" href="#/ofertar">${icon.pix} Dízimos e ofertas</a>` : ''}
         ${aboutCard(c)}
       </div>`;
     return;
@@ -588,7 +594,8 @@ async function viewChurchHome() {
     ['agenda', icon.calendar, 'Agenda', '#/agenda'],
     ['avisos', icon.megaphone, 'Avisos', '#/avisos'],
     ['aniversarios', icon.cake, 'Aniversariantes', '#/aniversariantes'],
-  ].filter(([k]) => featureOn(k));
+    ['pix', icon.pix, 'Ofertar', '#/ofertar'],
+  ].filter(([k]) => (k === 'pix' ? offerReady() : featureOn(k)));
   $view.innerHTML = `
     <div class="page">
       ${head}
@@ -632,6 +639,7 @@ async function viewMenu() {
         ${admin ? `<a class="menu-row" href="#/config">${icon.gear}<span>Configurar a igreja</span>${icon.chevron}</a>` : ''}
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         ${featureOn('aniversarios') ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
+        ${offerReady() ? `<a class="menu-row" href="#/ofertar">${icon.pix}<span>Dízimos e ofertas</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações</span>${icon.chevron}</a>
         ${admin && featureOn('aniversarios') ? `<a class="menu-row" href="#/config/aniversario">${icon.cake}<span>Mensagem de aniversário</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/meus-dados">${icon.user}<span>Meus dados: baixar ou excluir</span>${icon.chevron}</a>
@@ -803,6 +811,13 @@ function helpTopics() {
            <p>O seu aniversário só aparece para os outros membros se você autorizar em <em>Meu cadastro</em>, e só o dia e o mês, nunca o ano. A liderança sempre vê.</p>`,
         ]]
       : []),
+    ...(offerReady()
+      ? [[
+          'Dízimos e ofertas',
+          `<p>Em <a href="#/ofertar">Dízimos e ofertas</a>, aponte a câmera do app do seu banco para o QR Code, ou toque em <em>Copiar código Pix</em> e cole em <em>Pix &gt; Copia e cola</em>. Se quiser, digite o valor antes: ele já vem preenchido no banco.</p>
+           <p>O dinheiro vai direto para a conta da igreja. O app não recebe, não processa e não guarda nada sobre a sua oferta. Confira o nome do recebedor no banco antes de confirmar.</p>`,
+        ]]
+      : []),
     [
       'Meu cadastro e privacidade',
       `<p>Em <a href="#/perfil">Menu &gt; Meu cadastro</a> você corrige o nome, o telefone, a data de nascimento e a foto, e escolhe se os outros membros veem o seu aniversário e o seu telefone. Para trocar o e-mail, fale com a secretaria.</p>
@@ -874,7 +889,8 @@ function helpTopics() {
        <ul class="bullets">
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos e os aniversariantes.</li>
+         <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -1580,12 +1596,28 @@ async function viewSettings(ctx) {
       </fieldset>
 
       <fieldset class="card">
+        <legend>${icon.pix} Dízimos e ofertas (Pix)</legend>
+        <p class="hint">Com a funcionalidade ligada, a tela <em>Dízimos e ofertas</em> mostra o QR Code e a chave da igreja. O dinheiro vai direto para a conta da igreja: o app não recebe nem registra pagamentos.</p>
+        <div class="pix-row">
+          <label>Tipo de chave
+            <select name="pix_type">
+              ${Object.entries(PIX_TYPES).map(([k, v]) => `<option value="${k}" ${k === (c.pix_key ? guessPixType(c.pix_key) : 'cpf') ? 'selected' : ''}>${v}</option>`).join('')}
+            </select>
+          </label>
+          <label>Chave Pix<input name="pix_key" maxlength="120" autocomplete="off" value="${esc(c.pix_key ? formatPixKey(c.pix_key) : '')}"></label>
+        </div>
+        <label>Nome do recebedor (como aparece no banco)<input name="pix_name" maxlength="25" value="${esc(c.pix_name || '')}" placeholder="${esc(c.name.slice(0, 25))}"></label>
+        <p class="hint">A chave fica visível para qualquer pessoa que abrir a página da igreja, mesmo sem entrar. Prefira o CNPJ ou uma chave aleatória da conta da igreja.</p>
+        <div class="notice warn-box" id="pix-cpf-warning" hidden><p>Se a chave for um <strong>CPF</strong>, ele fica público. Use o CPF de uma pessoa só se ela concordar.</p></div>
+      </fieldset>
+
+      <fieldset class="card">
         <legend>Funcionalidades</legend>
         ${FEATURES.map(
           (f) => `
-          <label class="check ${f.phase > 1 ? 'disabled' : ''}">
-            <input type="checkbox" name="feature_${f.key}" ${c.features?.[f.key] ? 'checked' : ''} ${f.phase > 1 ? 'disabled' : ''}>
-            ${esc(f.label)}${f.phase > 1 ? ` <small>(em breve)</small>` : ''}
+          <label class="check ${f.soon ? 'disabled' : ''}">
+            <input type="checkbox" name="feature_${f.key}" ${c.features?.[f.key] ? 'checked' : ''} ${f.soon ? 'disabled' : ''}>
+            ${esc(f.label)}${f.soon ? ` <small>(em breve)</small>` : ''}
           </label>`,
         ).join('')}
       </fieldset>
@@ -1614,6 +1646,13 @@ async function viewSettings(ctx) {
   };
   form.name.addEventListener('input', iconName);
   form.short_name.addEventListener('input', iconName);
+  const cpfWarn = () => {
+    const key = form.pix_key.value.trim();
+    document.getElementById('pix-cpf-warning').hidden = !(form.pix_type.value === 'cpf' && key.replace(/\D/g, '').length === 11);
+  };
+  cpfWarn();
+  form.pix_type.addEventListener('change', cpfWarn);
+  form.pix_key.addEventListener('input', cpfWarn);
   form.logo.addEventListener('change', () => {
     logoFile = form.logo.files[0] || null;
     if (logoFile) document.getElementById('logo-preview').src = URL.createObjectURL(logoFile);
@@ -1632,7 +1671,11 @@ async function viewSettings(ctx) {
         if (v) newSocial[k] = v;
       }
       const features = { ...(c.features || {}) };
-      for (const f of FEATURES) if (f.phase === 1) features[f.key] = form[`feature_${f.key}`].checked;
+      for (const f of FEATURES) if (!f.soon) features[f.key] = form[`feature_${f.key}`].checked;
+      const pixRaw = form.pix_key.value.trim();
+      const pix_key = pixRaw ? normalizePixKey(form.pix_type.value, pixRaw) : null;
+      if (pixRaw && !pix_key) throw new Error(`Chave Pix inválida para o tipo "${PIX_TYPES[form.pix_type.value]}".`);
+      if (features.pix && !pix_key) throw new Error('Para ligar Dízimos e ofertas, preencha a chave Pix da igreja.');
 
       const patch = {
         name: form.name.value.trim(),
@@ -1644,6 +1687,8 @@ async function viewSettings(ctx) {
         address: form.address.value.trim() || null,
         city: form.city.value.trim() || null,
         social: newSocial,
+        pix_key,
+        pix_name: pix_key ? form.pix_name.value.trim() || null : null,
         features,
         privacy_email: form.privacy_email.value.trim() || null,
         privacy_text: form.privacy_text.value.trim() || null,
@@ -1694,6 +1739,67 @@ async function viewSettings(ctx) {
       btn.textContent = 'Salvar';
     }
   });
+}
+
+// ---------------------------------------------------------------------
+// Dízimos e ofertas: QR Code e chave Pix da igreja. Aberta a todos, como a chave
+// na tabela de igrejas. O app não recebe nem registra pagamentos.
+// ---------------------------------------------------------------------
+async function viewOffer() {
+  const c = state.church;
+  if (!offerReady()) {
+    $view.innerHTML = `<div class="empty"><h2>Dízimos e ofertas</h2><p>A igreja ainda não informou uma chave Pix.</p><a class="btn" href="#/">Voltar</a></div>`;
+    return;
+  }
+  const receiver = c.pix_name || c.name;
+  $view.innerHTML = `
+    <div class="page offer">
+      <h1>Dízimos e ofertas</h1>
+      <p>Aponte a câmera do app do seu banco para o QR Code ou copie o código e cole em <strong>Pix &gt; Copia e cola</strong>.</p>
+      <label>Valor (opcional)<input id="offer-amount" inputmode="decimal" autocomplete="off" placeholder="R$ 0,00"></label>
+      <p class="hint warn" id="offer-amount-error" hidden>Valor inválido. Use, por exemplo, 50 ou 50,00.</p>
+      <div class="qr" id="offer-qr">Gerando QR Code…</div>
+      <button class="btn primary big" id="copy-code" type="button">Copiar código Pix (copia e cola)</button>
+      <section class="card">
+        <h2>Chave Pix</h2>
+        <p class="key"><strong>${esc(formatPixKey(c.pix_key))}</strong></p>
+        <button class="btn small" id="copy-key" type="button">Copiar chave</button>
+        <p class="hint">Recebedor: <strong>${esc(receiver)}</strong>. Confira o nome no app do banco antes de confirmar.</p>
+      </section>
+      <p class="hint">O dinheiro vai direto para a conta da igreja. O app não recebe, não processa e não registra nenhum pagamento.</p>
+    </div>`;
+
+  let code = '';
+  let drawId = 0;
+  const draw = async () => {
+    const amount = parseAmount(document.getElementById('offer-amount').value);
+    document.getElementById('offer-amount-error').hidden = amount !== null;
+    if (amount === null) return;
+    const id = ++drawId;
+    code = pixPayload({ key: c.pix_key, name: receiver, city: c.city || undefined, amount });
+    const box = document.getElementById('offer-qr');
+    try {
+      const svg = await qrSvg(code);
+      if (id === drawId && box) box.innerHTML = svg;
+    } catch (err) {
+      if (box) box.textContent = err.message;
+    }
+  };
+  const copy = async (text, done) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(done);
+    } catch {
+      prompt('Copie:', text);
+    }
+  };
+  document.getElementById('offer-amount').addEventListener('input', draw);
+  document.getElementById('copy-code').onclick = () => {
+    if (parseAmount(document.getElementById('offer-amount').value) === null) return toast('Confira o valor.', 'error');
+    copy(code, 'Código Pix copiado! Cole no app do seu banco, em Pix > Copia e cola.');
+  };
+  document.getElementById('copy-key').onclick = () => copy(c.pix_key, 'Chave Pix copiada.');
+  await draw();
 }
 
 // ---------------------------------------------------------------------
