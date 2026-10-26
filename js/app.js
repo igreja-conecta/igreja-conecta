@@ -332,6 +332,7 @@ async function viewLogin(ctx) {
 }
 
 async function signOut() {
+  clearBootCache();
   await sb.auth.signOut({ scope: 'local' });
   await setUser(null);
   navigate('/');
@@ -733,6 +734,7 @@ async function viewMyData() {
       await disablePush(sb).catch(() => {});
       const { error } = await sb.rpc('delete_my_account');
       if (error) throw error;
+      clearBootCache();
       await sb.auth.signOut({ scope: 'local' });
       alert('Sua conta foi excluída.');
       location.href = ROOT_URL;
@@ -1595,6 +1597,7 @@ async function viewSettings(ctx) {
       if (logoFile && oldPath) await sb.storage.from('igrejas').remove([decodeURIComponent(oldPath)]);
 
       state.church = saved;
+      saveBootCache();
       applyBranding();
       toast(
         saved.branding_version > c.branding_version
@@ -2351,6 +2354,50 @@ async function loadChurch() {
   return data;
 }
 
+// Abertura rápida: guarda no aparelho a igreja e os cadastros da última abertura. Na próxima,
+// a tela aparece na hora com eles, e o banco confirma em segundo plano (se algo mudou, redesenha).
+// Só vale para a mesma conta que está logada neste aparelho; as permissões continuam no banco.
+const BOOT_KEY = 'abertura-rapida';
+const AUTH_KEY = `sb-${new URL(CONFIG.SUPABASE_URL).hostname.split('.')[0]}-auth-token`;
+const bootSnapshot = () =>
+  JSON.stringify({ church: state.church, user: state.user?.id ?? null, memberships: state.memberships, platformAdmin: state.platformAdmin });
+
+function saveBootCache() {
+  if (!SLUG || !state.church) return;
+  try {
+    localStorage.setItem(BOOT_KEY, JSON.stringify({ slug: SLUG, snapshot: bootSnapshot() }));
+  } catch {}
+}
+
+function clearBootCache() {
+  try {
+    localStorage.removeItem(BOOT_KEY);
+  } catch {}
+}
+
+// Desenha a tela com o que ficou guardado. Devolve o retrato usado, ou null se não deu.
+function quickStart() {
+  if (!SLUG || location.search || sessionStorage.getItem('next')) return null;
+  try {
+    const saved = JSON.parse(localStorage.getItem(BOOT_KEY) || 'null');
+    const sessionUser = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null')?.user ?? null;
+    if (!saved || saved.slug !== SLUG) return null;
+    const snap = JSON.parse(saved.snapshot);
+    if (snap.user !== (sessionUser?.id ?? null) || !snap.church) return null;
+    state.church = snap.church;
+    state.user = sessionUser;
+    state.memberships = snap.memberships || [];
+    state.platformAdmin = !!snap.platformAdmin;
+  } catch {
+    return null;
+  }
+  applyBranding();
+  renderAccountLink();
+  window.addEventListener('hashchange', render);
+  render();
+  return bootSnapshot();
+}
+
 async function boot() {
   if (!configured) {
     $view.innerHTML = `
@@ -2361,12 +2408,16 @@ async function boot() {
     return;
   }
 
+  const quick = (quickStarted = quickStart());
   const authError = new URLSearchParams(location.search).get('error_description');
   const [{ data }, church] = await Promise.all([sb.auth.getSession(), SLUG ? loadChurch() : null]);
   if (location.search) history.replaceState(null, '', location.pathname + location.hash);
   if (authError) toast(authError, 'error');
 
   if (SLUG && !church) {
+    clearBootCache();
+    state.church = null;
+    renderTabbar('/');
     applyBranding();
     $view.innerHTML = `<div class="empty"><h2>Igreja não encontrada</h2><p>Confira o endereço com a liderança da sua igreja.</p><a class="btn" href="${esc(ROOT_URL)}">Ir para o início</a></div>`;
     return;
@@ -2381,6 +2432,7 @@ async function boot() {
     // Evita chamar o Supabase dentro do callback de autenticação.
     setTimeout(async () => {
       await setUser(session?.user ?? null);
+      saveBootCache();
       render();
     }, 0);
   });
@@ -2391,8 +2443,13 @@ async function boot() {
     history.replaceState(null, '', location.pathname + '#' + next);
   }
 
-  window.addEventListener('hashchange', render);
-  render();
+  saveBootCache();
+  if (!quick) {
+    window.addEventListener('hashchange', render);
+    render();
+  } else if (bootSnapshot() !== quick) {
+    render(); // a igreja ou os cadastros mudaram desde a última abertura
+  }
 }
 
 // Nas páginas das igrejas o <base> aponta para a raiz do site, e o navegador resolveria
@@ -2405,7 +2462,10 @@ document.addEventListener('click', (e) => {
 });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+let quickStarted = null;
 boot().catch((e) => {
   console.error(e);
+  // Já está na tela com o que ficou guardado (ex.: sem internet): só avisa.
+  if (quickStarted) return toast(errorText(e), 'error');
   $view.innerHTML = `<div class="empty"><h2>Não foi possível abrir o app</h2><p>${esc(errorText(e))}</p><button class="btn primary" onclick="location.reload()">Tentar de novo</button></div>`;
 });

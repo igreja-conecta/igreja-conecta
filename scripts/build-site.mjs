@@ -2,7 +2,8 @@
 // com manifest, ícones e título próprios: assim o app instalado na tela inicial
 // aparece com o nome e a logo da igreja.
 // Uso: SITE_URL=https://usuario.github.io/repositorio/ node scripts/build-site.mjs
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { SUPABASE_URL, supabaseConfigured, fetchPublicChurches } from './igrejas-publicas.mjs';
 import { inkOn } from '../js/util.js';
 
@@ -14,6 +15,16 @@ rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT);
 for (const p of STATIC) cpSync(p, `${OUT}/${p}`, { recursive: true });
 writeFileSync(`${OUT}/.nojekyll`, '');
+
+// O service worker guarda os arquivos do app no aparelho por versão. Um código tirado do conteúdo
+// deles entra no nome do cache: mudou o código, os celulares baixam a versão nova sozinhos.
+const appFiles = ['index.html', 'manifest.webmanifest', 'sw.js', 'css/style.css', ...readdirSync('js').map((f) => `js/${f}`)];
+const hash = createHash('sha256');
+for (const f of appFiles) hash.update(readFileSync(f));
+const sw = readFileSync(`${OUT}/sw.js`, 'utf8');
+const stamped = sw.replace(/const CACHE = '([^']+)';/, (_, name) => `const CACHE = '${name}-${hash.digest('hex').slice(0, 10)}';`);
+if (stamped === sw) throw new Error('sw.js sem a linha "const CACHE = ...".');
+writeFileSync(`${OUT}/sw.js`, stamped);
 
 if (!supabaseConfigured) {
   console.log('Supabase ainda não configurado em js/config.js; pulando as pastas das igrejas.');
