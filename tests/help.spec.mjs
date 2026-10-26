@@ -36,6 +36,23 @@ test('a líder vê também os tópicos da liderança', async ({ page }) => {
   await expect(page.getByText('Importar uma planilha de membros')).toBeVisible();
 });
 
+test('não oferece instalar enquanto a página da igreja não tem o ícone atual', async ({ page }) => {
+  // A Teste A nunca ganha pasta própria: a página não traz a versão do ícone.
+  await openLoggedIn(page, accounts['membro-a'].session, '/i/teste-a/#/ajuda');
+  await page.getByText('Instalar o app no celular').click();
+  await expect(page.locator('#help-install')).toContainText('O ícone novo da igreja está sendo preparado');
+
+  // Página publicada com o ícone atual (como build-site.mjs gera): o aviso some.
+  await page.route('**/i/teste-a/', async (route) => {
+    const res = await route.fetch();
+    const html = (await res.text()).replace('<head>', '<head><meta name="icone-versao" content="999">');
+    await route.fulfill({ response: res, body: html });
+  });
+  await page.reload();
+  await page.getByText('Instalar o app no celular').click();
+  await expect(page.locator('#help-install')).not.toContainText('sendo preparado');
+});
+
 test('o administrador vê tudo, com o endereço do app para divulgar', async ({ page }) => {
   await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/ajuda');
   await expect(page.getByRole('heading', { name: 'Para o administrador' })).toBeVisible();
