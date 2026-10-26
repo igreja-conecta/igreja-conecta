@@ -2,7 +2,7 @@ name: Lembretes da agenda e avisos
 
 on:
   schedule:
-    # A cada 10 minutos. O GitHub às vezes atrasa alguns minutos.
+    # A cada 10 minutos (reserva: quem chama na hora certa é o relógio do Supabase, 007_relogio.sql).
     - cron: '*/10 * * * *'
   workflow_dispatch:
 
