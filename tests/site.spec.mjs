@@ -10,15 +10,16 @@ test('início convida a entrar', async ({ page }) => {
   await expect(page.locator('.hero').getByRole('link', { name: 'Entrar' })).toBeVisible();
 });
 
+// A Igreja Teste A nunca ganha pasta própria (igrejas de teste ficam fora da publicação), e o nome dela não muda.
 test('página da igreja mostra o nome dela, mesmo antes de ganhar a pasta própria', async ({ page }) => {
-  await page.goto('/i/exemplo/');
-  await expect(page.locator('.church-hero h1')).toHaveText('Igreja Exemplo');
-  await expect(page.locator('#app-name')).toHaveText('Igreja Exemplo');
-  await expect(page).toHaveTitle('Igreja Exemplo');
+  await page.goto('/i/teste-a/');
+  await expect(page.locator('.church-hero h1')).toHaveText('Igreja Teste A');
+  await expect(page.locator('#app-name')).toHaveText('Igreja Teste A');
+  await expect(page).toHaveTitle('Igreja Teste A');
   await page.locator('.page').getByRole('link', { name: 'Entrar' }).click();
   // O link continua dentro da igreja (o <base> da página aponta para a raiz do site).
-  await expect(page).toHaveURL(/\/i\/exemplo\/#\/entrar$/);
-  await expect(page.locator('#app-name')).toHaveText('Igreja Exemplo');
+  await expect(page).toHaveURL(/\/i\/teste-a\/#\/entrar$/);
+  await expect(page.locator('#app-name')).toHaveText('Igreja Teste A');
   await expect(page.getByRole('button', { name: 'Receber link de acesso' })).toBeVisible();
 });
 

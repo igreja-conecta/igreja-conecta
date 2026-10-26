@@ -28,6 +28,10 @@ test.describe('Banco: visitante sem login', () => {
   });
 
   test('não cria, não altera e não apaga igrejas', async ({ request }) => {
+    // O administrador pode renomear a Igreja Exemplo; o que importa é o visitante não conseguir.
+    const nameNow = async () => (await (await request.get(rest('churches?select=name&slug=eq.exemplo'), { headers })).json())[0]?.name;
+    const before = await nameNow();
+    expect(before).toBeTruthy();
     const created = await request.post(rest('churches'), { headers, data: { slug: 'invasora', name: 'Invasora' } });
     expect(created.ok()).toBe(false);
     const write = { headers: { ...headers, Prefer: 'return=representation' } };
@@ -35,8 +39,7 @@ test.describe('Banco: visitante sem login', () => {
     if (changed.ok()) expect(await changed.json()).toEqual([]);
     const removed = await request.delete(rest('churches?slug=eq.exemplo'), write);
     if (removed.ok()) expect(await removed.json()).toEqual([]);
-    const still = await (await request.get(rest('churches?select=name&slug=eq.exemplo'), { headers })).json();
-    expect(still[0]?.name).toBe('Igreja Exemplo');
+    expect(await nameNow()).toBe(before);
   });
 
   test('não cadastra membros', async ({ request }) => {
