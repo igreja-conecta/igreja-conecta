@@ -6,7 +6,7 @@ import {
   renderMessage, MESSAGE_FIELDS, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
 } from './util.js';
 import { resizeImage, resizeLogo, makeIconSet } from './images.js';
-import { maybeSuggestInstall, installState, installNow } from './install.js';
+import { maybeSuggestInstall, installState, installNow, iconReady, ICON_PREPARING } from './install.js';
 import { pushSupport, pushActive, enablePush, disablePush, syncPush } from './push.js';
 
 const $view = document.getElementById('view');
@@ -760,6 +760,7 @@ function helpTopics() {
          <li><strong>iPhone (Safari):</strong> toque em Compartilhar (o quadrado com a seta) e em <em>Adicionar à Tela de Início</em>.</li>
        </ul>
        <p>Depois, abra sempre pelo ícone.</p>
+       <p>Se a igreja trocou o ícone depois que você instalou: no <strong>iPhone</strong>, o ícone não muda sozinho; apague o app da tela inicial e instale de novo. No <strong>Android</strong>, ele costuma se atualizar sozinho em alguns dias, ou na hora se você desinstalar e instalar de novo.</p>
        <div id="help-install"></div>`,
     ],
     [
@@ -873,7 +874,7 @@ function helpTopics() {
          <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos e os aniversariantes.</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
-       <p>O nome e o ícone do app instalado mudam na próxima publicação do site (em até uma hora). Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
+       <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
     ],
     ...(features('aniversarios')
       ? [[
@@ -930,7 +931,9 @@ async function viewHelp() {
   installBox.innerHTML =
     st === 'instalado'
       ? '<p class="ok">✓ Você já está usando o app instalado.</p>'
-      : st === 'android' || st === 'iphone'
+      : !iconReady(state.church)
+        ? `<p class="notice">${ICON_PREPARING}</p>`
+        : st === 'android' || st === 'iphone'
         ? '<button class="btn primary small" id="install-now" type="button">Instalar agora</button>'
         : '';
   document.getElementById('install-now')?.addEventListener('click', async () => {
@@ -1505,7 +1508,7 @@ async function viewSettings(ctx) {
       </fieldset>
 
       <button class="btn primary big">Salvar</button>
-      <p class="hint">O nome e o ícone do app instalado na tela inicial mudam na próxima publicação do site (em até uma hora). Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>
+      <p class="hint">O nome e o ícone do app instalado na tela inicial mudam em até 15 minutos. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>
     </form>`;
 
   const form = document.getElementById('settings');
@@ -1581,7 +1584,11 @@ async function viewSettings(ctx) {
 
       state.church = saved;
       applyBranding();
-      toast('Configuração salva.');
+      toast(
+        saved.branding_version > c.branding_version
+          ? 'Pronto! Em até 15 minutos o app passa a instalar com o ícone novo.'
+          : 'Configuração salva.',
+      );
       render();
     } catch (err) {
       toast(errorText(err), 'error');

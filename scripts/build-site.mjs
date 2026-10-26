@@ -3,6 +3,7 @@
 // aparece com o nome e a logo da igreja.
 // Uso: SITE_URL=https://usuario.github.io/repositorio/ node scripts/build-site.mjs
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { SUPABASE_URL, supabaseConfigured, fetchPublicChurches } from './igrejas-publicas.mjs';
 
 const OUT = '_site';
 const STATIC = ['index.html', '404.html', 'privacidade.html', 'termos.html', 'manifest.webmanifest', 'sw.js', 'css', 'js', 'icons'];
@@ -13,27 +14,22 @@ mkdirSync(OUT);
 for (const p of STATIC) cpSync(p, `${OUT}/${p}`, { recursive: true });
 writeFileSync(`${OUT}/.nojekyll`, '');
 
-const config = readFileSync('js/config.js', 'utf8');
-const pick = (key) => config.match(new RegExp(`${key}:\\s*'([^']+)'`))?.[1];
-const SUPABASE_URL = pick('SUPABASE_URL');
-const SUPABASE_ANON_KEY = pick('SUPABASE_ANON_KEY');
-
-if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes('COLE-AQUI')) {
+if (!supabaseConfigured) {
   console.log('Supabase ainda não configurado em js/config.js; pulando as pastas das igrejas.');
   process.exit(0);
 }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-const res = await fetch(
-  `${SUPABASE_URL}/rest/v1/churches?select=id,slug,name,short_name,primary_color,welcome_text,branding_version&active=eq.true&is_test=eq.false&order=slug`,
-  { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } },
-);
-if (!res.ok) {
-  console.error('Falha ao ler as igrejas do Supabase:', res.status, await res.text());
+let churches;
+try {
+  churches = await fetchPublicChurches();
+} catch (err) {
+  console.error(err.message);
   process.exit(0); // publica o site mesmo assim (as igrejas abrem pelo 404.html, sem ícone próprio)
 }
-const churches = await res.json();
+// O que foi publicado: scripts/igrejas-mudaram.mjs compara com o banco para saber se precisa publicar de novo.
+writeFileSync(`${OUT}/igrejas.json`, JSON.stringify(churches));
 const shell = readFileSync('index.html', 'utf8');
 
 for (const c of churches) {
@@ -44,7 +40,8 @@ for (const c of churches) {
   // Ícones gerados pelo admin em Configurar a igreja; sem eles, os padrão do app.
   let own = 0;
   for (const name of ICONS) {
-    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/public/igrejas/${c.id}/icons/${name}`);
+    // ?v= passa por cima do cache do Storage, que ainda pode ter o ícone anterior.
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/public/igrejas/${c.id}/icons/${name}?v=${v}`);
     if (r.ok) {
       writeFileSync(`${dir}/${name}`, Buffer.from(await r.arrayBuffer()));
       own++;
@@ -80,12 +77,13 @@ for (const c of churches) {
   );
 
   // Mesmo app da raiz; o <base> faz os arquivos (css, js) virem de lá.
+  // icone-versao: o app compara com a igreja para não oferecer instalar com o ícone antigo (js/install.js).
   const page = shell
-    .replace('<!-- igreja -->', '<base href="../../">')
+    .replace('<!-- igreja -->', `<base href="../../">\n  <meta name="icone-versao" content="${v}">`)
     .replace(/<title>[^<]*<\/title>/, `<title>${esc(c.name)}</title>`)
     .replace(/(<meta name="description" content=")[^"]*"/, `$1${esc(c.welcome_text || `App da ${c.name}`)}"`)
     .replace(/(<meta name="theme-color" content=")[^"]*"/, `$1${esc(c.primary_color)}"`)
-    .replace('href="manifest.webmanifest"', `href="i/${c.slug}/manifest.webmanifest"`)
+    .replace('href="manifest.webmanifest"', `href="i/${c.slug}/manifest.webmanifest?v=${v}"`)
     .replace('href="icons/icon-192.png"', `href="i/${c.slug}/icon-192.png?v=${v}"`)
     .replace('href="icons/apple-touch-icon.png"', `href="i/${c.slug}/apple-touch-icon.png?v=${v}"`)
     .replace(/(<meta name="apple-mobile-web-app-title" content=")[^"]*"/, `$1${esc(short)}"`);

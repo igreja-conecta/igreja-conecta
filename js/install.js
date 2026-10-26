@@ -24,6 +24,16 @@ function write(key, value) {
   } catch {}
 }
 
+// A página da igreja vem com a versão do ícone com que foi publicada (scripts/build-site.mjs).
+// Se o administrador trocou o ícone depois, o celular instalaria com o antigo: espera a próxima
+// publicação (o GitHub confere a cada 10 minutos). Igreja nova, ainda sem pasta, também espera.
+export function iconReady(church) {
+  const built = Number(document.querySelector('meta[name="icone-versao"]')?.content || 0);
+  return !!church && built >= (church.branding_version || 1);
+}
+export const ICON_PREPARING =
+  'O ícone novo da igreja está sendo preparado. Em até 15 minutos fica pronto para instalar: depois disso, abra esta página de novo.';
+
 // Para a tela de Ajuda: 'instalado' | 'android' (o navegador oferece instalar) | 'iphone' | 'manual'.
 export function installState() {
   if (isStandalone()) return 'instalado';
@@ -45,7 +55,7 @@ export async function installNow() {
 }
 
 export function maybeSuggestInstall(church) {
-  if (!church || isStandalone()) return;
+  if (!church || isStandalone() || !iconReady(church)) return;
   if (Date.now() - readNumber('install-dismissed') < 14 * 24 * 3600 * 1000) return;
   if (!deferredPrompt && !isIOS()) return;
   if (document.querySelector('.install-banner')) return;

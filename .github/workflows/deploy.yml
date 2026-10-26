@@ -6,8 +6,8 @@ on:
   pull_request:
   workflow_dispatch:
   schedule:
-    # Atualiza nome e ícone das igrejas (pastas i/<igreja>/) que mudaram na configuração
-    - cron: '17 * * * *'
+    # Confere se o nome ou o ícone de alguma igreja (pastas i/<igreja>/) mudou; só publica se mudou.
+    - cron: '*/10 * * * *'
 
 permissions:
   contents: read
@@ -38,12 +38,30 @@ jobs:
           path: playwright-report
           retention-days: 14
 
+  # Agendado: compara as igrejas do site com as do banco (rápido, sem testes: o código não mudou).
+  check:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.compare.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - id: compare
+        run: node scripts/igrejas-mudaram.mjs
+        env:
+          SITE_URL: https://igreja-conecta.github.io/igreja-conecta
+
   # Publica só se os testes passaram (ou se foi só a atualização das igrejas, sem mudança de código).
   deploy:
-    needs: test
+    needs: [test, check]
     if: >-
       always() && github.event_name != 'pull_request' &&
-      (needs.test.result == 'success' || needs.test.result == 'skipped')
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (github.event_name != 'schedule' || needs.check.outputs.changed == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:

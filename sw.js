@@ -1,7 +1,8 @@
 // Service worker: deixa o app abrir rápido e funcionar com internet ruim.
 // Arquivos do app: rede primeiro, cache como reserva. Dados do Supabase: sempre da rede.
 // Troque o nome do cache a cada versão publicada.
-const CACHE = 'igreja-conecta-v8';
+const CACHE = 'igreja-conecta-v9';
+const ANDROID = /android/i.test(self.navigator.userAgent);
 const SHELL = [
   './',
   'index.html',
@@ -73,7 +74,8 @@ self.addEventListener('push', (e) => {
   e.waitUntil(
     self.registration.showNotification(msg.title || 'Igreja Conecta', {
       body: msg.body || '',
-      icon: msg.icon || 'icons/icon-192.png',
+      // No Android o ícone grande aparece à direita, repetindo a logo que já fica à esquerda.
+      icon: ANDROID ? undefined : msg.icon || 'icons/icon-192.png',
       badge: 'icons/badge-96.png',
       image: msg.image,
       tag: msg.tag,
