@@ -14,7 +14,7 @@ using public.churches c
 where m.church_id = c.id
   and c.is_test
   and coalesce(m.email, '') not like '%@teste.igrejaconecta.invalid'
-  and m.name not in ('Fulano da A', 'Fulano da B', 'Bissexto da A');
+  and m.name not in ('Fulano da A', 'Fulano da B', 'Bissexto da A', 'Casada da A', 'Batizado da A');
 
 update public.members m
 set role = v.role, status = 'ativo'
