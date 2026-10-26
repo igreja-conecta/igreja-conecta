@@ -4,6 +4,7 @@
 // Uso: SITE_URL=https://usuario.github.io/repositorio/ node scripts/build-site.mjs
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { SUPABASE_URL, supabaseConfigured, fetchPublicChurches } from './igrejas-publicas.mjs';
+import { inkOn } from '../js/util.js';
 
 const OUT = '_site';
 const STATIC = ['index.html', '404.html', 'privacidade.html', 'termos.html', 'manifest.webmanifest', 'sw.js', 'css', 'js', 'icons'];
@@ -86,7 +87,11 @@ for (const c of churches) {
     .replace('href="manifest.webmanifest"', `href="i/${c.slug}/manifest.webmanifest?v=${v}"`)
     .replace('href="icons/icon-192.png"', `href="i/${c.slug}/icon-192.png?v=${v}"`)
     .replace('href="icons/apple-touch-icon.png"', `href="i/${c.slug}/apple-touch-icon.png?v=${v}"`)
-    .replace(/(<meta name="apple-mobile-web-app-title" content=")[^"]*"/, `$1${esc(short)}"`);
+    .replace(/(<meta name="apple-mobile-web-app-title" content=")[^"]*"/, `$1${esc(short)}"`)
+    // Logo, nome e cor da igreja já no HTML: o app abre sem mostrar antes o ícone azul padrão.
+    .replace('id="brand-logo" src="icons/icon-192.png"', `id="brand-logo" src="${esc(c.logo_url || `i/${c.slug}/icon-192.png?v=${v}`)}"`)
+    .replace('<span id="app-name">Igreja Conecta</span>', `<span id="app-name">${esc(c.name)}</span>`)
+    .replace('</head>', `  <style>:root { --brand: ${c.primary_color}; --brand-ink: ${inkOn(c.primary_color)}; }</style>\n</head>`);
   writeFileSync(`${dir}/index.html`, page);
   console.log(`i/${c.slug}/ ${own === ICONS.length ? 'com ícones da igreja' : 'com ícones padrão'}`);
 }
