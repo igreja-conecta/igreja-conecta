@@ -2,7 +2,7 @@ name: Mensagens de aniversário
 
 on:
   schedule:
-    # 7h de Brasília (UTC-3). O GitHub às vezes atrasa alguns minutos.
+    # 7h de Brasília (UTC-3). Reserva: quem chama na hora certa é o relógio do Supabase (007_relogio.sql).
     # Rodar todo dia também mantém o projeto gratuito do Supabase acordado.
     - cron: '0 10 * * *'
   workflow_dispatch:

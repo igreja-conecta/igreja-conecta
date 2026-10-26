@@ -51,6 +51,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `004_aniversarios.sql` | Mensagem de aniversário por igreja, aparelhos com notificação, registro de envios (sem repetir), limite de 100 e-mails/dia, resumo da liderança, aniversariantes do mês |
 | `005_agenda_avisos.sql` | Agenda (eventos que podem repetir toda semana), mural de avisos, central de notificações, lembretes e avisos por push |
 | `006_privacidade.sql` | Exportar os próprios dados, sair de uma igreja e excluir a conta (com proteção do último administrador) |
+| `007_relogio.sql` | Relógio do Supabase: manda o GitHub rodar os lembretes (a cada 10 min) e os aniversários (7h) na hora certa, e publicar o site quando uma igreja muda nome ou ícone. Precisa do segredo `github_token` no Vault |
 
 ## Contas de teste
 
@@ -85,7 +86,21 @@ O e-mail respeita o limite de 100 por dia para todas as igrejas juntas (o Gmail 
 
 O GitHub Actions (`.github/workflows/lembretes.yml`) roda a cada 10 minutos e chama `scripts/enviar-lembretes.mjs`: manda o lembrete de cada evento no prazo escolhido (1 h, 2 h, 3 h ou 1 dia antes) e a notificação dos avisos publicados com "Mandar notificação". As notificações também ficam na central do app. Usa os mesmos segredos `ENVIO_SECRET` e `VAPID_PRIVATE_KEY`.
 
-Atenção: o GitHub desliga os agendamentos de um repositório público depois de 60 dias sem nenhum commit. Se isso acontecer, ele avisa por e-mail; é só reativar em **Actions**.
+### Relógio do Supabase
+
+O agendamento grátis do GitHub atrasa ou pula rodadas em horário de movimento. Por isso o Supabase (`supabase/007_relogio.sql`, com pg_cron) chama o GitHub na hora certa; o agendamento do GitHub fica como reserva, e os envios não se repetem.
+
+1. No GitHub, crie um token em **Settings > Developer settings > Personal access tokens > Fine-grained tokens**: dono `igreja-conecta`, só o repositório `igreja-conecta/igreja-conecta`, permissão **Actions: Read and write**. Validade de até 1 ano: anote a data para trocar.
+2. No Supabase, em **Integrations > Vault** (em versões antigas do painel, **Project Settings > Vault**), clique em **Add new secret**, com o nome `github_token` e o token como valor.
+3. Rode `supabase/007_relogio.sql` no SQL Editor.
+
+Para conferir se o GitHub aceitou as últimas chamadas (204 = deu certo):
+
+```sql
+select created, status_code, left(content, 120) from net._http_response order by created desc limit 5;
+```
+
+Atenção: o GitHub desliga os agendamentos de um repositório público depois de 60 dias sem nenhum commit. Se isso acontecer, ele avisa por e-mail; é só reativar em **Actions**. As chamadas do relógio do Supabase continuam funcionando.
 
 ## Testes
 

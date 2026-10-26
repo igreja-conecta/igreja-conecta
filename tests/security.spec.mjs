@@ -96,6 +96,15 @@ test.describe('Banco: visitante sem login (aniversários)', () => {
     }
     expect((await rpc(request, 'events_between', { p_church: UUID, p_from: '2027-01-01T00:00:00Z', p_to: '2027-01-31T00:00:00Z' })).ok()).toBe(false);
     for (const fn of ['export_my_data', 'delete_my_account']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
+    // O relógio (007) usa a chave do GitHub: nada dele pode ser chamado de fora.
+    for (const fn of ['github_dispatch', 'churches_publish']) {
+      expect((await rpc(request, fn, { p_workflow: 'deploy.yml' })).ok(), fn).toBe(false);
+    }
+    const privateSchema = await request.post(rest('rpc/github_dispatch'), {
+      headers: { ...headers, 'Content-Profile': 'private' },
+      data: { p_workflow: 'deploy.yml' },
+    });
+    expect(privateSchema.ok()).toBe(false);
     expect((await rpc(request, 'leave_church', { p_church: UUID })).ok()).toBe(false);
     for (const table of ['push_subscriptions', 'message_log', 'message_templates', 'events', 'announcements', 'notifications']) {
       const res = await request.get(rest(`${table}?select=*`), { headers });
