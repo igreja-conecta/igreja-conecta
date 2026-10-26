@@ -614,6 +614,7 @@ async function viewChurchHome() {
   if (featureOn('aniversarios')) weekBirthdaysCard(document.getElementById('week-birthdays')).catch(() => {});
   pushInvite(document.getElementById('push-invite')).catch(() => {});
   maybeSuggestInstall(c);
+  prefetchMembers();
 }
 
 async function viewMenu() {
@@ -1009,6 +1010,7 @@ async function viewProfile(ctx) {
       }
       const { error: err } = await sb.from('members').update(patch).eq('id', m.id);
       if (err) throw err;
+      forgetMembers();
       m.photo_path = patch.photo_path === undefined ? m.photo_path : patch.photo_path;
       photo.reset();
       toast('Cadastro salvo.');
@@ -1026,16 +1028,72 @@ async function viewProfile(ctx) {
 // ---------------------------------------------------------------------
 const miniOf = (path) => path.replace(/\/foto\.(\w+)$/, '/mini.$1');
 
+// Links das fotos (válidos por 1 hora) guardados em memória por 50 minutos: o mesmo link
+// deixa o navegador reaproveitar a foto já baixada, em vez de baixar tudo de novo.
+const photoLinks = new Map(); // caminho -> { url, until }
+
 async function signedPhotos(paths) {
-  if (!paths.length) return {};
-  const { data, error } = await sb.storage.from('membros').createSignedUrls(paths, 3600);
-  if (error) return {};
-  return Object.fromEntries(data.filter((d) => d.signedUrl).map((d) => [d.path, d.signedUrl]));
+  const now = Date.now();
+  const out = {};
+  const missing = [];
+  for (const p of paths) {
+    const hit = photoLinks.get(p);
+    if (hit && hit.until > now) out[p] = hit.url;
+    else missing.push(p);
+  }
+  if (!missing.length) return out;
+  const { data, error } = await sb.storage.from('membros').createSignedUrls(missing, 3600);
+  if (error) return out;
+  for (const d of data) {
+    if (!d.signedUrl) continue;
+    photoLinks.set(d.path, { url: d.signedUrl, until: now + 50 * 60 * 1000 });
+    out[d.path] = d.signedUrl;
+  }
+  return out;
+}
+
+// Lista de membros da última abertura da tela, em memória (some ao fechar o app).
+// Mostra na hora ao voltar para a lista; o banco confirma em seguida.
+const membersCache = new Map(); // igreja -> membros
+const forgetMembers = () => {
+  membersCache.delete(state.church?.id);
+  membersLoading.delete(state.church?.id);
+};
+
+// Uma busca por vez: quem chega enquanto ela está a caminho aproveita a mesma resposta.
+const membersLoading = new Map(); // igreja -> busca em andamento
+function fetchMembers(churchId) {
+  if (!membersLoading.has(churchId)) {
+    const p = (async () => {
+      const { data, error } = await sb.from('members').select(MEMBER_COLUMNS).eq('church_id', churchId).order('name');
+      if (error) throw error;
+      if (membersLoading.get(churchId) === p) membersCache.set(churchId, data); // não foi descartada por uma mudança
+      return data;
+    })().finally(() => {
+      if (membersLoading.get(churchId) === p) membersLoading.delete(churchId);
+    });
+    membersLoading.set(churchId, p);
+  }
+  return membersLoading.get(churchId);
+}
+
+// No Início, a liderança já busca a lista em segundo plano: a tela Membros abre na hora.
+function prefetchMembers() {
+  const id = state.church?.id;
+  if (!id || !isLeaderRole(myRole()) || membersCache.has(id)) return;
+  setTimeout(
+    () =>
+      fetchMembers(id)
+        .then((ms) => signedPhotos(ms.filter((m) => m.photo_path).map((m) => miniOf(m.photo_path))))
+        .catch(() => {}),
+    300,
+  );
 }
 
 async function removeMemberPhotos(churchId, memberId) {
   const bucket = sb.storage.from('membros');
   const dir = `${churchId}/${memberId}`;
+  for (const p of photoLinks.keys()) if (p.startsWith(`${dir}/`)) photoLinks.delete(p);
   const { data } = await bucket.list(dir);
   if (data?.length) {
     const { error } = await bucket.remove(data.map((f) => `${dir}/${f.name}`));
@@ -1130,10 +1188,22 @@ const MEMBER_COLUMNS = 'id, church_id, name, email, phone, birth_date, role, sta
 
 async function viewMembers(ctx) {
   if (!requireLeader('/membros')) return;
-  const { data: members, error } = await sb.from('members').select(MEMBER_COLUMNS).eq('church_id', state.church.id).order('name');
-  if (error) throw error;
-  const minis = await signedPhotos(members.filter((m) => m.photo_path).map((m) => miniOf(m.photo_path)));
+  const churchId = state.church.id;
+  let members = membersCache.get(churchId);
+  const fresh = fetchMembers(churchId);
+  if (!members) {
+    $view.innerHTML = '<div class="page"><h1>Membros</h1><div class="loading">Carregando…</div></div>';
+    members = await fresh;
+  } else {
+    fresh.catch(() => {}); // a lista guardada já está na tela; a nova chega em seguida
+  }
   if (!ctx.alive()) return;
+  // As fotos chegam depois da lista: até lá, as iniciais.
+  let minis = {};
+  const loadPhotos = async () => {
+    minis = await signedPhotos(members.filter((m) => m.photo_path).map((m) => miniOf(m.photo_path)));
+    if (ctx.alive()) draw();
+  };
 
   const filter = ctx.params.get('ver') || 'ativo';
   $view.innerHTML = `
@@ -1185,6 +1255,15 @@ async function viewMembers(ctx) {
   };
   q.addEventListener('input', draw);
   draw();
+  loadPhotos().catch(() => {});
+
+  // Lista guardada na tela: confere com o banco e redesenha se mudou.
+  const latest = await fresh.catch(() => null);
+  if (latest && ctx.alive() && JSON.stringify(latest) !== JSON.stringify(members)) {
+    members = latest;
+    draw();
+    loadPhotos().catch(() => {});
+  }
 }
 
 async function viewMemberForm(ctx, id) {
@@ -1280,6 +1359,7 @@ async function viewMemberForm(ctx, id) {
         ? await sb.from('members').insert({ ...row, id: memberId, church_id: state.church.id })
         : await sb.from('members').update(row).eq('id', m.id);
       if (error) throw error;
+      forgetMembers();
       toast(isNew ? 'Membro cadastrado.' : 'Cadastro salvo.');
       // Mudou o próprio papel ou a própria situação: recarrega o que a pessoa pode ver.
       if (m.user_id === state.user.id) await loadMemberships();
@@ -1295,6 +1375,7 @@ async function viewMemberForm(ctx, id) {
     if (!confirm(`Desligar a conta de ${m.name} do app? O cadastro continua, mas a pessoa perde o acesso até entrar de novo e aceitar o convite.`)) return;
     const { error } = await sb.rpc('unlink_member_account', { p_member: m.id });
     if (error) return toast(errorText(error), 'error');
+    forgetMembers();
     toast('Conta desligada.');
     render();
   });
@@ -1306,6 +1387,7 @@ async function viewMemberForm(ctx, id) {
       const { data, error } = await sb.from('members').delete().eq('id', m.id).select('id');
       if (error) throw error;
       if (!data.length) throw new Error('Você não tem permissão para excluir este cadastro.');
+      forgetMembers();
       toast('Cadastro excluído.');
       navigate('/membros');
     } catch (err) {
@@ -1425,6 +1507,7 @@ async function viewImport(ctx) {
           }));
           const { error: err } = await sb.from('members').insert(batch);
           if (err) throw err;
+          forgetMembers();
           done += batch.length;
           btn.textContent = `Importando… ${done} de ${ok.length}`;
         }
