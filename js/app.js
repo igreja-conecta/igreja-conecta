@@ -1216,6 +1216,7 @@ function helpTopics() {
                 : 'Você escreve para um pastor, um líder ou a secretaria.'
           } O número no ícone mostra as conversas com mensagem nova.</p>
            <p><strong>Só as duas pessoas leem a conversa</strong>: nem a liderança da igreja nem o administrador do app. Se alguém incomodar, toque em ⋯ para <em>Bloquear</em> ou <em>Denunciar</em> (o administrador da igreja recebe os nomes e o motivo, nunca as mensagens).</p>
+           <p>Com as notificações ativadas, chega um aviso no celular a cada mensagem nova. O aviso mostra só quem escreveu, nunca o texto (a tela do celular bloqueado pode ser vista por outras pessoas).</p>
            <p>Não quer receber mensagens? Desligue <em>Receber mensagens pelo chat</em> em <a href="#/perfil">Meu cadastro</a>.</p>`,
         ]]
       : []),

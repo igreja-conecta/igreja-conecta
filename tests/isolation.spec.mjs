@@ -1,6 +1,7 @@
 // Separação entre igrejas, testada com contas de verdade nas igrejas Teste A e Teste B.
 // Cada tentativa de ler ou mexer na outra igreja (ou de passar do próprio papel) precisa falhar.
 // Contas: supabase/002_igrejas_de_teste.sql + supabase/usuarios-de-teste.local.sql.
+import { readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
 import { SUPABASE_URL, ANON_KEY, rest, configured, testPassword, loginAs, assertCleanTestChurches } from './helpers.mjs';
 
@@ -1744,5 +1745,44 @@ test.describe('Chat (021)', () => {
     expect((await rpc('sem-igreja', 'leave_church', { p_church: church.a })).ok()).toBe(true);
     ids.temp = null;
     for (const c of before) expect(await get('lider-a', `conversations?select=id&id=eq.${c.id}`)).toEqual([]);
+  });
+});
+
+test.describe('Notificação do chat (022)', () => {
+  // Senha de envio: segredo ENVIO_SECRET no GitHub; no computador, tests/envio-segredo.local.
+  const envioSecret = () => {
+    if (process.env.ENVIO_SECRET) return process.env.ENVIO_SECRET;
+    try {
+      return readFileSync(new URL('./envio-segredo.local', import.meta.url), 'utf8').trim();
+    } catch {
+      return null;
+    }
+  };
+  const tag = `aviso ${Date.now().toString(36)}`;
+  const targets = (who, secret, message) => rpc(who, 'message_push_targets', { p_secret: secret, p_message: message });
+
+  test('os aparelhos só saem com a senha de envio; cada mensagem é avisada uma vez; o texto não vai junto', async () => {
+    const [lider] = await get('lider-a', `members?select=id&user_id=eq.${as['lider-a'].id}`);
+    const conv = await (await rpc('membro-a', 'start_conversation', { p_church: church.a, p_member: lider.id })).json();
+    const sent = await api.post(rest('messages'), { headers: returning(as['membro-a'].headers), data: { conversation_id: conv, body: `Texto ${tag}` } });
+    expect(sent.ok(), await sent.text()).toBe(true);
+    const [msg] = await sent.json();
+    // Sem a senha, nem quem está logado nem quem não está consegue.
+    for (const who of ['membro-a', 'lider-a']) expect((await targets(who, 'errada', msg.id)).ok(), who).toBe(false);
+    const anon = await api.post(rest('rpc/message_push_targets'), {
+      headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
+      data: { p_secret: 'errada', p_message: msg.id },
+    });
+    expect(anon.ok()).toBe(false);
+
+    const secret = envioSecret();
+    test.skip(!secret, 'Sem a senha de envio neste computador (tests/envio-segredo.local).');
+    const first = await targets('membro-a', secret, msg.id);
+    expect(first.ok(), await first.text()).toBe(true);
+    const rows = await first.json();
+    expect(rows).toEqual([]); // igrejas de teste não mandam push
+    const [after] = await get('membro-a', `messages?select=pushed_at&id=eq.${msg.id}`);
+    expect(after.pushed_at).not.toBeNull(); // já avisada: chamar de novo não gera outro aviso
+    expect(await (await targets('membro-a', secret, msg.id)).json()).toEqual([]);
   });
 });

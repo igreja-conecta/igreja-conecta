@@ -66,6 +66,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `019_relatorios.sql` | Relatórios da liderança: membros (novos por mês, faixa etária, uso do app), visitantes e conversão, células, infantil, escalas, inscrições e participação, só totais, por período de até 400 dias |
 | `020_galeria.sql` | Galeria de fotos: álbuns só para os membros (pasta privada), publicam a liderança e o ministério marcado, limite de 300 fotos por igreja conferido no banco, arquivos até 400 KB (o app reduz no aparelho) e "pedir para tirar esta foto" |
 | `021_chat.sql` | Chat 1 a 1 dentro da igreja: membro com a liderança (e entre membros, se a igreja ligar), "receber mensagens", só as duas pessoas leem, bloquear e denunciar (sem as mensagens), limites por hora, tempo real pelo canal particular de cada pessoa |
+| `022_push_do_chat.sql` | Notificação do chat no celular na hora: o banco chama (pg_net) a Edge Function `enviar-push`, um aviso por mensagem, sem o texto da mensagem |
 
 ## Contas de teste
 
@@ -99,6 +100,10 @@ O e-mail respeita o limite de 100 por dia para todas as igrejas juntas, somando 
 ## Lembretes da agenda, avisos e inscrições
 
 O GitHub Actions (`.github/workflows/lembretes.yml`) roda a cada 10 minutos e chama `scripts/enviar-lembretes.mjs`: manda o lembrete de cada evento no prazo escolhido (1 h, 2 h, 3 h ou 1 dia antes) e a notificação dos avisos publicados com "Mandar notificação". As notificações também ficam na central do app. Também manda o e-mail de confirmação das inscrições em eventos, pelo mesmo Gmail dos aniversários. Usa os mesmos segredos `ENVIO_SECRET`, `VAPID_PRIVATE_KEY` e `GMAIL_APP_PASSWORD` (e a variável `GMAIL_USER`).
+
+### Notificações do chat (Edge Function)
+
+O aviso de mensagem nova sai na hora, sem esperar o GitHub: um gatilho do banco (`supabase/022_push_do_chat.sql`) chama a função `supabase/functions/enviar-push`, que avisa os aparelhos da outra pessoa. O workflow `.github/workflows/funcoes.yml` publica a função e grava nela os segredos que já existem (`VAPID_PRIVATE_KEY` e `ENVIO_SECRET`). Ele precisa de um segredo a mais no GitHub, `SUPABASE_ACCESS_TOKEN` (Supabase > Account preferences > Access Tokens). Sem ele, o chat funciona normalmente, só sem o aviso no celular.
 
 ### Relógio do Supabase
 

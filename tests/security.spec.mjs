@@ -299,3 +299,10 @@ test.describe('Banco: visitante sem login (chat)', () => {
     for (const fn of ['chat_message_guard', 'chat_message_after']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (notificação do chat)', () => {
+  test('não lê os aparelhos sem a senha de envio', async ({ request }) => {
+    expect((await rpc(request, 'message_push_targets', { p_secret: 'errada', p_message: UUID })).ok()).toBe(false);
+    expect((await rpc(request, 'chat_push_new_message')).ok()).toBe(false);
+  });
+});
