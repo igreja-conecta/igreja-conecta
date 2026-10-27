@@ -79,7 +79,7 @@ export const FEATURES = [
   { key: 'agenda', label: 'Agenda de cultos e eventos', phase: 1 },
   { key: 'avisos', label: 'Mural de avisos', phase: 1 },
   { key: 'datas_especiais', label: 'Aniversário de casamento e batismo', phase: 2 },
-  { key: 'oracao', label: 'Pedidos de oração', phase: 2, soon: true },
+  { key: 'oracao', label: 'Pedidos de oração', phase: 2 },
   { key: 'escalas', label: 'Escalas de ministérios', phase: 2, soon: true },
   { key: 'pix', label: 'Dízimos e ofertas por Pix', phase: 2 },
   { key: 'visitantes', label: 'Cadastro de visitantes', phase: 2, soon: true },

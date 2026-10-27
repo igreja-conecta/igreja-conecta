@@ -533,3 +533,131 @@ test.describe('Os próprios dados: exportar, sair e excluir (006)', () => {
     }
   });
 });
+
+test.describe('Pedidos de oração (009)', () => {
+  // Uma secretaria de verdade na Teste A (conta "sem-igreja", só durante estes testes):
+  // é da liderança, mas não é pastoral, então não lê os pedidos privados nem modera.
+  let secretary;
+  const tag = `oração ${Date.now().toString(36)}`;
+  const send = (who, data) =>
+    api.post(rest('prayer_requests'), { headers: returning(as[who].headers), data: { church_id: church.a, ...data } });
+  const patch = (who, id, data) =>
+    api.patch(rest(`prayer_requests?id=eq.${id}`), { headers: returning(as[who].headers), data });
+  const wall = async (who, c = church.a) => (await rpc(who, 'prayer_wall', { p_church: c })).json();
+
+  test.beforeAll(async () => {
+    const created = await api.post(rest('members'), {
+      headers: returning(as['adm-a'].headers),
+      data: { church_id: church.a, name: 'Secretaria temporária', email: 'sem-igreja@teste.igrejaconecta.invalid', role: 'secretaria' },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    [secretary] = await created.json();
+    await rpc('sem-igreja', 'link_my_account');
+    expect((await rpc('sem-igreja', 'respond_to_church', { p_church: church.a, p_accept: true })).ok()).toBe(true);
+  });
+
+  test.afterAll(async () => {
+    const mine = `prayer_requests?body=like.*${encodeURIComponent(tag)}*`;
+    await api.delete(rest(mine), { headers: as['adm-a'].headers });
+    await api.delete(rest(mine), { headers: as['membro-a'].headers });
+    if (secretary) await api.delete(rest(`members?id=eq.${secretary.id}`), { headers: as['adm-a'].headers });
+  });
+
+  test('pedido só para os pastores: o administrador e o líder leem; a secretaria, a outra igreja e o mural, não', async () => {
+    const res = await send('membro-a', { body: `Privado ${tag}`, audience: 'pastores', anonymous: true, status: 'aprovado' });
+    expect(res.ok(), await res.text()).toBe(true);
+    const [p] = await res.json();
+    // O banco decide a situação e o autor, não quem envia.
+    expect(p).toMatchObject({ status: 'privado', anonymous: false, user_id: as['membro-a'].id });
+    for (const who of ['adm-a', 'lider-a', 'membro-a']) expect(await get(who, `prayer_requests?select=id&id=eq.${p.id}`), who).toHaveLength(1);
+    for (const who of ['sem-igreja', 'adm-b']) expect(await get(who, `prayer_requests?select=id&id=eq.${p.id}`), who).toEqual([]);
+    for (const who of ['membro-a', 'sem-igreja', 'lider-a']) expect((await wall(who)).map((r) => r.id), who).not.toContain(p.id);
+    // A liderança pastoral recebe o aviso na central, sem o texto do pedido.
+    const [n] = await get('lider-a', `notifications?select=kind,title,body,url&dedupe_key=eq.oracao:${p.id}`);
+    expect(n).toMatchObject({ kind: 'oracao', title: 'Novo pedido de oração', url: '#/oracao/moderar' });
+    expect(n.body).not.toContain(tag);
+    expect(await get('sem-igreja', `notifications?select=id&dedupe_key=eq.oracao:${p.id}`)).toEqual([]);
+    // Ninguém de fora modera nem apaga; o líder marca que cuidou; a secretaria, não.
+    expect(await (await patch('sem-igreja', p.id, { cared_at: new Date().toISOString() })).text()).not.toContain(p.id);
+    expect(await (await patch('adm-b', p.id, { cared_at: new Date().toISOString() })).text()).not.toContain(p.id);
+    expect((await patch('lider-a', p.id, { status: 'aprovado' })).ok()).toBe(false);
+    const cared = await patch('lider-a', p.id, { cared_at: new Date().toISOString() });
+    expect(cared.ok(), await cared.text()).toBe(true);
+    const removed = await api.delete(rest(`prayer_requests?id=eq.${p.id}`), { headers: returning(as['adm-b'].headers) });
+    expect(await removed.json()).toEqual([]);
+  });
+
+  test('pedido para a igreja: só vai ao mural depois da aprovação, e o anônimo esconde o nome dos membros', async () => {
+    const res = await send('membro-a', { body: `Para a igreja ${tag}`, audience: 'igreja', anonymous: true });
+    expect(res.ok(), await res.text()).toBe(true);
+    const [p] = await res.json();
+    expect(p.status).toBe('pendente');
+    expect((await wall('sem-igreja')).map((r) => r.id)).not.toContain(p.id);
+    const [n] = await get('adm-a', `notifications?select=title&dedupe_key=eq.oracao:${p.id}`);
+    expect(n.title).toBe('Pedido de oração para aprovar');
+
+    // O autor não aprova o próprio pedido; a secretaria também não.
+    expect((await patch('membro-a', p.id, { status: 'aprovado' })).ok()).toBe(false);
+    expect(await (await patch('sem-igreja', p.id, { status: 'aprovado' })).text()).not.toContain(p.id);
+    // O líder corrige o texto e aprova.
+    const ok = await patch('lider-a', p.id, { body: `Para a igreja (corrigido) ${tag}`, status: 'aprovado' });
+    expect(ok.ok(), await ok.text()).toBe(true);
+    const [author] = await get('membro-a', `notifications?select=title,url&dedupe_key=eq.oracao-aprovado:${p.id}`);
+    expect(author).toMatchObject({ title: 'Seu pedido de oração está no mural', url: '#/oracao/meus' });
+
+    const seen = (await wall('sem-igreja')).find((r) => r.id === p.id);
+    expect(seen).toMatchObject({ body: `Para a igreja (corrigido) ${tag}`, author: null, anonymous: true, mine: false });
+    expect((await wall('lider-a')).find((r) => r.id === p.id).author).toBe('Membro da A');
+    expect((await wall('membro-a')).find((r) => r.id === p.id)).toMatchObject({ author: 'Membro da A', mine: true });
+    expect(await wall('adm-b', church.a)).toEqual([]);
+    expect(await wall('sem-igreja', church.b)).toEqual([]);
+    // Depois de aprovado, o texto não muda mais.
+    expect((await patch('lider-a', p.id, { body: `Mudado ${tag}` })).ok()).toBe(false);
+  });
+
+  test('"Estou orando" conta sem mostrar quem, e só vale para pedidos do mural da própria igreja', async () => {
+    const [p] = await (await send('membro-a', { body: `Contador ${tag}`, audience: 'igreja' })).json();
+    expect((await rpc('sem-igreja', 'prayer_toggle', { p_request: p.id })).ok()).toBe(false); // ainda não aprovado
+    expect((await patch('adm-a', p.id, { status: 'aprovado' })).ok()).toBe(true);
+    expect(await (await rpc('sem-igreja', 'prayer_toggle', { p_request: p.id })).json()).toEqual([{ praying: 1, i_pray: true }]);
+    expect(await (await rpc('lider-a', 'prayer_toggle', { p_request: p.id })).json()).toEqual([{ praying: 2, i_pray: true }]);
+    expect((await wall('membro-a')).find((r) => r.id === p.id)).toMatchObject({ praying: 2, i_pray: false });
+    expect(await (await rpc('sem-igreja', 'prayer_toggle', { p_request: p.id })).json()).toEqual([{ praying: 1, i_pray: false }]);
+    expect((await rpc('adm-b', 'prayer_toggle', { p_request: p.id })).ok()).toBe(false);
+    expect((await api.get(rest('prayer_praying?select=user_id'), { headers: as['lider-a'].headers })).ok()).toBe(false);
+  });
+
+  test('só o autor marca "Deus respondeu" e apaga o pedido; o autor não muda o texto', async () => {
+    const [p] = await (await send('membro-a', { body: `Resposta ${tag}`, audience: 'pastores' })).json();
+    expect((await patch('lider-a', p.id, { answered_at: new Date().toISOString() })).ok()).toBe(false);
+    expect((await patch('membro-a', p.id, { body: `Outro ${tag}` })).ok()).toBe(false);
+    const answered = await patch('membro-a', p.id, { answered_at: new Date().toISOString() });
+    expect(answered.ok(), await answered.text()).toBe(true);
+    const removed = await api.delete(rest(`prayer_requests?id=eq.${p.id}`), { headers: returning(as['membro-a'].headers) });
+    expect(await removed.json()).toHaveLength(1);
+  });
+
+  test('quem não é da igreja não envia, e com a funcionalidade desligada ninguém envia', async () => {
+    expect((await send('adm-b', { body: `Intruso ${tag}`, audience: 'pastores' })).ok()).toBe(false);
+    const [b] = await get('adm-b', `churches?select=features&id=eq.${church.b}`);
+    const setFeatures = (features) => api.patch(rest(`churches?id=eq.${church.b}`), { headers: as['adm-b'].headers, data: { features } });
+    expect((await setFeatures({ ...b.features, oracao: false })).ok()).toBe(true);
+    try {
+      const res = await api.post(rest('prayer_requests'), {
+        headers: as['adm-b'].headers,
+        data: { church_id: church.b, body: `Desligado ${tag}`, audience: 'pastores' },
+      });
+      expect(res.ok()).toBe(false);
+    } finally {
+      await setFeatures(b.features);
+    }
+  });
+
+  test('os pedidos entram no arquivo dos próprios dados; o envio por push pede a senha', async () => {
+    await send('membro-a', { body: `Exportado ${tag}`, audience: 'pastores' });
+    const data = await (await rpc('membro-a', 'export_my_data')).json();
+    expect(data.pedidos_de_oracao.map((p) => p.pedido)).toContain(`Exportado ${tag}`);
+    expect(JSON.stringify((await (await rpc('lider-a', 'export_my_data')).json()).pedidos_de_oracao)).not.toContain(tag);
+    expect((await rpc('adm-a', 'claim_notification_push', { p_secret: 'errada' })).ok()).toBe(false);
+  });
+});
