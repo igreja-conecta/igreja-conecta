@@ -90,7 +90,9 @@ test('o membro abre a central de notificações pelo sininho', async ({ page }) 
 });
 
 test('a central mostra as notificações por dia, com destaque nas não lidas', async ({ page }) => {
-  const now = Date.now();
+  // Meio-dia fixo: perto da meia-noite, "30 horas atrás" já não seria "ontem".
+  const now = new Date('2027-06-10T12:00:00-03:00').getTime();
+  await page.clock.setFixedTime(now);
   const rows = [
     { id: 1, kind: 'oracao', title: 'Seu pedido de oração está no mural', body: 'A igreja já pode orar com você.', url: '#/oracao/meus', read_at: null, created_at: new Date(now - 5 * 60e3).toISOString() },
     { id: 2, kind: 'evento', title: 'Culto de domingo', body: 'Amanhã às 19h', url: '#/agenda', read_at: new Date(now).toISOString(), created_at: new Date(now - 30 * 3600e3).toISOString() },
@@ -109,4 +111,33 @@ test('a central mostra as notificações por dia, com destaque nas não lidas', 
   await expect(page.locator('.notif-row').nth(1).locator('.notif-icon')).toHaveClass(/k-agenda/);
   await expect(page.getByRole('button', { name: 'Apagar as lidas' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Ver mais' })).toBeHidden();
+});
+
+test('a líder marca o local do evento no mapa, e o membro vê o mapa e a rota', async ({ page, browser }) => {
+  // A busca de endereço responde sempre o mesmo ponto (o serviço de verdade fica fora do teste).
+  await page.route('https://nominatim.openstreetmap.org/**', (r) =>
+    r.fulfill({ json: [{ lat: '-15.7942', lon: '-47.8822', display_name: 'Praça dos Três Poderes, Brasília' }] }),
+  );
+  await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/agenda/novo');
+  await page.getByLabel('Título').fill(`Mapa ${tag}`);
+  await page.getByLabel('Data').fill(tomorrow());
+  await page.getByLabel('Começa').fill('19:00');
+  await page.getByLabel('Local (opcional)').fill('Praça dos Três Poderes');
+  await expect(page.getByText('Sem alfinete no mapa')).toBeVisible();
+  await page.getByRole('button', { name: 'Marcar no mapa' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Marcar no mapa' });
+  // Já busca o endereço digitado; com um resultado só, o alfinete vai para lá.
+  await expect(dialog.locator('.map-pin')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Usar este ponto' }).click();
+  await expect(page.getByText('📍 Local marcado no mapa')).toBeVisible();
+  await page.getByRole('button', { name: 'Criar evento' }).click();
+  await expect(page.getByRole('heading', { name: `Mapa ${tag}` })).toBeVisible();
+
+  const member = await (await browser.newContext({ ...test.info().project.use, baseURL: 'http://localhost:4173/' })).newPage();
+  await openLoggedIn(member, as['membro-a'].session, '/i/teste-a/#/agenda');
+  await member.locator('.event-card', { hasText: `Mapa ${tag}` }).first().click();
+  await expect(member.locator('.place-map .map-pin')).toBeVisible();
+  await expect(member.getByRole('link', { name: 'Rota no Google Maps' })).toHaveAttribute('href', /destination=-15\.7942,-47\.8822$/);
+  await expect(member.getByRole('link', { name: 'Ir com o Waze' })).toHaveAttribute('href', /ll=-15\.7942,-47\.8822&navigate=yes$/);
+  await member.context().close();
 });

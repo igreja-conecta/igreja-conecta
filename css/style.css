@@ -397,6 +397,30 @@ select:disabled, input:disabled { opacity: .65; }
 .offer .qr svg { width: min(260px, 100%); height: auto; }
 .offer .key { font-size: 1.05em; word-break: break-all; }
 
+/* ---------- Mapa do local ---------- */
+.place { margin: 8px 0 14px; }
+.place-map { height: 180px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); background: var(--line); z-index: 0; }
+.place-routes { margin-top: 10px; }
+.place-routes .btn { flex: 1; }
+.map-pin span {
+  display: block; width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  background: var(--danger); border: 3px solid #fff; box-shadow: 0 2px 6px rgb(0 0 0 / .35);
+}
+.map-backdrop { place-items: center; z-index: 50; }
+.map-modal { max-width: 560px; max-height: calc(100dvh - 32px); overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.map-modal h2 { margin: 0; }
+.map-modal .actions-row { margin: 0; }
+.map-search { display: flex; gap: 8px; }
+.map-search input { flex: 1; min-width: 0; }
+.map-search .btn { width: auto; }
+.map-results { max-height: 180px; overflow: auto; }
+.map-results .menu-row span { font-size: .85rem; white-space: normal; text-align: left; }
+.map-pick { height: min(50dvh, 380px); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); display: grid; place-items: center; }
+.map-pick.leaflet-container { display: block; }
+.pin-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pin-field .pin-status { color: var(--muted); font-size: .9rem; }
+.pin-field .pin-status.ok { color: color-mix(in srgb, #2f9e44 75%, var(--ink)); font-weight: 600; }
+.pin-field .btn { width: auto; }
 /* ---------- Carrossel do Início ---------- */
 .carousel { margin-top: 4px; }
 .carousel-track {

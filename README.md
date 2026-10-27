@@ -55,6 +55,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `008_datas_especiais.sql` | Aniversário de casamento e de batismo: datas no cadastro, mensagens próprias com `{anos}`, envio às 7h junto com os aniversários, resumo da liderança e lista do mês |
 | `009_oracao.sql` | Pedidos de oração: só para os pastores (administrador e líderes) ou para o mural da igreja com aprovação, anônimo opcional, "Estou orando", avisos na central e por push |
 | `010_celulas.sql` | Células e pequenos grupos: participantes, líder e auxiliar (qualquer pessoa do cadastro), encontros com lista de presença e visitantes, frequência e membros sem célula |
+| `011_mapa.sql` | Local exato no mapa (alfinete) no endereço da igreja, nos eventos e nas células; o app mostra o mapa (OpenStreetMap) e a rota no Google Maps e no Waze |
 
 ## Contas de teste
 

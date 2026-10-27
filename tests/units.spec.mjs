@@ -175,3 +175,19 @@ test.describe('Pix (BR Code)', () => {
     for (const bad of ['abc', '-5', '0', '1,234', '12,345', '1.23.4']) expect(parseAmount(bad), bad).toBeNull();
   });
 });
+
+test('rota até o local: pelo alfinete ou pelo endereço; on-line não tem rota', async () => {
+  const { routeLinks, placeBlock } = await import('../js/map.js');
+  expect(routeLinks({ lat: -15.7942, lng: -47.8822, address: 'Templo' })).toEqual({
+    google: 'https://www.google.com/maps/dir/?api=1&destination=-15.7942,-47.8822',
+    waze: 'https://waze.com/ul?ll=-15.7942,-47.8822&navigate=yes',
+  });
+  expect(routeLinks({ lat: null, lng: null, address: 'Rua das Flores, 10' })).toEqual({
+    google: 'https://www.google.com/maps/dir/?api=1&destination=Rua%20das%20Flores%2C%2010',
+    waze: 'https://waze.com/ul?q=Rua%20das%20Flores%2C%2010&navigate=yes',
+  });
+  expect(placeBlock({ lat: null, lng: null, address: 'On-line' })).toBe('');
+  expect(placeBlock({ lat: null, lng: null, address: '' })).toBe('');
+  expect(placeBlock({ lat: null, lng: null, address: 'Templo' })).not.toContain('place-map');
+  expect(placeBlock({ lat: 1, lng: 2, address: '' })).toContain('data-lat="1"');
+});
