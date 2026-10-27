@@ -9,11 +9,9 @@ let api;
 const as = {};
 const tag = `UI ${Date.now().toString(36)}`;
 
-// Amanhã, no horário do aparelho (o mesmo do Brasil nos testes).
-const tomorrow = () => {
-  const d = new Date(Date.now() + 864e5);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+// Amanhã no horário de Brasília, o mesmo do navegador nos testes (o GitHub roda em UTC:
+// entre 21h e meia-noite, o "amanhã" de lá já seria depois de amanhã aqui).
+const tomorrow = () => new Date(Date.now() + 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 
 test.beforeAll(async ({ playwright }) => {
   test.skip(!configured, 'Falta a chave pública em js/config.js');
