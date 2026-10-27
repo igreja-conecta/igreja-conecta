@@ -95,8 +95,10 @@ self.addEventListener('push', (e) => {
   try {
     msg = e.data ? e.data.json() : {};
   } catch {}
-  e.waitUntil(
-    self.registration.showNotification(msg.title || 'Igreja Conecta', {
+  const tell = self.clients
+    .matchAll({ type: 'window', includeUncontrolled: true })
+    .then((wins) => wins.forEach((w) => w.postMessage({ type: 'push', url: msg.url || '' })));
+  e.waitUntil(Promise.all([tell, self.registration.showNotification(msg.title || 'Igreja Conecta', {
       body: msg.body || '',
       // No Android o ícone grande aparece à direita, repetindo a logo que já fica à esquerda.
       icon: ANDROID ? undefined : msg.icon || 'icons/icon-192.png',
@@ -104,7 +106,7 @@ self.addEventListener('push', (e) => {
       image: msg.image,
       tag: msg.tag,
       data: { url: msg.url || './' },
-    }),
+    })]),
   );
 });
 

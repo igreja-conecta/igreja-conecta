@@ -70,7 +70,7 @@ const SCREEN_PREFIX = 'tela:';
 const screenMem = new Map();
 const screenLoading = new Map();
 // Telas com dados sensíveis de outras pessoas: guardadas só na memória, nunca gravadas no aparelho.
-const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:|infantil$)/;
+const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:|infantil$|chat$|conversa:)/;
 const screenKey = (name) => `${SCREEN_PREFIX}${state.user?.id}:${state.church?.id}:${name}`;
 
 function screenCached(name) {
@@ -222,6 +222,7 @@ function prefetchScreens() {
     }
     if (featureOn('avisos')) screenFetch('avisos', loadAnnouncements).catch(() => {});
     if (regsOn()) screenFetch('inscricoes', loadRegistrations).catch(() => {});
+    if (chatOn()) screenFetch('chat', loadChats).catch(() => {}); // só na memória (PRIVATE_SCREENS)
     if (featureOn('infantil')) screenFetch('filhos', loadMyKids).catch(() => {});
     if (kidsTeam()) screenFetch('infantil', loadKids).catch(() => {});
     if (featureOn('galeria')) {
@@ -338,6 +339,8 @@ const icon = {
   chart: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16.5V11M12 16.5V6M17 16.5v-8"/></svg>',
   idcard: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16.5a3.4 3.4 0 0 1 6.4 0M14.5 10h4M14.5 13.5h3"/></svg>',
   child: '<svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="3"/><path d="M12 9v6M8 11.5l4-1 4 1M9.5 21l2.5-6 2.5 6"/></svg>',
+  chat: '<svg viewBox="0 0 24 24"><path d="M4 5.5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>',
+  send: '<svg viewBox="0 0 24 24"><path d="m4 12 16-7.5-6 15-2.5-6z"/><path d="m11.5 13.5 8.5-9"/></svg>',
   book: '<svg viewBox="0 0 24 24"><path d="M5 19.5V5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2 2 2 0 0 0 2 2h12v-4"/><path d="M12 6.5v6M9.5 8.8h5"/></svg>',
 };
 
@@ -401,6 +404,7 @@ function renderAccountLink() {
     a.hidden = false;
   }
   document.getElementById('notif-link').hidden = !(state.church && isActiveMember());
+  updateChatBadge();
 }
 
 // Número no sininho: notificações não lidas desta igreja.
@@ -456,6 +460,10 @@ async function setUser(user) {
   renderAccountLink();
   // Aparelho que já aceitou notificações: garante que a inscrição está nesta conta.
   if (user) syncPush(sb).catch(() => {});
+  // Chat: canal particular desta conta e o número de conversas não lidas.
+  listenChat().catch(() => {});
+  chatUnread = 0;
+  refreshChatUnread().catch(() => {});
 }
 
 // ---------------------------------------------------------------------
@@ -525,6 +533,9 @@ const churchRoutes = [
   [/^\/infantil\/etiqueta\/([0-9a-f-]{36})$/, viewKidLabel],
   [/^\/infantil\/retirada$/, viewKidCheckout],
   [/^\/infantil\/salas$/, viewKidRooms],
+  [/^\/chat$/, viewChats],
+  [/^\/chat\/nova$/, viewChatNew],
+  [/^\/chat\/([0-9a-f-]{36})$/, viewConversation],
   [/^\/relatorios$/, viewReports],
   [/^\/galeria$/, viewGallery],
   [/^\/galeria\/novo$/, viewAlbumForm],
@@ -541,6 +552,7 @@ const churchRoutes = [
 ];
 
 let renderId = 0;
+let chatCheckedAt = 0;
 async function render() {
   const id = ++renderId;
   const raw = location.hash.slice(1) || '/';
@@ -549,6 +561,10 @@ async function render() {
   renderTabbar(path);
   document.getElementById('notif-link').classList.toggle('active', path === '/notificacoes');
   if (path !== '/notificacoes') refreshUnread().catch(() => {});
+  if (!path.startsWith('/chat') && Date.now() - chatCheckedAt > 30000) {
+    chatCheckedAt = Date.now();
+    refreshChatUnread().catch(() => {});
+  }
   const routes = state.church ? churchRoutes : rootRoutes;
   for (const [re, view] of routes) {
     const m = path.match(re);
@@ -997,6 +1013,7 @@ async function viewMenu() {
         ${featureOn('oracao') ? `<a class="menu-row" href="#/oracao">${icon.heart}<span>Pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${featureOn('oracao') && isPastoral() ? `<a class="menu-row" href="#/oracao/moderar">${icon.heart}<span>Moderar pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${offerReady() ? `<a class="menu-row" href="#/ofertar">${icon.pix}<span>Dízimos e ofertas</span>${icon.chevron}</a>` : ''}
+        ${featureOn('chat') ? `<a class="menu-row" href="#/chat">${icon.chat}<span>Conversas${chatUnread ? ` (${chatUnread})` : ''}</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações</span>${icon.chevron}</a>
         ${admin ? messageLinks() : ''}
         <a class="menu-row" href="#/meus-dados">${icon.user}<span>Meus dados: baixar ou excluir</span>${icon.chevron}</a>
@@ -1033,7 +1050,7 @@ async function viewMyData() {
 
       <section class="card">
         <h2>${icon.upload} Baixar meus dados</h2>
-        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, as suas inscrições em eventos, os seus filhos e as entradas deles no infantil, os dados da carteirinha, os álbuns que publicou e os pedidos para tirar fotos, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
+        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, as suas inscrições em eventos, os seus filhos e as entradas deles no infantil, os dados da carteirinha, os álbuns que publicou e os pedidos para tirar fotos, as suas conversas do chat, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
         <button class="btn" id="export">Baixar arquivo</button>
         <p class="hint">Para corrigir algum dado, use "Meu cadastro" ou fale com a secretaria da igreja.</p>
       </section>
@@ -1186,6 +1203,20 @@ function helpTopics() {
           'Ministérios e escalas',
           `<p>Em <a href="#/escalas">Menu &gt; Ministérios e escalas</a> ficam as suas escalas. Toque em <em>Confirmo</em> para avisar que vai servir, ou em <em>Pedir troca</em> se não puder (o líder do ministério recebe o pedido e escolhe outra pessoa). Você recebe um aviso quando é escalado e um lembrete na véspera.</p>
            <p>Em cada ministério de que você participa, você vê a equipe e as próximas escalas. <strong>Se você lidera o ministério</strong>, toque em <em>Nova escala</em>: escolha a data e o horário, marque quem serve e escreva a função de cada um (ex.: Vocal, Teclado, Recepção). Você também coloca e tira pessoas da equipe.</p>`,
+        ]]
+      : []),
+    ...(features('chat')
+      ? [[
+          'Chat',
+          `<p>Toque no ícone de conversa no topo (ou em <a href="#/chat">Menu &gt; Conversas</a>) e em <em>${isLeaderRole(myRole()) ? 'Nova conversa' : 'Falar com a liderança'}</em>. ${
+            isLeaderRole(myRole())
+              ? 'Você pode escrever para qualquer pessoa da igreja que recebe mensagens.'
+              : features('chat_membros')
+                ? 'Você pode escrever para a liderança e, buscando pelo nome, para outros membros.'
+                : 'Você escreve para um pastor, um líder ou a secretaria.'
+          } O número no ícone mostra as conversas com mensagem nova.</p>
+           <p><strong>Só as duas pessoas leem a conversa</strong>: nem a liderança da igreja nem o administrador do app. Se alguém incomodar, toque em ⋯ para <em>Bloquear</em> ou <em>Denunciar</em> (o administrador da igreja recebe os nomes e o motivo, nunca as mensagens).</p>
+           <p>Não quer receber mensagens? Desligue <em>Receber mensagens pelo chat</em> em <a href="#/perfil">Meu cadastro</a>.</p>`,
         ]]
       : []),
     ...(features('galeria')
@@ -1368,7 +1399,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, a galeria de fotos, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, a galeria de fotos, o chat (e se os membros conversam entre si), o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -1516,6 +1547,12 @@ async function viewProfile(ctx) {
         }
         <label class="check"><input type="checkbox" name="show_phone" ${m.show_phone ? 'checked' : ''}> Meu telefone</label>
       </fieldset>
+      ${
+        featureOn('chat')
+          ? `<label class="check"><input type="checkbox" name="chat_enabled" ${m.chat_enabled !== false ? 'checked' : ''}> Receber mensagens pelo chat
+              <small class="hint">Desligado, ninguém começa conversa nova com você nem escreve nas antigas. Você continua vendo e respondendo as conversas que já tem.</small></label>`
+          : ''
+      }
       <button class="btn primary big">Salvar</button>
       <p class="hint">Para trocar o e-mail, fale com a secretaria da igreja.</p>
     </form>`;
@@ -1536,6 +1573,7 @@ async function viewProfile(ctx) {
         birth_date: form.birth_date.value || null,
         show_birthday: form.show_birthday.checked,
         show_phone: form.show_phone.checked,
+        ...(form.chat_enabled ? { chat_enabled: form.chat_enabled.checked } : {}),
         ...specialDatesPatch(form, true),
       };
       if (photo.file) patch.photo_path = await uploadMemberPhoto(m.church_id, m.id, photo.file);
@@ -6518,6 +6556,409 @@ async function viewAlbumForm(ctx, id) {
 }
 
 // ---------------------------------------------------------------------
+// Chat 1 a 1 dentro da igreja (supabase/021). Só as duas pessoas leem; as mensagens ficam
+// só na memória do aparelho (nunca gravadas). Tempo real pelo canal particular "user:<id>".
+// ---------------------------------------------------------------------
+const chatOn = () => featureOn('chat') && isActiveMember();
+let chatUnread = 0;
+let chatChannel = null;
+let chatListen = 0;
+let chatOpen = null; // conversa aberta na tela: { id, ctx, c, messages, paint, read }
+const openConversation = () => (chatOpen?.ctx.alive() ? chatOpen.id : null);
+
+function updateChatBadge() {
+  const link = document.getElementById('chat-link');
+  const badge = document.getElementById('chat-badge');
+  if (!link || !badge) return;
+  link.hidden = !(state.church && chatOn());
+  badge.hidden = !chatUnread;
+  badge.textContent = chatUnread > 9 ? '9+' : String(chatUnread);
+  link.setAttribute('aria-label', chatUnread ? `Conversas: ${chatUnread} não lidas` : 'Conversas');
+}
+
+// Número no ícone do chat. Uma resposta mais antiga nunca sobrescreve uma contagem mais nova.
+let chatUnreadTurn = 0;
+async function refreshChatUnread() {
+  if (!state.church || !chatOn()) {
+    chatUnread = 0;
+    return updateChatBadge();
+  }
+  const turn = ++chatUnreadTurn;
+  const { data, error } = await sb.rpc('chat_unread_count', { p_church: state.church.id });
+  if (turn !== chatUnreadTurn || error) return;
+  chatUnread = data || 0;
+  updateChatBadge();
+}
+
+// O banco manda cada mensagem para o canal particular de cada participante; só a própria
+// pessoa entra no seu canal (regra em realtime.messages).
+async function listenChat() {
+  const turn = ++chatListen;
+  if (chatChannel) sb.removeChannel(chatChannel);
+  chatChannel = null;
+  if (!state.user || !state.church || !chatOn()) return;
+  const { data } = await sb.auth.getSession();
+  if (turn !== chatListen || !state.user) return;
+  if (data.session) sb.realtime.setAuth(data.session.access_token);
+  let initial = true;
+  chatChannel = sb
+    .channel(`user:${state.user.id}`, { config: { private: true } })
+    .on('broadcast', { event: 'message' }, ({ payload: m }) => {
+      // A mesma pessoa pode estar em outra igreja: aqui só conta a desta página.
+      if (m.church_id !== state.church?.id) return;
+      window.dispatchEvent(new CustomEvent('chat-message', { detail: m }));
+      if (m.sender_id === state.user?.id || m.conversation_id === openConversation()) return;
+      screenForget('chat');
+      refreshChatUnread();
+      if (location.hash === '#/chat') render();
+      else if (!location.hash.startsWith('#/chat')) toast('Nova mensagem no chat.');
+    })
+    .subscribe((status) => {
+      // (Re)conectou, por exemplo depois de a rede cair: busca o que pode ter passado.
+      if (status !== 'SUBSCRIBED') return;
+      window.dispatchEvent(new CustomEvent('chat-resync', { detail: { initial } }));
+      initial = false;
+    });
+}
+
+// No celular a conexão cai com o app em segundo plano: ao voltar, ou quando chega um aviso,
+// busca o que chegou nesse meio-tempo.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !state.church) return;
+  if (!openConversation()) refreshChatUnread();
+  window.dispatchEvent(new Event('chat-resync'));
+});
+navigator.serviceWorker?.addEventListener('message', (e) => {
+  if (e.data?.type !== 'push') return;
+  const here = openConversation() && e.data.url?.endsWith(`/chat/${openConversation()}`) && document.visibilityState === 'visible';
+  if (!here) refreshChatUnread();
+  window.dispatchEvent(new Event('chat-resync'));
+});
+window.addEventListener('chat-resync', (e) => {
+  if (e.detail?.initial || location.hash !== '#/chat') return;
+  screenForget('chat');
+  render();
+});
+
+function requireChat(next) {
+  if (!requireMemberFeature(next, 'chat')) return false;
+  return true;
+}
+
+const chatClock = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+const chatDay = (iso) => {
+  const day = isoLocal(new Date(iso));
+  if (day === isoLocal(new Date())) return 'Hoje';
+  if (day === isoLocal(addDays(new Date(), -1))) return 'Ontem';
+  return new Date(iso).toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' }).replace(/\./g, '');
+};
+
+async function loadChats() {
+  const { data, error } = await sb.rpc('my_conversations', { p_church: state.church.id });
+  if (error) throw error;
+  return data;
+}
+
+async function viewChats(ctx) {
+  if (!requireChat('/chat')) return;
+  await screenShowWithPhotos(ctx, 'chat', loadChats, (rows) => rows.map((c) => c.other_photo), (rows, photos) => drawChats(rows, photos));
+  refreshChatUnread();
+}
+
+function drawChats(rows, photos) {
+  const leader = isLeaderRole(myRole());
+  $view.innerHTML = `
+    <div class="page chat-page">
+      <h1>Conversas</h1>
+      <div class="actions-row"><a class="btn primary" href="#/chat/nova">${icon.plus} ${leader ? 'Nova conversa' : 'Falar com a liderança'}</a></div>
+      ${
+        rows.length
+          ? `<div class="chat-list">${rows
+              .map(
+                (c) => `
+          <a class="chat-row ${c.unread ? 'unread' : ''}" href="#/chat/${c.id}">
+            ${avatar(c.other_name, c.other_photo && photos[miniOf(c.other_photo)])}
+            <span class="chat-text">
+              <strong>${esc(c.other_name)}</strong>
+              <span class="chat-last">${c.blocked ? '🚫 Conversa bloqueada' : `${c.last_mine ? 'Você: ' : ''}${esc(c.last_message || '')}`}</span>
+            </span>
+            <time datetime="${esc(c.last_message_at)}">${esc(notifTime(c.last_message_at))}</time>
+          </a>`,
+              )
+              .join('')}</div>`
+          : `<div class="empty"><h2>Nenhuma conversa ainda</h2><p>${
+              leader ? 'Toque em <strong>Nova conversa</strong> para escrever para alguém da igreja.' : 'Toque em <strong>Falar com a liderança</strong> para escrever para um pastor, líder ou para a secretaria.'
+            }</p></div>`
+      }
+      <p class="hint">As conversas são só entre as duas pessoas: ninguém mais lê, nem a liderança da igreja.</p>
+    </div>`;
+}
+
+// Escolher com quem conversar: a liderança que recebe mensagens e, com busca, outras pessoas.
+async function loadChatContacts() {
+  const { data, error } = await sb.rpc('chat_contacts', { p_church: state.church.id });
+  if (error) throw error;
+  return data;
+}
+
+async function viewChatNew(ctx) {
+  if (!requireChat('/chat/nova')) return;
+  await screenShow(ctx, 'chat-contatos', loadChatContacts, (rows) => drawChatNew(ctx, rows));
+}
+
+function drawChatNew(ctx, leaders) {
+  const leader = isLeaderRole(myRole());
+  const canSearch = leader || featureOn('chat_membros');
+  const row = (p) => `
+    <button type="button" class="menu-row" data-start="${p.member_id}">${avatar(p.name, null)}<span>${esc(p.name)}<small class="hint"> · ${esc(ROLES[p.role])}</small></span>${icon.chevron}</button>`;
+  $view.innerHTML = `
+    <div class="page chat-page">
+      <a href="#/chat" class="back">← Conversas</a>
+      <h1>${leader ? 'Nova conversa' : 'Falar com a liderança'}</h1>
+      ${
+        canSearch
+          ? `<form id="chat-search" class="form"><label>${leader ? 'Buscar qualquer pessoa da igreja' : 'Buscar pessoa da igreja'}<input name="q" type="search" placeholder="Digite o nome" autocomplete="off"></label></form>
+             <div id="chat-found" class="list"></div>`
+          : ''
+      }
+      <h2>Liderança</h2>
+      <div class="list" id="chat-leaders">${leaders.map(row).join('') || '<div class="empty"><p>Ninguém da liderança está recebendo mensagens agora.</p></div>'}</div>
+    </div>`;
+  const bind = (root) =>
+    root.querySelectorAll('[data-start]').forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true;
+        const { data: id, error } = await sb.rpc('start_conversation', { p_church: state.church.id, p_member: b.dataset.start });
+        b.disabled = false;
+        if (error) return toast(errorText(error), 'error');
+        navigate(`/chat/${id}`);
+      };
+    });
+  bind($view);
+  const form = document.getElementById('chat-search');
+  if (!form) return;
+  const found = document.getElementById('chat-found');
+  let timer;
+  form.addEventListener('submit', (e) => e.preventDefault());
+  form.q.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const term = form.q.value.trim();
+      if (term.length < 2) return (found.innerHTML = '');
+      const { data } = await sb.rpc('chat_contacts', { p_church: state.church.id, p_search: term });
+      if (!ctx.alive() || form.q.value.trim() !== term) return;
+      found.innerHTML = data?.length ? data.map(row).join('') : '<p class="hint">Ninguém encontrado (ou a pessoa não recebe mensagens).</p>';
+      bind(found);
+    }, 250);
+  });
+}
+
+async function loadConversation(id) {
+  const [info, msgs] = await Promise.all([
+    sb.rpc('my_conversations', { p_church: state.church.id, p_conv: id }),
+    sb.from('messages').select('id, sender_id, body, created_at').eq('conversation_id', id).order('created_at', { ascending: false }).limit(300),
+  ]);
+  if (info.error) throw info.error;
+  if (msgs.error) throw msgs.error;
+  return { c: info.data?.[0] ?? null, messages: msgs.data.reverse() };
+}
+
+async function viewConversation(ctx, id) {
+  if (!requireChat(`/chat/${id}`)) return;
+  await screenShowWithPhotos(
+    ctx,
+    `conversa:${id}`,
+    () => loadConversation(id),
+    (d) => [d.c?.other_photo],
+    (d, photos) => drawConversation(ctx, id, d, photos),
+  );
+  // O guardado na memória pode ser de minutos atrás: busca o que chegou depois.
+  if (ctx.alive()) window.dispatchEvent(new Event('chat-resync'));
+}
+
+function drawConversation(ctx, id, data, photos) {
+  const c = data.c;
+  if (!c) {
+    chatOpen = null;
+    $view.innerHTML = `<div class="empty"><h2>Conversa não encontrada</h2><a class="btn" href="#/chat">Ver conversas</a></div>`;
+    return;
+  }
+  // Redesenho da mesma conversa (o banco respondeu): mantém o que ainda está "enviando…".
+  const pending = chatOpen?.id === id && chatOpen.ctx === ctx ? chatOpen.messages.filter((m) => m.pending) : [];
+  const messages = [...data.messages.filter((m) => !pending.some((p) => p.id === m.id)), ...pending];
+  let draft = '';
+  try {
+    draft = document.getElementById('chat-form')?.body.value || sessionStorage.getItem(`chat-rascunho-${id}`) || '';
+    sessionStorage.removeItem(`chat-rascunho-${id}`);
+  } catch {}
+
+  $view.innerHTML = `
+    <div class="chat-view">
+      <div class="chat-head">
+        <a href="#/chat" class="chat-back" aria-label="Voltar para as conversas">${icon.chevron}</a>
+        ${avatar(c.other_name, c.other_photo && photos[miniOf(c.other_photo)])}
+        <span class="chat-text"><strong>${esc(c.other_name)}</strong>${c.other_role ? `<small>${esc(ROLES[c.other_role])}</small>` : ''}</span>
+        <details class="chat-menu">
+          <summary aria-label="Mais opções">⋯</summary>
+          <div class="chat-menu-box">
+            ${
+              c.blocked
+                ? c.blocked_by_me
+                  ? '<button type="button" data-unblock>Desbloquear conversa</button>'
+                  : ''
+                : '<button type="button" data-block>Bloquear conversa</button>'
+            }
+            <button type="button" data-report>Denunciar</button>
+          </div>
+        </details>
+      </div>
+      <div class="chat-msgs" id="chat-msgs" aria-live="polite"></div>
+      ${
+        c.can_send
+          ? `<form class="chat-input" id="chat-form">
+              <textarea name="body" rows="1" maxlength="2000" placeholder="Escreva uma mensagem" aria-label="Mensagem" required>${esc(draft)}</textarea>
+              <button class="btn primary" aria-label="Enviar">${icon.send}</button>
+            </form>
+            <div id="chat-push"></div>`
+          : `<p class="notice chat-closed">${
+              c.blocked
+                ? c.blocked_by_me
+                  ? 'Você bloqueou esta conversa. Para escrever de novo, toque em ⋯ e em Desbloquear.'
+                  : 'Esta conversa foi bloqueada pela outra pessoa.'
+                : 'Não dá para enviar mensagens nesta conversa agora.'
+            }</p>`
+      }
+    </div>`;
+
+  const box = document.getElementById('chat-msgs');
+  const paint = () => {
+    let lastDay = '';
+    box.innerHTML = messages.length
+      ? messages
+          .map((m) => {
+            const day = chatDay(m.created_at);
+            const sep = day !== lastDay ? `<div class="chat-day">${esc(day)}</div>` : '';
+            lastDay = day;
+            return `${sep}<div class="msg ${m.sender_id === state.user.id ? 'mine' : ''} ${m.pending ? 'pending' : ''}">
+              <p>${esc(m.body).replace(/\n/g, '<br>')}</p><time>${m.pending ? 'enviando…' : esc(chatClock(m.created_at))}</time></div>`;
+          })
+          .join('')
+      : `<p class="hint chat-empty">Nenhuma mensagem ainda. Escreva a primeira.</p>`;
+    window.scrollTo(0, document.body.scrollHeight);
+  };
+  // Guarda só na memória o que a tela já tem (nunca no aparelho: PRIVATE_SCREENS).
+  const remember = () => screenUpdate(`conversa:${id}`, { c, messages: messages.filter((m) => !m.pending) });
+  const read = () =>
+    sb.rpc('mark_conversation_read', { p_conv: id }).then(() => {
+      screenForget('chat');
+      refreshChatUnread();
+    });
+  chatOpen = { id, ctx, c, messages, paint, read, remember };
+  paint();
+  if (c.unread || messages.some((m) => m.sender_id !== state.user.id)) read();
+
+  const form = document.getElementById('chat-form');
+  if (form) {
+    const input = form.body;
+    const grow = () => {
+      input.style.height = 'auto';
+      input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
+    };
+    input.addEventListener('input', grow);
+    grow();
+    // Enter envia no computador; no celular o Enter quebra a linha e envia pelo botão.
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer: fine)').matches) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = input.value.trim();
+      if (!body) return;
+      const temp = { id: `tmp-${Date.now()}`, sender_id: state.user.id, body, created_at: new Date().toISOString(), pending: true };
+      const first = !messages.some((m) => m.sender_id === state.user.id);
+      messages.push(temp);
+      input.value = '';
+      grow();
+      paint();
+      const { data: saved, error } = await sb.from('messages').insert({ conversation_id: id, body }).select('id, sender_id, body, created_at').single();
+      const i = messages.indexOf(temp);
+      if (error) {
+        messages.splice(i, 1);
+        if (!input.value) input.value = body;
+        grow();
+        paint();
+        return toast(errorText(error), 'error');
+      }
+      if (messages.some((x) => x.id === saved.id)) messages.splice(i, 1); // o tempo real chegou antes
+      else messages[i] = saved;
+      paint();
+      remember();
+      screenForget('chat');
+      if (first) pushInvite(document.getElementById('chat-push'), { title: 'Quer saber quando responderem?', note: 'Ative as notificações neste celular.' }).catch(() => {});
+    });
+    if (draft) input.focus();
+  }
+
+  const menu = $view.querySelector('.chat-menu');
+  const act = async (fn, args, done) => {
+    menu.open = false;
+    const { error } = await sb.rpc(fn, args);
+    if (error) return toast(errorText(error), 'error');
+    screenForget('chat');
+    screenForget(`conversa:${id}`);
+    toast(done);
+    render();
+  };
+  menu.querySelector('[data-block]')?.addEventListener('click', () => {
+    if (confirm('Bloquear esta conversa? Ninguém mais escreve nela até você desbloquear.')) act('chat_block', { p_conv: id, p_block: true }, 'Conversa bloqueada.');
+  });
+  menu.querySelector('[data-unblock]')?.addEventListener('click', () => act('chat_block', { p_conv: id, p_block: false }, 'Conversa desbloqueada.'));
+  menu.querySelector('[data-report]').addEventListener('click', () => {
+    const reason = prompt(
+      'Denunciar: a conversa é bloqueada e o administrador da igreja recebe um aviso com os nomes e o motivo. As mensagens não são mostradas a ele. Qual o motivo?',
+    );
+    if (reason === null) return;
+    act('chat_report', { p_conv: id, p_reason: reason.trim().slice(0, 500) }, 'Denúncia enviada. A conversa foi bloqueada.');
+  });
+}
+
+// Mensagens novas da conversa aberta (da outra pessoa ou de outro aparelho meu).
+window.addEventListener('chat-message', (e) => {
+  const v = chatOpen;
+  const m = e.detail;
+  if (!v || !v.ctx.alive() || m.conversation_id !== v.id || v.messages.some((x) => x.id === m.id)) return;
+  v.messages.push(m);
+  v.paint();
+  v.remember();
+  if (m.sender_id !== state.user.id) v.read();
+});
+// Mensagens que chegaram sem o tempo real (app em segundo plano, conexão caída).
+let chatSyncing = false;
+window.addEventListener('chat-resync', async () => {
+  const v = chatOpen;
+  if (!v || !v.ctx.alive() || chatSyncing) return;
+  chatSyncing = true;
+  try {
+    const last = v.messages.filter((m) => !m.pending).at(-1)?.created_at;
+    let q = sb.from('messages').select('id, sender_id, body, created_at').eq('conversation_id', v.id).order('created_at').limit(200);
+    if (last) q = q.gt('created_at', last);
+    const { data } = await q;
+    const fresh = (data || []).filter((m) => !v.messages.some((x) => x.id === m.id));
+    if (!v.ctx.alive() || !fresh.length) return void refreshChatUnread();
+    v.messages.push(...fresh);
+    v.messages.sort((a, b) => !!a.pending - !!b.pending || a.created_at.localeCompare(b.created_at));
+    v.paint();
+    v.remember();
+    if (fresh.some((m) => m.sender_id !== state.user.id)) v.read();
+  } finally {
+    chatSyncing = false;
+  }
+});
+
+// ---------------------------------------------------------------------
 // Aniversários: cartão da semana, aniversariantes do mês, mensagem da igreja, notificações
 // ---------------------------------------------------------------------
 const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -6868,8 +7309,8 @@ async function viewNotifications(ctx) {
 }
 
 // Convite discreto na página inicial para ativar as notificações (some por 30 dias ao fechar).
-async function pushInvite(el) {
-  if (!isActiveMember() || pushSupport() !== 'ok' || Notification.permission !== 'default' || (await pushActive())) return;
+async function pushInvite(el, { title = 'Receba as mensagens da igreja no celular', note = 'Como a mensagem no dia do seu aniversário.' } = {}) {
+  if (!el || !isActiveMember() || pushSupport() !== 'ok' || Notification.permission !== 'default' || (await pushActive())) return;
   try {
     if (Date.now() - Number(localStorage.getItem('push-invite-dismissed') || 0) < 30 * 864e5) return;
   } catch {}
@@ -6877,7 +7318,7 @@ async function pushInvite(el) {
   el.innerHTML = `
     <div class="notice push-invite">
       ${icon.bell}
-      <span><strong>Receba as mensagens da igreja no celular</strong><small>Como a mensagem no dia do seu aniversário.</small></span>
+      <span><strong>${esc(title)}</strong><small>${esc(note)}</small></span>
       <button class="btn primary small" id="push-yes">Ativar</button>
       <button class="close" aria-label="Agora não" id="push-no">&times;</button>
     </div>`;
