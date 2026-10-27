@@ -234,3 +234,16 @@ test.describe('Banco: visitante sem login (check-in infantil)', () => {
     expect((await rpc(request, 'children_guard')).ok()).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (carteirinha)', () => {
+  test('não troca códigos; a conferência só responde pelo código exato', async ({ request }) => {
+    expect((await rpc(request, 'rotate_card_token', { p_church: UUID })).ok()).toBe(false);
+    expect((await rpc(request, 'cards_on', { p_church: UUID })).ok()).toBe(false);
+    expect((await rpc(request, 'members_since_guard')).ok()).toBe(false);
+    const res = await rpc(request, 'verify_member_card', { p_token: UUID });
+    expect(res.ok(), await res.text()).toBe(true);
+    expect(await res.json()).toEqual([]);
+    // Sem login, a tabela de membros (e os códigos) continua fechada.
+    expect((await request.get(rest('members?select=card_token'), { headers })).ok()).toBe(false);
+  });
+});

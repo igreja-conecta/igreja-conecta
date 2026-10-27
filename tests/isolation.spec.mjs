@@ -1389,3 +1389,74 @@ test.describe('Check-in do ministério infantil (017)', () => {
     expect((await rpc('adm-a', 'clean_kids', { p_secret: 'errada' })).ok()).toBe(false);
   });
 });
+
+test.describe('Carteirinha digital (018)', () => {
+  const anon = { apikey: ANON_KEY, 'Content-Type': 'application/json' };
+  const verify = async (token) => {
+    const res = await api.post(rest('rpc/verify_member_card'), { headers: anon, data: { p_token: token } });
+    expect(res.ok(), await res.text()).toBe(true);
+    return res.json();
+  };
+  const own = async (who) => (await get(who, `members?select=id,card_token,member_since&user_id=eq.${as[who].id}`))[0];
+
+  test.afterAll(async () => {
+    if (!api) return;
+    const adm = await own('adm-a');
+    await api.patch(rest(`members?id=eq.${adm.id}`), { headers: as['lider-a'].headers, data: { member_since: null } });
+  });
+
+  test('cada um lê só o próprio código; "membro desde" é da liderança; o código só muda pela função', async () => {
+    const me = await own('membro-a');
+    expect(me.card_token).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await get('membro-a', 'members?select=card_token')).toHaveLength(1); // só o próprio cadastro
+    expect(await get('adm-b', `members?select=card_token&id=eq.${me.id}`)).toEqual([]);
+
+    const patch = (who, data) => api.patch(rest(`members?id=eq.${me.id}`), { headers: returning(as[who].headers), data });
+    expect((await patch('membro-a', { member_since: '2000-01-01' })).ok()).toBe(false);
+    expect((await patch('membro-a', { card_token: '00000000-0000-4000-8000-000000000000' })).ok()).toBe(false);
+    const adm = await own('adm-a');
+    const ok = await api.patch(rest(`members?id=eq.${adm.id}`), { headers: returning(as['lider-a'].headers), data: { member_since: '2015-04-12' } });
+    expect(ok.ok(), await ok.text()).toBe(true);
+    expect((await own('adm-a')).member_since).toBe('2015-04-12');
+    const data = await (await rpc('adm-a', 'export_my_data')).json();
+    const here = data.igrejas.find((c) => c.endereco_no_app === '/i/teste-a/');
+    expect(here.cadastro.membro_desde).toBe('2015-04-12');
+  });
+
+  test('a conferência pública só responde pelo código exato e mostra só o que está na carteirinha', async () => {
+    const me = await own('adm-a');
+    const [r] = await verify(me.card_token);
+    // Só o que está na carteirinha: nada de e-mail, telefone, aniversário ou foto.
+    expect(Object.keys(r).sort()).toEqual(['active', 'church_name', 'church_slug', 'logo_url', 'member_since', 'name', 'primary_color', 'role']);
+    expect(r).toMatchObject({ church_slug: 'teste-a', name: 'Admin da A', role: 'admin', member_since: '2015-04-12', active: true });
+    expect(await verify('00000000-0000-4000-8000-000000000000')).toEqual([]);
+    // Quem não aceitou participar (sem conta no app) não aparece como ativo.
+    const [fulano] = await get('lider-a', 'members?select=card_token&name=eq.Fulano%20da%20A');
+    expect((await verify(fulano.card_token))[0].active).toBe(false);
+  });
+
+  test('gerar um QR novo invalida o anterior; a outra igreja não troca o código de ninguém', async () => {
+    const before = (await own('adm-a')).card_token;
+    expect((await rpc('adm-b', 'rotate_card_token', { p_church: church.a })).ok()).toBe(false);
+    const res = await rpc('adm-a', 'rotate_card_token', { p_church: church.a });
+    expect(res.ok(), await res.text()).toBe(true);
+    const after = await res.json();
+    expect(after).not.toBe(before);
+    expect(await verify(before)).toEqual([]);
+    expect((await verify(after))[0].active).toBe(true);
+  });
+
+  test('com a carteirinha desligada, nenhuma da igreja é reconhecida', async () => {
+    const me = await own('adm-b');
+    expect((await verify(me.card_token)).length).toBe(1);
+    const [b] = await get('adm-b', `churches?select=features&id=eq.${church.b}`);
+    const setFeatures = (features) => api.patch(rest(`churches?id=eq.${church.b}`), { headers: as['adm-b'].headers, data: { features } });
+    expect((await setFeatures({ ...b.features, carteirinha: false })).ok()).toBe(true);
+    try {
+      expect(await verify(me.card_token)).toEqual([]);
+      expect((await rpc('adm-b', 'rotate_card_token', { p_church: church.b })).ok()).toBe(false);
+    } finally {
+      await setFeatures(b.features);
+    }
+  });
+});

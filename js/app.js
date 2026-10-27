@@ -8,7 +8,7 @@ import {
 import { resizeImage, resizeLogo, makeIconSet } from './images.js';
 import { maybeSuggestInstall, installState, installNow, iconReady, ICON_PREPARING } from './install.js';
 import { pushSupport, pushActive, enablePush, disablePush, syncPush } from './push.js';
-import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg } from './pix.js';
+import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg, qrImage } from './pix.js';
 import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
 import { BOOKS, BIBLE_VERSIONS, bibleUrl, bookName, bookChapters, verseRef, READING_PLANS, planReading, passageLabel, readingLabel } from './biblia.js';
 
@@ -325,6 +325,7 @@ const icon = {
   heart: '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>',
   pix: '<svg viewBox="0 0 24 24"><path d="M12 3.5 20.5 12 12 20.5 3.5 12z"/><path d="M8 12h8"/></svg>',
   clipboard: '<svg viewBox="0 0 24 24"><path d="M9 4.5H6.5a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1H15"/><rect x="9" y="3" width="6" height="3" rx="1"/><path d="M9 11h6M9 15h4"/></svg>',
+  idcard: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16.5a3.4 3.4 0 0 1 6.4 0M14.5 10h4M14.5 13.5h3"/></svg>',
   child: '<svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="3"/><path d="M12 9v6M8 11.5l4-1 4 1M9.5 21l2.5-6 2.5 6"/></svg>',
   book: '<svg viewBox="0 0 24 24"><path d="M5 19.5V5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2 2 2 0 0 0 2 2h12v-4"/><path d="M12 6.5v6M9.5 8.8h5"/></svg>',
 };
@@ -513,6 +514,8 @@ const churchRoutes = [
   [/^\/infantil\/etiqueta\/([0-9a-f-]{36})$/, viewKidLabel],
   [/^\/infantil\/retirada$/, viewKidCheckout],
   [/^\/infantil\/salas$/, viewKidRooms],
+  [/^\/carteirinha$/, viewCard],
+  [/^\/carteirinha\/verificar\/([0-9a-f-]{36})$/, viewCardVerify],
   [/^\/celulas$/, viewCells],
   [/^\/celulas\/nova$/, viewCellForm],
   [/^\/celulas\/([0-9a-f-]{36})$/, viewCell],
@@ -868,6 +871,7 @@ async function viewChurchHome() {
     ['celulas', icon.users, isLeaderRole(m.role) ? 'Células' : 'Célula', '#/celulas'],
     ['escalas', icon.clipboard, 'Escalas', '#/escalas'],
     ['infantil', icon.child, 'Check-in', '#/infantil'],
+    ['carteirinha', icon.idcard, 'Carteirinha', '#/carteirinha'],
     ['visitantes', icon.user, 'Visitantes', '#/visitantes'],
     ['pix', icon.pix, 'Ofertar', '#/ofertar'],
   ].filter(([k]) =>
@@ -964,6 +968,7 @@ async function viewMenu() {
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         ${datesOn() ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
         ${visitorTeam() ? `<a class="menu-row" href="#/visitantes">${icon.user}<span>Visitantes</span>${icon.chevron}</a>` : ''}
+        ${featureOn('carteirinha') ? `<a class="menu-row" href="#/carteirinha">${icon.idcard}<span>Minha carteirinha</span>${icon.chevron}</a>` : ''}
         ${featureOn('infantil') ? `<a class="menu-row" href="#/filhos">${icon.child}<span>Meus filhos</span>${icon.chevron}</a>` : ''}
         ${kidsTeam() ? `<a class="menu-row" href="#/infantil">${icon.child}<span>Check-in infantil</span>${icon.chevron}</a>` : ''}
         ${featureOn('escalas') ? `<a class="menu-row" href="#/escalas">${icon.clipboard}<span>Ministérios e escalas</span>${icon.chevron}</a>` : ''}
@@ -1008,7 +1013,7 @@ async function viewMyData() {
 
       <section class="card">
         <h2>${icon.upload} Baixar meus dados</h2>
-        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, as suas inscrições em eventos, os seus filhos e as entradas deles no infantil, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
+        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, as suas inscrições em eventos, os seus filhos e as entradas deles no infantil, os dados da carteirinha, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
         <button class="btn" id="export">Baixar arquivo</button>
         <p class="hint">Para corrigir algum dado, use "Meu cadastro" ou fale com a secretaria da igreja.</p>
       </section>
@@ -1161,6 +1166,12 @@ function helpTopics() {
           'Ministérios e escalas',
           `<p>Em <a href="#/escalas">Menu &gt; Ministérios e escalas</a> ficam as suas escalas. Toque em <em>Confirmo</em> para avisar que vai servir, ou em <em>Pedir troca</em> se não puder (o líder do ministério recebe o pedido e escolhe outra pessoa). Você recebe um aviso quando é escalado e um lembrete na véspera.</p>
            <p>Em cada ministério de que você participa, você vê a equipe e as próximas escalas. <strong>Se você lidera o ministério</strong>, toque em <em>Nova escala</em>: escolha a data e o horário, marque quem serve e escreva a função de cada um (ex.: Vocal, Teclado, Recepção). Você também coloca e tira pessoas da equipe.</p>`,
+        ]]
+      : []),
+    ...(features('carteirinha')
+      ? [[
+          'Carteirinha digital',
+          '<p>Em <a href="#/carteirinha">Menu &gt; Minha carteirinha</a> está a sua carteirinha de membro, com o QR Code. Ela abre mesmo sem internet. Toque em <em>Salvar imagem</em> para guardar na galeria do celular.</p><p>Quem apontar a câmera para o QR Code vê se você é membro ativo, com o nome, o papel e "membro desde" (sem foto, telefone ou e-mail). Se alguém copiou a sua carteirinha, toque em <em>Gerar novo QR Code</em>: o anterior deixa de valer.</p>',
         ]]
       : []),
     ...(features('infantil')
@@ -1320,7 +1331,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -1673,7 +1684,7 @@ function accountStatus(m) {
   return { cls: '', label: 'Sem e-mail' };
 }
 
-const MEMBER_COLUMNS = 'id, church_id, name, email, phone, birth_date, role, status, user_id, consent_at, photo_path, show_birthday, show_phone, wedding_date, baptism_date, show_wedding, show_baptism';
+const MEMBER_COLUMNS = 'id, church_id, name, email, phone, birth_date, role, status, user_id, consent_at, photo_path, show_birthday, show_phone, wedding_date, baptism_date, show_wedding, show_baptism, member_since';
 
 async function viewMembers(ctx) {
   if (!requireLeader('/membros')) return;
@@ -1804,6 +1815,7 @@ async function viewMemberForm(ctx, id) {
       <label>Telefone com DDD<input name="phone" type="tel" inputmode="tel" placeholder="(61) 99999-9999" value="${esc(fmtPhone(m.phone))}"></label>
       <label>Data de nascimento<input name="birth_date" type="date" min="1900-01-01" value="${esc(m.birth_date || '')}"></label>
       ${specialDateFields(m)}
+      ${featureOn('carteirinha') ? `<label>Membro desde (opcional)<input name="member_since" type="date" min="1900-01-02" value="${esc(m.member_since || '')}"><small class="hint">Aparece na carteirinha digital.</small></label>` : ''}
       <label>Papel na igreja
         <select name="role" ${admin ? '' : 'disabled'}>
           ${Object.entries(ROLES).map(([k, label]) => `<option value="${k}" ${m.role === k ? 'selected' : ''}>${label}</option>`).join('')}
@@ -1846,6 +1858,7 @@ async function viewMemberForm(ctx, id) {
       const row = { name: form.name.value.trim(), phone, birth_date: form.birth_date.value || null, ...specialDatesPatch(form) };
       if (!linked) row.email = email;
       if (admin) row.role = form.role.value;
+      if (form.member_since) row.member_since = form.member_since.value || null;
       if (!isNew) row.status = form.status.value;
       if (photo.file) {
         row.photo_path = await uploadMemberPhoto(state.church.id, memberId, photo.file);
@@ -5633,6 +5646,186 @@ function drawKidRooms(rooms) {
       done('Sala apagada.');
     };
   });
+}
+
+// ---------------------------------------------------------------------
+// Carteirinha digital: o próprio cadastro (guardado no aparelho) com o QR Code de conferência
+// ---------------------------------------------------------------------
+const cardUrl = (token) => `${PAGE_URL}#/carteirinha/verificar/${token}`;
+const fmtLongDate = (iso) => parseIso(iso).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+const cardLines = (m) =>
+  [
+    m.member_since ? ['Membro desde', fmtLongDate(m.member_since)] : null,
+    m.baptism_date ? ['Batismo', fmtLongDate(m.baptism_date)] : null,
+  ].filter(Boolean);
+
+async function viewCard(ctx) {
+  if (!requireMemberFeature('/carteirinha', 'carteirinha')) return;
+  const me = myMember();
+  // Mesmo guardado do "Meu cadastro": abre na hora, até sem internet.
+  await screenShowWithPhotos(
+    ctx,
+    'perfil',
+    () => loadProfile(me.id),
+    (m) => [m.photo_path],
+    (m, photos) => drawCard(ctx, m, photos),
+  );
+}
+
+function drawCard(ctx, m, photos) {
+  const c = state.church;
+  const photo = m.photo_path && photos[miniOf(m.photo_path)];
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Minha carteirinha</h1>
+      <div class="member-card" style="--card: ${esc(c.primary_color || DEFAULT_COLOR)}; --card-ink: ${esc(inkOn(c.primary_color || DEFAULT_COLOR))}">
+        <div class="member-card-head">
+          <img src="${esc(c.logo_url || 'icons/icon-192.png')}" alt="" width="40" height="40">
+          <span>${esc(c.name)}</span>
+        </div>
+        <div class="member-card-body">
+          ${avatar(m.name, photo, 'big')}
+          <div>
+            <p class="member-card-name">${esc(m.name)}</p>
+            <p class="member-card-role">${esc(ROLES[m.role])}</p>
+            ${cardLines(m).map(([k, v]) => `<p><small>${esc(k)}</small> ${esc(v)}</p>`).join('')}
+          </div>
+        </div>
+        <div class="member-card-qr" id="card-qr" aria-label="QR Code para conferir a carteirinha"></div>
+        <p class="member-card-foot">Aponte a câmera para conferir</p>
+      </div>
+      <div class="actions-row">
+        <button class="btn primary" id="card-save">${icon.upload} Salvar imagem</button>
+        <button class="btn" id="card-rotate">Gerar novo QR Code</button>
+      </div>
+      <p class="hint">Quem ler o QR Code vê se você é membro ativo da igreja, com o nome, o papel e "membro desde". A foto, o telefone e o e-mail não aparecem. Se alguém copiou a sua carteirinha, gere um novo QR Code: o anterior deixa de valer.</p>
+      ${m.member_since ? '' : '<p class="hint">"Membro desde" é preenchido pela secretaria ou pela liderança.</p>'}
+    </div>`;
+  qrSvg(cardUrl(m.card_token))
+    .then((svg) => {
+      const box = document.getElementById('card-qr');
+      if (box && ctx.alive()) box.innerHTML = svg;
+    })
+    .catch(() => {});
+
+  const saveBtn = document.getElementById('card-save');
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    try {
+      const blob = await cardImage(m, photo);
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement('a'), { href: url, download: `carteirinha-${slugify(firstName(m.name))}.png` });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast('Imagem salva.');
+    } catch {
+      toast('Não foi possível gerar a imagem.', 'error');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  };
+  document.getElementById('card-rotate').onclick = async () => {
+    if (!confirm('Gerar um novo QR Code? O anterior (e as imagens salvas com ele) deixa de valer.')) return;
+    const { data: token, error } = await sb.rpc('rotate_card_token', { p_church: c.id });
+    if (error) return toast(errorText(error), 'error');
+    Object.assign(m, { card_token: token, card_token_at: new Date().toISOString() });
+    screenUpdate('perfil', m);
+    toast('Novo QR Code gerado.');
+    drawCard(ctx, m, photos);
+  };
+}
+
+// Carteirinha como imagem (PNG), desenhada no aparelho.
+async function cardImage(m, photoUrl) {
+  const c = state.church;
+  const color = c.primary_color || DEFAULT_COLOR;
+  const ink = inkOn(color);
+  const W = 1000;
+  const H = 1400;
+  const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
+  const g = cv.getContext('2d');
+  const load = (src) =>
+    new Promise((resolve) => {
+      if (!src) return resolve(null);
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = color;
+  g.fillRect(0, 0, W, 300);
+  const [logo, photo, qr] = await Promise.all([load(c.logo_url || 'icons/icon-192.png'), load(photoUrl), qrImage(cardUrl(m.card_token), 14)]);
+  if (logo) g.drawImage(logo, 60, 60, 120, 120);
+  g.fillStyle = ink;
+  g.font = 'bold 52px system-ui, sans-serif';
+  g.fillText(c.name.slice(0, 26), 210, 140);
+  g.font = '32px system-ui, sans-serif';
+  g.fillText('Carteirinha de membro', 210, 195);
+  // Foto (ou as iniciais) num círculo
+  g.save();
+  g.beginPath();
+  g.arc(W / 2, 400, 150, 0, Math.PI * 2);
+  g.closePath();
+  g.fillStyle = '#e9ecf5';
+  g.fill();
+  g.clip();
+  if (photo) g.drawImage(photo, W / 2 - 150, 250, 300, 300);
+  else {
+    g.fillStyle = '#5f6475';
+    g.font = 'bold 110px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.fillText(initials(m.name), W / 2, 440);
+  }
+  g.restore();
+  g.textAlign = 'center';
+  g.fillStyle = '#1b1e27';
+  g.font = 'bold 56px system-ui, sans-serif';
+  g.fillText(m.name.slice(0, 32), W / 2, 640);
+  g.fillStyle = '#5f6475';
+  g.font = '38px system-ui, sans-serif';
+  g.fillText(ROLES[m.role], W / 2, 700);
+  let y = 770;
+  for (const [k, v] of cardLines(m)) {
+    g.fillText(`${k}: ${v}`, W / 2, y);
+    y += 52;
+  }
+  g.drawImage(qr, W / 2 - 220, 880, 440, 440);
+  g.font = '28px system-ui, sans-serif';
+  g.fillText('Aponte a câmera para conferir', W / 2, 1360);
+  return new Promise((resolve, reject) => cv.toBlob((b) => (b ? resolve(b) : reject(new Error('imagem'))), 'image/png'));
+}
+
+// Conferência pública (sem login): o banco responde só pelo código exato da carteirinha.
+async function viewCardVerify(ctx, token) {
+  $view.innerHTML = '<div class="page card-verify"><p class="hint center">Conferindo a carteirinha…</p></div>';
+  const { data, error } = await sb.rpc('verify_member_card', { p_token: token });
+  if (!ctx.alive()) return;
+  if (error) throw error;
+  const r = data?.[0];
+  const now = new Date().toLocaleString('pt-BR', { day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  $view.innerHTML = `
+    <div class="page card-verify">
+      ${
+        !r
+          ? `<div class="verify-result bad"><p class="verify-icon">❌</p><h1>Carteirinha não reconhecida</h1>
+               <p>O QR Code pode ter sido trocado por um novo, ou a igreja não usa mais a carteirinha digital.</p></div>`
+          : `<div class="verify-result ${r.active ? 'ok' : 'warn'}">
+               <img src="${esc(r.logo_url || 'icons/icon-192.png')}" alt="" width="64" height="64">
+               <p class="verify-icon">${r.active ? '✅' : '⚠️'}</p>
+               <h1>${r.active ? 'Membro ativo' : 'Este cadastro não está ativo'}</h1>
+               <p class="verify-church">${esc(r.church_name)}</p>
+               <p class="member-card-name">${esc(r.name)}</p>
+               <p>${esc(ROLES[r.role] || '')}</p>
+               ${r.member_since ? `<p>Membro desde ${esc(fmtLongDate(r.member_since))}</p>` : ''}
+             </div>`
+      }
+      <p class="hint center">Conferido em ${esc(now)} pelo ${esc(CONFIG.APP_NAME)}.</p>
+    </div>`;
 }
 
 // ---------------------------------------------------------------------

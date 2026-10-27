@@ -62,6 +62,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `015_escalas.sql` | Ministérios e escalas: equipe e líder (qualquer pessoa do cadastro), escalas com função, confirmar ou pedir troca, aviso ao ser escalado e lembrete na véspera; o ministério de Acolhimento recebe os avisos de visitantes |
 | `016_inscricoes.sql` | Inscrição em eventos: vagas, prazo, lista de espera que anda sozinha, cancelar, lista de inscritos e planilha para a liderança, e-mail de confirmação dentro do limite diário |
 | `017_infantil.sql` | Check-in do ministério infantil: filhos cadastrados pelo responsável (ou na recepção), salas por idade, entrada com código de retirada sorteado pelo banco, etiquetas, retirada só com o código, avisos ao responsável e limpeza em 12 meses |
+| `018_carteirinha.sql` | Carteirinha digital de membro: "membro desde" (liderança), código secreto do QR (a pessoa troca quando quiser) e conferência pública que mostra só o que está na carteirinha |
 
 ## Contas de teste
 

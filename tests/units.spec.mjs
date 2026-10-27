@@ -264,6 +264,7 @@ const SEM_GUARDADO = {
   viewVisitorForm: 'formulário público em branco',
   viewVisitorQr: 'QR Code montado no aparelho',
   viewReadingForm: 'formulário com os planos prontos do js/biblia.js',
+  viewCardVerify: 'conferência pública da carteirinha: sempre pergunta ao banco (mostra "Conferindo…" antes)',
 };
 const CACHE = /\b(screenShow|screenShowWithPhotos|editItem|formFresh|screenCached)\(|membersCache\.get\(/;
 
