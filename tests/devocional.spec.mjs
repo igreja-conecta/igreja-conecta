@@ -46,13 +46,14 @@ test('o líder escreve o devocional de hoje, com o versículo e o link da Bíbli
   await page.getByRole('link', { name: 'Novo devocional' }).click();
   await expect(page.getByLabel('Dia em que aparece')).toHaveValue(today);
   await page.getByLabel('Título').fill(`Descanso em Deus ${tag}`);
-  await page.getByLabel('Livro').selectOption({ label: 'Salmos' });
-  await page.getByLabel('Capítulo').fill('200');
+  await page.getByLabel('Livro').selectOption({ label: 'Rute' });
+  await page.getByLabel('Capítulo').fill('5');
   await page.getByLabel('Mensagem').fill('O Senhor é o nosso pastor.');
   await page.getByRole('button', { name: 'Publicar devocional' }).click();
-  await expect(page.getByText('Salmos tem 150 capítulos.')).toBeVisible();
+  await expect(page.getByText('Rute tem 4 capítulos.')).toBeVisible();
+  await page.getByLabel('Livro').selectOption({ label: 'Salmos' });
   await page.getByLabel('Capítulo').fill('23');
-  await page.getByLabel('Do versículo').fill('1');
+  await page.getByRole('spinbutton', { name: 'Do versículo' }).fill('1');
   await page.getByLabel('Texto do versículo').fill('O Senhor é o meu pastor; nada me faltará.');
   await page.getByRole('button', { name: 'Publicar devocional' }).click();
   await expect(page.getByText('Devocional publicado.')).toBeVisible();

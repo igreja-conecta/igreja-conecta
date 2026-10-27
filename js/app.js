@@ -108,6 +108,8 @@ function screenFetch(name, fetcher) {
 // Sem internet, fica com o guardado; sem nada guardado, o erro aparece como sempre.
 async function screenShow(ctx, name, fetcher, draw) {
   const cached = screenCached(name);
+  // Como estava ao abrir: a própria tela pode mudar o guardado (ex.: "Li", "Amém") enquanto o banco responde.
+  const opened = JSON.stringify(cached);
   if (cached) draw(cached);
   let data;
   try {
@@ -116,7 +118,7 @@ async function screenShow(ctx, name, fetcher, draw) {
     if (cached) return;
     throw err;
   }
-  if (!ctx.alive() || JSON.stringify(data) === JSON.stringify(cached)) return;
+  if (!ctx.alive() || JSON.stringify(data) === opened) return;
   const typing = document.activeElement;
   if (cached && $view.contains(typing) && /^(INPUT|TEXTAREA|SELECT)$/.test(typing.tagName)) return;
   draw(data);
@@ -3337,8 +3339,9 @@ function drawDevotionals(all) {
 async function viewDevotional(ctx, id) {
   if (!requireMemberFeature(`/devocional/${id}`, 'devocional')) return;
   const name = `devocional:${id}`;
+  // Abre na hora com o que veio na lista; o banco só redesenha se algo mudou.
   const fromList = screenCached('devocionais')?.find((d) => d.id === id);
-  if (fromList && !screenCached(name)) drawDevotional(fromList);
+  if (fromList && !screenCached(name)) screenUpdate(name, fromList);
   await screenShow(ctx, name, () => loadDevotional(id), drawDevotional);
 }
 
@@ -3388,7 +3391,8 @@ function drawDevotional(d) {
       amen.classList.toggle('primary', on);
       amen.setAttribute('aria-pressed', String(on));
       amen.textContent = amenText(on, amens);
-      screenForget(`devocional:${d.id}`);
+      Object.assign(d, { amens, i_amen: on });
+      screenUpdate(`devocional:${d.id}`, d);
       screenForget('devocionais');
     };
   const del = document.getElementById('delete');
