@@ -585,3 +585,19 @@ a.notice { display: block; color: inherit; text-decoration: none; }
   .report-section { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
   .bar, .hbar { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
+
+/* Galeria de fotos */
+.album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.album-card { display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: inherit; }
+.album-card small { color: var(--muted); }
+.album-cover { display: block; aspect-ratio: 1; border-radius: var(--radius); overflow: hidden; background: var(--line); }
+.album-cover img, .photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 3px; }
+.photo-thumb { display: block; aspect-ratio: 1; background: var(--line); overflow: hidden; border-radius: 4px; }
+.thumb-wait { display: block; width: 100%; height: 100%; background: var(--line); }
+.thumb-wait.big { aspect-ratio: 4 / 3; border-radius: var(--radius); }
+.photo-stage { position: relative; margin: 8px -16px; background: #000; display: flex; align-items: center; justify-content: center; min-height: 240px; touch-action: pan-y; }
+.photo-stage img { max-width: 100%; max-height: 75vh; display: block; }
+.photo-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgb(0 0 0 / .45); color: #fff; font-size: 2rem; text-decoration: none; }
+.photo-nav.prev { left: 8px; }
+.photo-nav.next { right: 8px; }

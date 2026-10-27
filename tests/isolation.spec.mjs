@@ -1501,3 +1501,101 @@ test.describe('Relatórios (019)', () => {
     }
   });
 });
+
+test.describe('Galeria de fotos (020)', () => {
+  const tag = `Galeria ${Date.now().toString(36)}`;
+  const ids = {};
+  const webp = (bytes) =>
+    Buffer.concat([Buffer.from('52494646', 'hex'), Buffer.alloc(4), Buffer.from('57454250', 'hex'), Buffer.alloc(Math.max(0, bytes - 12))]);
+  const put = (who, path, bytes = 2000) =>
+    api.post(`${SUPABASE_URL}/storage/v1/object/galeria/${path}`, { headers: { ...as[who].headers, 'Content-Type': 'image/webp' }, data: webp(bytes) });
+  const sign = (who, path) => api.post(`${SUPABASE_URL}/storage/v1/object/sign/galeria/${path}`, { headers: as[who].headers, data: { expiresIn: 60 } });
+  const album = (who, church_id, title) => api.post(rest('gallery_albums'), { headers: returning(as[who].headers), data: { church_id, title } });
+
+  test.afterAll(async () => {
+    if (!api) return;
+    for (const [who, c] of [['lider-a', church.a], ['adm-b', church.b]]) {
+      const rows = await get(who, `gallery_photos?select=path,mini_path&church_id=eq.${c}&album_id=in.(${[ids.album, ids.other, ids.full].filter(Boolean).join(',') || '00000000-0000-0000-0000-000000000000'})`);
+      const prefixes = rows.flatMap((p) => [p.path, p.mini_path]);
+      for (let i = 0; i < prefixes.length; i += 100)
+        await api.delete(`${SUPABASE_URL}/storage/v1/object/galeria`, { headers: as[who].headers, data: { prefixes: prefixes.slice(i, i + 100) } });
+      await api.delete(rest(`gallery_albums?title=like.${encodeURIComponent(tag)}*`), { headers: as[who].headers });
+    }
+  });
+
+  test('só quem publica cria álbuns e registra fotos; a outra igreja não', async () => {
+    expect((await album('membro-a', church.a, `${tag} membro`)).ok()).toBe(false);
+    expect((await album('adm-b', church.a, `${tag} outra`)).ok()).toBe(false);
+    const made = await album('lider-a', church.a, tag);
+    expect(made.ok(), await made.text()).toBe(true);
+    ids.album = (await made.json())[0].id;
+    ids.other = (await (await album('lider-a', church.a, `${tag} outro`)).json())[0].id;
+
+    for (const who of ['membro-a', 'adm-b']) expect((await rpc(who, 'gallery_add_photo', { p_album: ids.album, p_ext: 'webp' })).ok(), who).toBe(false);
+    const res = await rpc('lider-a', 'gallery_add_photo', { p_album: ids.album, p_ext: 'webp' });
+    expect(res.ok(), await res.text()).toBe(true);
+    const [p] = await res.json();
+    Object.assign(ids, { photo: p.photo_id, path: p.path, mini: p.mini_path });
+    expect(p.path).toBe(`${church.a}/${ids.album}/${p.photo_id}.webp`);
+    expect(p.mini_path).toBe(`${church.a}/${ids.album}/${p.photo_id}-mini.webp`);
+    const direct = await api.post(rest('gallery_photos'), { headers: as['lider-a'].headers, data: { church_id: church.a, album_id: ids.album, path: 'x', mini_path: 'y' } });
+    expect(direct.ok()).toBe(false);
+  });
+
+  test('arquivos: só o caminho registrado, só por quem publica, até 400 KB; só a igreja vê', async () => {
+    await expectDenied(await put('membro-a', ids.path), 'membro-a');
+    await expectDenied(await put('lider-a', `${church.a}/${ids.album}/qualquer.webp`), 'caminho não registrado');
+    expect((await put('lider-a', ids.mini, 500 * 1024)).ok()).toBe(false); // grande demais
+    for (const path of [ids.path, ids.mini]) {
+      const ok = await put('lider-a', path);
+      expect(ok.ok(), await ok.text()).toBe(true);
+    }
+    expect((await sign('membro-a', ids.path)).ok()).toBe(true);
+    for (const who of ['adm-b', 'sem-igreja']) expect((await sign(who, ids.path)).ok(), who).toBe(false);
+    expect(await get('adm-b', `gallery_photos?select=id&id=eq.${ids.photo}`)).toEqual([]);
+    const listed = async (who) => (await (await rpc(who, 'gallery_album_list', { p_church: church.a })).json()).map((a) => a.id);
+    expect(await listed('membro-a')).toContain(ids.album);
+    expect(await listed('adm-b')).toEqual([]);
+    // A capa precisa ser uma foto do próprio álbum.
+    const cover = (album_id) => api.patch(rest(`gallery_albums?id=eq.${album_id}`), { headers: returning(as['lider-a'].headers), data: { cover_photo_id: ids.photo } });
+    expect((await cover(ids.other)).ok()).toBe(false);
+    expect((await cover(ids.album)).ok()).toBe(true);
+    // O membro não apaga fotos.
+    const del = await api.delete(rest(`gallery_photos?id=eq.${ids.photo}`), { headers: returning(as['membro-a'].headers) });
+    expect(await del.text()).not.toContain(ids.photo);
+  });
+
+  test('pedir para tirar a foto avisa quem publica, uma vez por pessoa', async () => {
+    const ask = (who) => rpc(who, 'gallery_request_removal', { p_photo: ids.photo, p_reason: 'Apareço nela' });
+    expect(await (await ask('membro-a')).json()).toBe(true);
+    expect(await (await ask('membro-a')).json()).toBe(false);
+    expect((await ask('adm-b')).ok()).toBe(false);
+    const n = await get('lider-a', `notifications?select=url&dedupe_key=eq.galeria-retirada:${ids.photo}:${as['membro-a'].id}`);
+    expect(n).toEqual([{ url: `#/galeria/${ids.album}/foto/${ids.photo}` }]);
+    expect(await get('membro-a', `notifications?select=id&dedupe_key=like.galeria-retirada:${ids.photo}*`)).toEqual([]);
+    const data = await (await rpc('lider-a', 'export_my_data')).json();
+    expect(data.publicado_por_voce.albuns_da_galeria.map((a) => a.album)).toContain(tag);
+    const mine = await (await rpc('membro-a', 'export_my_data')).json();
+    expect(mine.pedidos_para_tirar_fotos_da_galeria.map((r) => r.motivo)).toContain('Apareço nela');
+  });
+
+  test('o limite de 300 fotos por igreja é conferido no banco', async () => {
+    test.setTimeout(180_000);
+    const made = await album('adm-b', church.b, `${tag} limite`);
+    expect(made.ok(), await made.text()).toBe(true);
+    ids.full = (await made.json())[0].id;
+    const [{ count }] = await get('adm-b', `gallery_photos?select=count&church_id=eq.${church.b}`);
+    const add = () => rpc('adm-b', 'gallery_add_photo', { p_album: ids.full, p_ext: 'webp' });
+    for (let left = 300 - count; left > 0; left -= 10) {
+      const batch = await Promise.all(Array.from({ length: Math.min(10, left) }, add));
+      for (const r of batch) expect(r.ok(), await r.text()).toBe(true);
+    }
+    const over = await add();
+    expect(over.ok()).toBe(false);
+    expect(await over.text()).toContain('limite de 300 fotos');
+    // Apagar o álbum libera o espaço (as fotos registradas saem junto).
+    await api.delete(rest(`gallery_albums?id=eq.${ids.full}`), { headers: as['adm-b'].headers });
+    ids.full = null;
+    expect(await get('adm-b', `gallery_photos?select=count&church_id=eq.${church.b}`)).toEqual([{ count }]);
+  });
+});

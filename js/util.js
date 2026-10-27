@@ -88,7 +88,7 @@ export const FEATURES = [
   { key: 'infantil', label: 'Check-in do ministério infantil', phase: 3 },
   { key: 'carteirinha', label: 'Carteirinha digital', phase: 3 },
   { key: 'relatorios', label: 'Relatórios', phase: 3 },
-  { key: 'galeria', label: 'Galeria de fotos', phase: 3, soon: true },
+  { key: 'galeria', label: 'Galeria de fotos', phase: 3 },
   { key: 'devocional', label: 'Devocional e plano de leitura', phase: 3 },
 ];
 

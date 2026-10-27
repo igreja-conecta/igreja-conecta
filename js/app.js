@@ -5,7 +5,7 @@ import {
   ROLES, isLeaderRole, FEATURES, fold, fmtDate, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
   renderMessage, firstName, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
 } from './util.js';
-import { resizeImage, resizeLogo, makeIconSet } from './images.js';
+import { resizeImage, resizeLogo, makeIconSet, resizeForGallery } from './images.js';
 import { maybeSuggestInstall, installState, installNow, iconReady, ICON_PREPARING } from './install.js';
 import { pushSupport, pushActive, enablePush, disablePush, syncPush } from './push.js';
 import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg, qrImage } from './pix.js';
@@ -224,6 +224,12 @@ function prefetchScreens() {
     if (regsOn()) screenFetch('inscricoes', loadRegistrations).catch(() => {});
     if (featureOn('infantil')) screenFetch('filhos', loadMyKids).catch(() => {});
     if (kidsTeam()) screenFetch('infantil', loadKids).catch(() => {});
+    if (featureOn('galeria')) {
+      // E as capas dos álbuns, para a Galeria abrir com as imagens.
+      screenFetch('galeria', loadAlbums)
+        .then((all) => galleryUrls(all.map((a) => a.cover_mini).filter(Boolean)))
+        .catch(() => {});
+    }
     if (featureOn('relatorios') && isLeaderRole(myRole())) screenFetch('relatorio:3', () => loadReport(reportPeriod('3'))).catch(() => {});
     const me = myMember();
     screenFetch('perfil', () => loadProfile(me.id))
@@ -295,6 +301,8 @@ function errorText(err) {
   if (/duplicate key.*email/i.test(msg)) return 'Esse e-mail já está no cadastro desta igreja.';
   if (/ministries_visitors_idx/i.test(msg)) return 'Outro ministério já recebe os avisos de visitantes. Desmarque nele primeiro.';
   if (/ministries_kids_idx/i.test(msg)) return 'Outro ministério já faz o check-in das crianças. Desmarque nele primeiro.';
+  if (/ministries_gallery_idx/i.test(msg)) return 'Outro ministério já publica na galeria. Desmarque nele primeiro.';
+  if (/exceeded the maximum allowed size|Payload too large/i.test(msg)) return 'A foto ficou grande demais mesmo reduzida. Tente outra foto.';
   if (/row-level security|permission denied/i.test(msg)) return 'Você não tem permissão para isso.';
   if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return 'Sem conexão. Confira sua internet e tente de novo.';
   return msg;
@@ -326,6 +334,7 @@ const icon = {
   heart: '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>',
   pix: '<svg viewBox="0 0 24 24"><path d="M12 3.5 20.5 12 12 20.5 3.5 12z"/><path d="M8 12h8"/></svg>',
   clipboard: '<svg viewBox="0 0 24 24"><path d="M9 4.5H6.5a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1H15"/><rect x="9" y="3" width="6" height="3" rx="1"/><path d="M9 11h6M9 15h4"/></svg>',
+  image: '<svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="m21 16-5-5-8 8.5"/></svg>',
   chart: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16.5V11M12 16.5V6M17 16.5v-8"/></svg>',
   idcard: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16.5a3.4 3.4 0 0 1 6.4 0M14.5 10h4M14.5 13.5h3"/></svg>',
   child: '<svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="3"/><path d="M12 9v6M8 11.5l4-1 4 1M9.5 21l2.5-6 2.5 6"/></svg>',
@@ -421,7 +430,7 @@ async function loadMemberships() {
   const [mem, pa] = await Promise.all([
     sb
       .from('members')
-      .select('id, role, consent_at, name, visitor_team, kids_team, church:churches(id, slug, name, logo_url, primary_color)')
+      .select('id, role, consent_at, name, visitor_team, kids_team, gallery_team, church:churches(id, slug, name, logo_url, primary_color)')
       .eq('user_id', state.user.id)
       .eq('status', 'ativo'),
     sb.rpc('is_platform_admin'),
@@ -517,6 +526,11 @@ const churchRoutes = [
   [/^\/infantil\/retirada$/, viewKidCheckout],
   [/^\/infantil\/salas$/, viewKidRooms],
   [/^\/relatorios$/, viewReports],
+  [/^\/galeria$/, viewGallery],
+  [/^\/galeria\/novo$/, viewAlbumForm],
+  [/^\/galeria\/([0-9a-f-]{36})$/, viewAlbum],
+  [/^\/galeria\/([0-9a-f-]{36})\/editar$/, viewAlbumForm],
+  [/^\/galeria\/([0-9a-f-]{36})\/foto\/([0-9a-f-]{36})$/, viewGalleryPhoto],
   [/^\/carteirinha$/, viewCard],
   [/^\/carteirinha\/verificar\/([0-9a-f-]{36})$/, viewCardVerify],
   [/^\/celulas$/, viewCells],
@@ -875,6 +889,7 @@ async function viewChurchHome() {
     ['escalas', icon.clipboard, 'Escalas', '#/escalas'],
     ['infantil', icon.child, 'Check-in', '#/infantil'],
     ['carteirinha', icon.idcard, 'Carteirinha', '#/carteirinha'],
+    ['galeria', icon.image, 'Galeria', '#/galeria'],
     ['visitantes', icon.user, 'Visitantes', '#/visitantes'],
     ['pix', icon.pix, 'Ofertar', '#/ofertar'],
   ].filter(([k]) =>
@@ -972,6 +987,7 @@ async function viewMenu() {
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         ${datesOn() ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
         ${visitorTeam() ? `<a class="menu-row" href="#/visitantes">${icon.user}<span>Visitantes</span>${icon.chevron}</a>` : ''}
+        ${featureOn('galeria') ? `<a class="menu-row" href="#/galeria">${icon.image}<span>Galeria de fotos</span>${icon.chevron}</a>` : ''}
         ${featureOn('carteirinha') ? `<a class="menu-row" href="#/carteirinha">${icon.idcard}<span>Minha carteirinha</span>${icon.chevron}</a>` : ''}
         ${featureOn('infantil') ? `<a class="menu-row" href="#/filhos">${icon.child}<span>Meus filhos</span>${icon.chevron}</a>` : ''}
         ${kidsTeam() ? `<a class="menu-row" href="#/infantil">${icon.child}<span>Check-in infantil</span>${icon.chevron}</a>` : ''}
@@ -1017,7 +1033,7 @@ async function viewMyData() {
 
       <section class="card">
         <h2>${icon.upload} Baixar meus dados</h2>
-        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, as suas inscrições em eventos, os seus filhos e as entradas deles no infantil, os dados da carteirinha, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
+        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, as suas inscrições em eventos, os seus filhos e as entradas deles no infantil, os dados da carteirinha, os álbuns que publicou e os pedidos para tirar fotos, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
         <button class="btn" id="export">Baixar arquivo</button>
         <p class="hint">Para corrigir algum dado, use "Meu cadastro" ou fale com a secretaria da igreja.</p>
       </section>
@@ -1170,6 +1186,17 @@ function helpTopics() {
           'Ministérios e escalas',
           `<p>Em <a href="#/escalas">Menu &gt; Ministérios e escalas</a> ficam as suas escalas. Toque em <em>Confirmo</em> para avisar que vai servir, ou em <em>Pedir troca</em> se não puder (o líder do ministério recebe o pedido e escolhe outra pessoa). Você recebe um aviso quando é escalado e um lembrete na véspera.</p>
            <p>Em cada ministério de que você participa, você vê a equipe e as próximas escalas. <strong>Se você lidera o ministério</strong>, toque em <em>Nova escala</em>: escolha a data e o horário, marque quem serve e escreva a função de cada um (ex.: Vocal, Teclado, Recepção). Você também coloca e tira pessoas da equipe.</p>`,
+        ]]
+      : []),
+    ...(features('galeria')
+      ? [[
+          'Galeria de fotos',
+          `<p>Em <a href="#/galeria">Menu &gt; Galeria de fotos</a> ficam os álbuns da igreja. Toque numa foto para ver em tela cheia, passar para o lado, baixar ou compartilhar. Só quem é da igreja vê as fotos.</p>
+           <p>Se você aparece numa foto e prefere que ela saia, toque em <em>Pedir para tirar esta foto</em>: quem publica a galeria recebe o pedido.</p>${
+             galleryTeam()
+               ? `<p><strong>Se você publica na galeria:</strong> toque em <em>Novo álbum</em> e, dentro dele, em <em>Adicionar fotos</em> (dá para escolher várias de uma vez). O app reduz cada foto no celular antes de enviar, para gastar pouco espaço. A igreja pode ter até ${GALLERY_LIMIT} fotos: apague álbuns antigos quando chegar perto. Evite fotos de crianças em que elas apareçam de perto sem a autorização dos pais.</p>`
+               : ''
+           }`,
         ]]
       : []),
     ...(features('carteirinha')
@@ -1341,7 +1368,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, a galeria de fotos, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -4647,7 +4674,7 @@ const MINISTRY_SUGGESTIONS = [
   ['Louvor', 'Música e ministração nos cultos.'],
   ['Acolhimento', 'Recebe quem chega e acompanha os visitantes.'],
   ['Infantil', 'Cuida das crianças durante os cultos e faz o check-in.'],
-  ['Mídia', 'Som, projeção, transmissão e redes sociais.'],
+  ['Mídia', 'Som, projeção, transmissão, redes sociais e fotos.'],
 ];
 // "domingo, 8/11 às 19h"
 const scheduleWhen = (s) =>
@@ -4665,7 +4692,7 @@ async function loadSchedules() {
 
 async function loadMinistry(id) {
   const [miRes, rosterRes, schedRes, manageRes] = await Promise.all([
-    sb.from('ministries').select('id, name, description, receives_visitors, kids_checkin, active').eq('id', id).maybeSingle(),
+    sb.from('ministries').select('id, name, description, receives_visitors, kids_checkin, gallery_publish, active').eq('id', id).maybeSingle(),
     sb.rpc('ministry_roster', { p_ministry: id }),
     sb.rpc('ministry_schedules', { p_ministry: id }),
     sb.rpc('can_manage_ministry', { p_ministry: id }),
@@ -4796,13 +4823,13 @@ function drawSchedules(data) {
 async function viewMinistryForm(ctx, id) {
   if (!requireMemberFeature(id ? `/ministerios/${id}/editar` : '/ministerios/novo', 'escalas')) return;
   if (!isLeaderRole(myRole())) return navigate('/escalas');
-  let mi = { name: '', description: '', receives_visitors: false, kids_checkin: false, active: true };
+  let mi = { name: '', description: '', receives_visitors: false, kids_checkin: false, gallery_publish: false, active: true };
   if (id) {
     const data = await editItem(
       ctx,
       screenCached(`ministerio:${id}`)?.mi,
       async () => {
-        const { data: row, error } = await sb.from('ministries').select('id, name, description, receives_visitors, kids_checkin, active').eq('id', id).maybeSingle();
+        const { data: row, error } = await sb.from('ministries').select('id, name, description, receives_visitors, kids_checkin, gallery_publish, active').eq('id', id).maybeSingle();
         if (error) throw error;
         return row;
       },
@@ -4837,6 +4864,12 @@ async function viewMinistryForm(ctx, id) {
               <small class="hint">A equipe deste ministério faz a entrada e a retirada no infantil e vê o cadastro das crianças (com alergias e cuidados). Só um ministério por igreja. Sem ele, só a liderança faz o check-in.</small></label>`
           : ''
       }
+      ${
+        featureOn('galeria')
+          ? `<label class="check"><input type="checkbox" name="gallery_publish" ${mi.gallery_publish ? 'checked' : ''}> Publica fotos na galeria
+              <small class="hint">A equipe deste ministério cria álbuns, envia e apaga fotos. Só um ministério por igreja. Sem ele, só a liderança publica.</small></label>`
+          : ''
+      }
       ${id ? `<label class="check"><input type="checkbox" name="active" ${mi.active ? 'checked' : ''}> Ministério ativo
         <small class="hint">Desmarque para guardar o ministério sem que ele apareça para os membros.</small></label>` : ''}
       ${id ? '' : '<p class="hint">Depois de criar, abra o ministério para escolher o líder e a equipe.</p>'}
@@ -4851,6 +4884,7 @@ async function viewMinistryForm(ctx, id) {
       form.description.value = about;
       if (form.receives_visitors) form.receives_visitors.checked = name === 'Acolhimento';
       if (form.kids_checkin) form.kids_checkin.checked = name === 'Infantil';
+      if (form.gallery_publish) form.gallery_publish.checked = name === 'Mídia';
     };
   });
   form.addEventListener('submit', async (e) => {
@@ -4860,6 +4894,7 @@ async function viewMinistryForm(ctx, id) {
       description: form.description.value.trim() || null,
       ...(form.receives_visitors ? { receives_visitors: form.receives_visitors.checked } : {}),
       ...(form.kids_checkin ? { kids_checkin: form.kids_checkin.checked } : {}),
+      ...(form.gallery_publish ? { gallery_publish: form.gallery_publish.checked } : {}),
     };
     const btn = form.querySelector('button.primary');
     btn.disabled = true;
@@ -6122,6 +6157,367 @@ function drawReport(p, r) {
 }
 
 // ---------------------------------------------------------------------
+// Galeria de fotos: álbuns só para os membros; publicam a liderança e o ministério marcado
+// ---------------------------------------------------------------------
+const GALLERY_LIMIT = 300; // o banco confere (gallery_limit)
+const galleryTeam = () => featureOn('galeria') && (isLeaderRole(myRole()) || (isActiveMember() && !!myMember().gallery_team));
+
+// Links das fotos da galeria (válidos por 1 hora), guardados em memória por 50 minutos.
+const galleryLinks = new Map();
+async function galleryUrls(paths) {
+  const now = Date.now();
+  const out = {};
+  const missing = [];
+  for (const p of paths) {
+    const hit = galleryLinks.get(p);
+    if (hit && hit.until > now) out[p] = hit.url;
+    else missing.push(p);
+  }
+  for (let i = 0; i < missing.length; i += 100) {
+    const { data, error } = await sb.storage.from('galeria').createSignedUrls(missing.slice(i, i + 100), 3600);
+    if (error) continue;
+    for (const d of data) {
+      if (!d.signedUrl) continue;
+      galleryLinks.set(d.path, { url: d.signedUrl, until: now + 50 * 60 * 1000 });
+      out[d.path] = d.signedUrl;
+    }
+  }
+  return out;
+}
+const knownGallery = (paths) => {
+  const now = Date.now();
+  return Object.fromEntries(paths.map((p) => [p, galleryLinks.get(p)]).filter(([, h]) => h && h.until > now).map(([p, h]) => [p, h.url]));
+};
+
+// Desenha na hora com os links já conhecidos e de novo quando os que faltam chegam.
+async function showWithGalleryLinks(ctx, name, fetcher, pathsOf, draw) {
+  await screenShow(ctx, name, fetcher, (data) => draw(data, knownGallery(pathsOf(data))));
+  const data = screenCached(name);
+  if (!data || !ctx.alive()) return;
+  const paths = pathsOf(data);
+  if (paths.every((p) => knownGallery([p])[p])) return;
+  const urls = await galleryUrls(paths).catch(() => ({}));
+  if (ctx.alive()) draw(data, urls);
+}
+
+const thumb = (url, alt = '') => (url ? `<img src="${esc(url)}" alt="${esc(alt)}" loading="lazy">` : '<span class="thumb-wait" aria-hidden="true"></span>');
+
+async function loadAlbums() {
+  const { data, error } = await sb.rpc('gallery_album_list', { p_church: state.church.id });
+  if (error) throw error;
+  return data;
+}
+
+async function viewGallery(ctx) {
+  if (!requireMemberFeature('/galeria', 'galeria')) return;
+  await showWithGalleryLinks(ctx, 'galeria', loadAlbums, (all) => all.map((a) => a.cover_mini).filter(Boolean), drawGallery);
+}
+
+function drawGallery(albums, urls) {
+  const team = galleryTeam();
+  const used = albums.reduce((n, a) => n + a.photos, 0);
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Galeria</h1>
+      ${
+        team
+          ? `<div class="actions-row"><a class="btn primary" href="#/galeria/novo">${icon.plus} Novo álbum</a></div>
+             <p class="hint ${used >= GALLERY_LIMIT * 0.9 ? 'warn' : ''}">${used} de ${GALLERY_LIMIT} fotos usadas${used >= GALLERY_LIMIT * 0.9 ? '. Apague álbuns antigos para liberar espaço.' : '.'}</p>`
+          : ''
+      }
+      ${
+        albums.length
+          ? `<div class="album-grid">${albums
+              .map(
+                (a) => `
+          <a class="album-card" href="#/galeria/${a.id}">
+            <span class="album-cover">${thumb(a.cover_mini && urls[a.cover_mini], a.title)}</span>
+            <strong>${esc(a.title)}</strong>
+            <small>${esc(fmtDate(a.album_date))} · ${a.photos} ${a.photos === 1 ? 'foto' : 'fotos'}</small>
+          </a>`,
+              )
+              .join('')}</div>`
+          : `<div class="empty"><p>Nenhum álbum ainda.${team ? ' Crie o primeiro.' : ''}</p></div>`
+      }
+      <p class="hint">As fotos são vistas só por quem é da igreja. Se você aparece numa foto e prefere que ela saia, abra a foto e toque em <em>Pedir para tirar esta foto</em>.</p>
+    </div>`;
+}
+
+async function loadAlbum(id) {
+  const [albumRes, photosRes] = await Promise.all([
+    sb.from('gallery_albums').select('id, title, album_date, description, cover_photo_id').eq('id', id).maybeSingle(),
+    sb.from('gallery_photos').select('id, path, mini_path').eq('album_id', id).order('created_at'),
+  ]);
+  if (albumRes.error) throw albumRes.error;
+  if (photosRes.error) throw photosRes.error;
+  return { album: albumRes.data, photos: photosRes.data };
+}
+const forgetAlbum = (id) => {
+  screenForget('galeria');
+  screenForget(`album:${id}`);
+};
+
+async function viewAlbum(ctx, id) {
+  if (!requireMemberFeature(`/galeria/${id}`, 'galeria')) return;
+  await showWithGalleryLinks(ctx, `album:${id}`, () => loadAlbum(id), (d) => d.photos.map((p) => p.mini_path), (d, urls) => drawAlbum(ctx, id, d, urls));
+}
+
+function drawAlbum(ctx, id, { album, photos }, urls) {
+  if (!album) {
+    $view.innerHTML = `<div class="empty"><h2>Álbum não encontrado</h2><a class="btn" href="#/galeria">Voltar</a></div>`;
+    return;
+  }
+  const team = galleryTeam();
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/galeria" class="back">← Galeria</a>
+      <h1>${esc(album.title)}</h1>
+      <p class="hint">${esc(fmtDate(album.album_date))} · ${photos.length} ${photos.length === 1 ? 'foto' : 'fotos'}</p>
+      ${album.description ? `<p class="pre">${esc(album.description)}</p>` : ''}
+      ${
+        team
+          ? `<div class="actions-row">
+              <label class="btn primary">${icon.upload} Adicionar fotos<input type="file" id="add-photos" accept="image/*" multiple hidden></label>
+              <a class="btn" href="#/galeria/${id}/editar">Editar álbum</a>
+            </div>
+            <p class="hint" id="upload-status" aria-live="polite"></p>`
+          : ''
+      }
+      ${
+        photos.length
+          ? `<div class="photo-grid">${photos
+              .map((p, i) => `<a class="photo-thumb" href="#/galeria/${id}/foto/${p.id}" aria-label="Foto ${i + 1} de ${photos.length}">${thumb(urls[p.mini_path])}</a>`)
+              .join('')}</div>`
+          : `<div class="empty"><p>Nenhuma foto neste álbum.</p></div>`
+      }
+    </div>`;
+
+  document.getElementById('add-photos')?.addEventListener('change', async (e) => {
+    const files = [...e.target.files];
+    if (!files.length) return;
+    const status = document.getElementById('upload-status');
+    const input = e.target;
+    input.disabled = true;
+    let sent = 0;
+    let stop = null;
+    for (const [i, file] of files.entries()) {
+      if (status) status.textContent = `Reduzindo e enviando ${i + 1} de ${files.length}…`;
+      try {
+        await uploadGalleryPhoto(id, file);
+        sent++;
+      } catch (err) {
+        stop = errorText(err);
+        if (/limite/.test(stop)) break;
+      }
+    }
+    forgetAlbum(id);
+    if (stop) toast(sent ? `${sent} ${sent === 1 ? 'foto enviada' : 'fotos enviadas'}. ${stop}` : stop, 'error');
+    else toast(`${sent} ${sent === 1 ? 'foto enviada' : 'fotos enviadas'}.`);
+    if (ctx.alive()) render();
+  });
+}
+
+// Reduz no aparelho, registra no banco (que confere o limite) e envia a foto e a miniatura.
+async function uploadGalleryPhoto(albumId, file) {
+  const { big, mini, ext } = await resizeForGallery(file);
+  const { data, error } = await sb.rpc('gallery_add_photo', { p_album: albumId, p_ext: ext });
+  if (error) throw error;
+  const [row] = data;
+  const bucket = sb.storage.from('galeria');
+  try {
+    for (const [path, blob] of [[row.path, big], [row.mini_path, mini]]) {
+      const { error: err } = await bucket.upload(path, blob, { contentType: blob.type, cacheControl: '3600' });
+      if (err) throw err;
+    }
+  } catch (err) {
+    await bucket.remove([row.path, row.mini_path]).catch(() => {});
+    await sb.from('gallery_photos').delete().eq('id', row.photo_id);
+    throw err;
+  }
+}
+
+async function removeGalleryFiles(photos) {
+  const paths = photos.flatMap((p) => [p.path, p.mini_path]);
+  for (let i = 0; i < paths.length; i += 100) {
+    const { error } = await sb.storage.from('galeria').remove(paths.slice(i, i + 100));
+    if (error) throw error;
+  }
+}
+
+// Foto em tela cheia: passar para o lado, baixar, compartilhar, pedir para tirar.
+async function viewGalleryPhoto(ctx, albumId, photoId) {
+  if (!requireMemberFeature(`/galeria/${albumId}/foto/${photoId}`, 'galeria')) return;
+  await showWithGalleryLinks(
+    ctx,
+    `album:${albumId}`,
+    () => loadAlbum(albumId),
+    (d) => {
+      const p = d.photos.find((x) => x.id === photoId);
+      return p ? [p.path, p.mini_path] : [];
+    },
+    (d, urls) => drawGalleryPhoto(ctx, albumId, photoId, d, urls),
+  );
+}
+
+function drawGalleryPhoto(ctx, albumId, photoId, { album, photos }, urls) {
+  const i = photos.findIndex((p) => p.id === photoId);
+  if (!album || i < 0) {
+    $view.innerHTML = `<div class="empty"><h2>Foto não encontrada</h2><p>Ela pode ter sido apagada.</p><a class="btn" href="#/galeria/${albumId}">Voltar ao álbum</a></div>`;
+    return;
+  }
+  const p = photos[i];
+  const prev = photos[i - 1];
+  const next = photos[i + 1];
+  const team = galleryTeam();
+  const src = urls[p.path] || urls[p.mini_path];
+  $view.innerHTML = `
+    <div class="page photo-view">
+      <a href="#/galeria/${albumId}" class="back">← ${esc(album.title)}</a>
+      <div class="photo-stage" id="stage">
+        ${src ? `<img src="${esc(src)}" alt="Foto ${i + 1} de ${photos.length}">` : '<span class="thumb-wait big" aria-hidden="true"></span>'}
+        ${prev ? `<a class="photo-nav prev" href="#/galeria/${albumId}/foto/${prev.id}" aria-label="Foto anterior">‹</a>` : ''}
+        ${next ? `<a class="photo-nav next" href="#/galeria/${albumId}/foto/${next.id}" aria-label="Próxima foto">›</a>` : ''}
+      </div>
+      <p class="hint center">${i + 1} de ${photos.length}</p>
+      <div class="actions-row">
+        <button class="btn" id="share">Compartilhar</button>
+        <button class="btn" id="download">${icon.upload} Baixar</button>
+      </div>
+      ${
+        team
+          ? `<div class="actions-row">
+              ${album.cover_photo_id === p.id ? '<span class="tag ok">Capa do álbum</span>' : '<button class="btn small" id="cover">Usar como capa</button>'}
+              <button class="btn small danger-outline" id="delete">Apagar foto</button>
+            </div>`
+          : ''
+      }
+      <button class="btn link" id="takedown">Pedir para tirar esta foto</button>
+    </div>`;
+
+  // Arrastar para o lado troca de foto.
+  const stage = document.getElementById('stage');
+  let startX = null;
+  stage.addEventListener('touchstart', (e) => (startX = e.touches[0].clientX), { passive: true });
+  stage.addEventListener('touchend', (e) => {
+    if (startX == null) return;
+    const dx = e.changedTouches[0].clientX - startX;
+    startX = null;
+    const to = dx < -50 ? next : dx > 50 ? prev : null;
+    if (to) navigate(`/galeria/${albumId}/foto/${to.id}`);
+  });
+
+  const fileOf = async () => {
+    const url = (await galleryUrls([p.path]))[p.path];
+    if (!url) throw new Error('Sem conexão. Tente de novo.');
+    const blob = await (await fetch(url)).blob();
+    const ext = blob.type === 'image/webp' ? 'webp' : 'jpg';
+    return new File([blob], `${slugify(album.title)}-${i + 1}.${ext}`, { type: blob.type });
+  };
+  document.getElementById('download').onclick = async () => {
+    try {
+      const file = await fileOf();
+      const url = URL.createObjectURL(file);
+      const a = Object.assign(document.createElement('a'), { href: url, download: file.name });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+  };
+  document.getElementById('share').onclick = async () => {
+    try {
+      const file = await fileOf();
+      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: album.title });
+      else document.getElementById('download').click();
+    } catch (err) {
+      if (err?.name !== 'AbortError') toast(errorText(err), 'error');
+    }
+  };
+  document.getElementById('takedown').onclick = async () => {
+    const reason = prompt('Pedir para tirar esta foto: quem publica a galeria recebe o pedido. Quer dizer o motivo? (opcional)');
+    if (reason === null) return;
+    const { data, error } = await sb.rpc('gallery_request_removal', { p_photo: p.id, p_reason: reason.trim().slice(0, 300) });
+    if (error) return toast(errorText(error), 'error');
+    toast(data ? 'Pedido enviado. Obrigado por avisar.' : 'Você já pediu para tirar esta foto.');
+  };
+  document.getElementById('cover')?.addEventListener('click', async () => {
+    const { data, error } = await sb.from('gallery_albums').update({ cover_photo_id: p.id }).eq('id', albumId).select('id');
+    if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
+    forgetAlbum(albumId);
+    toast('Capa do álbum trocada.');
+    render();
+  });
+  document.getElementById('delete')?.addEventListener('click', async () => {
+    if (!confirm('Apagar esta foto? Não dá para desfazer.')) return;
+    try {
+      await removeGalleryFiles([p]);
+      const { data, error } = await sb.from('gallery_photos').delete().eq('id', p.id).select('id');
+      if (error || !data.length) throw error || new Error('Você não tem permissão para isso.');
+    } catch (err) {
+      return toast(errorText(err), 'error');
+    }
+    forgetAlbum(albumId);
+    toast('Foto apagada.');
+    navigate(next ? `/galeria/${albumId}/foto/${next.id}` : prev ? `/galeria/${albumId}/foto/${prev.id}` : `/galeria/${albumId}`);
+  });
+}
+
+async function viewAlbumForm(ctx, id) {
+  if (!requireMemberFeature(id ? `/galeria/${id}/editar` : '/galeria/novo', 'galeria')) return;
+  if (!galleryTeam()) return navigate('/galeria');
+  let a = { title: '', album_date: isoLocal(new Date()), description: '' };
+  let photos = [];
+  if (id) {
+    const data = await editItem(ctx, screenCached(`album:${id}`), () => loadAlbum(id), () => forgetAlbum(id));
+    if (!data?.album) return navigate('/galeria');
+    a = data.album;
+    photos = data.photos;
+  }
+  if (!ctx.alive()) return;
+  $view.innerHTML = `
+    <form id="album" class="form page">
+      <a href="${id ? `#/galeria/${id}` : '#/galeria'}" class="back">← ${id ? esc(a.title) : 'Galeria'}</a>
+      <h1>${id ? 'Editar álbum' : 'Novo álbum'}</h1>
+      <label>Título<input name="title" required minlength="2" maxlength="80" value="${esc(a.title)}" placeholder="Batismo de outubro"></label>
+      <label>Data<input name="album_date" type="date" required value="${esc(a.album_date)}"></label>
+      <label>Descrição (opcional)<textarea name="description" rows="3" maxlength="500">${esc(a.description || '')}</textarea></label>
+      ${id ? '' : '<p class="hint">Depois de criar, abra o álbum e toque em <em>Adicionar fotos</em>. As fotos são reduzidas no celular antes do envio, para gastar pouco espaço.</p>'}
+      <button class="btn primary big">${id ? 'Salvar' : 'Criar álbum'}</button>
+      ${id ? `<button class="btn danger-outline" type="button" id="delete">Apagar o álbum e as ${photos.length} fotos</button>` : ''}
+    </form>`;
+  const form = document.getElementById('album');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const row = { title: form.title.value.trim(), album_date: form.album_date.value, description: form.description.value.trim() || null };
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { data, error } = id
+      ? await sb.from('gallery_albums').update(row).eq('id', id).select('id').single()
+      : await sb.from('gallery_albums').insert({ ...row, church_id: state.church.id }).select('id').single();
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    forgetAlbum(data.id);
+    toast(id ? 'Álbum salvo.' : 'Álbum criado. Agora adicione as fotos.');
+    navigate(`/galeria/${data.id}`);
+  });
+  document.getElementById('delete')?.addEventListener('click', async () => {
+    if (!confirm(`Apagar o álbum "${a.title}" e as ${photos.length} fotos? Não dá para desfazer.`)) return;
+    try {
+      await removeGalleryFiles(photos);
+      const { data, error } = await sb.from('gallery_albums').delete().eq('id', id).select('id');
+      if (error || !data.length) throw error || new Error('Você não tem permissão para isso.');
+    } catch (err) {
+      return toast(errorText(err), 'error');
+    }
+    forgetAlbum(id);
+    toast('Álbum apagado.');
+    navigate('/galeria');
+  });
+}
+
+// ---------------------------------------------------------------------
 // Aniversários: cartão da semana, aniversariantes do mês, mensagem da igreja, notificações
 // ---------------------------------------------------------------------
 const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -6270,6 +6666,7 @@ const NOTIF_GROUPS = {
   oracao: { label: 'Oração', icon: 'heart', kinds: ['oracao'], on: () => featureOn('oracao') },
   escalas: { label: 'Escalas', icon: 'clipboard', kinds: ['escala'], on: () => featureOn('escalas') },
   infantil: { label: 'Infantil', icon: 'child', kinds: ['infantil'], on: () => featureOn('infantil') },
+  galeria: { label: 'Galeria', icon: 'image', kinds: ['galeria'], on: () => galleryTeam() },
   devocional: { label: 'Devocional', icon: 'book', kinds: ['devocional', 'leitura'], on: () => featureOn('devocional') },
   datas: { label: 'Datas', icon: 'cake', kinds: ['aniversario', 'casamento', 'batismo', 'resumo_lideres'], on: () => datesOn() },
   visitantes: { label: 'Visitantes', icon: 'user', kinds: ['visitante'], on: () => visitorTeam() },
