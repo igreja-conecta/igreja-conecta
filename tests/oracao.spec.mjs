@@ -49,7 +49,7 @@ test('o líder corrige e aprova; o pedido vai para o mural e o membro ora junto'
   await card.locator('textarea').fill(`Pela saúde da mãe (corrigido) ${tag}`);
   await card.getByRole('button', { name: 'Aprovar' }).click();
   await expect(page.getByText('Pedido aprovado: já está no mural.')).toBeVisible();
-  await page.getByRole('link', { name: 'Mural' }).click();
+  await page.getByRole('link', { name: 'Mural', exact: true }).click();
   // A liderança vê o nome mesmo no pedido anônimo.
   await expect(page.locator('article.prayer', { hasText: tag })).toContainText('Membro da A (anônimo para os membros)');
 
