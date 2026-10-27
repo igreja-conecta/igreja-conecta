@@ -82,3 +82,28 @@ test('o membro vê as datas de casamento e batismo no próprio cadastro', async 
   await expect(page.getByLabel('Meu aniversário de casamento (dia e mês)')).toBeVisible();
   await expect(page.getByLabel('Meu aniversário de batismo (dia e mês)')).toBeVisible();
 });
+
+test('o Início mostra avisos, eventos e aniversariantes num carrossel abaixo dos atalhos', async ({ page }) => {
+  // 10/06/2027: "Casada da A" faz aniversário de casamento no dia 12. Aviso e evento fixos.
+  await page.clock.setFixedTime(new Date('2027-06-10T12:00:00-03:00'));
+  await page.route('**/rest/v1/announcements?*', (r) =>
+    r.fulfill({ json: [{ id: 'a1', title: 'Retiro de jovens', body: 'Inscrições abertas', pinned: false, created_at: '2027-06-09T12:00:00Z' }] }),
+  );
+  await page.route('**/rest/v1/rpc/events_between', (r) =>
+    r.fulfill({ json: [{ event_id: 'e1', title: 'Culto de domingo', starts_at: '2027-06-13T22:00:00Z', ends_at: null, location: null, repeat_weekly: false }] }),
+  );
+  await openLoggedIn(page, accounts['lider-a'].session, '/i/teste-a/#/');
+  const carousel = page.locator('#home-carousel');
+  await expect(carousel).toBeVisible();
+  // Abaixo dos atalhos.
+  expect(await page.evaluate(() => {
+    const s = document.querySelector('.shortcuts');
+    return !!(s.compareDocumentPosition(document.getElementById('home-carousel')) & Node.DOCUMENT_POSITION_FOLLOWING);
+  })).toBe(true);
+  await expect(carousel.locator('.slide h2')).toHaveText([/Avisos/, /Próximos eventos/, /Aniversariantes/]);
+  const dots = carousel.locator('.carousel-dots button');
+  await expect(dots).toHaveCount(3);
+  await dots.nth(2).click();
+  await expect(dots.nth(2)).toHaveAttribute('aria-current', 'true');
+  await expect(carousel.locator('#week-birthdays')).toBeInViewport();
+});
