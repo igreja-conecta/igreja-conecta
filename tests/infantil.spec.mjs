@@ -57,7 +57,7 @@ test('o responsável cadastra o filho com as alergias', async ({ page }) => {
 test('a liderança cria a sala, faz a entrada e imprime a etiqueta com o código', async ({ page }) => {
   await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/menu');
   await page.getByRole('link', { name: 'Check-in infantil' }).click();
-  await page.getByRole('link', { name: 'Salas' }).click();
+  await page.getByRole('link', { name: 'Salas', exact: true }).click();
   await page.getByLabel('Nome').fill(room);
   await page.getByLabel('Idade de').selectOption('0');
   await page.getByLabel('até').selectOption('12');

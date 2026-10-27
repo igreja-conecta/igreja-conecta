@@ -5414,6 +5414,7 @@ function drawKids(ctx, { kids, rooms, day }) {
   search.q.addEventListener('input', () => {
     clearTimeout(timer);
     timer = setTimeout(() => {
+      if (!ctx.alive()) return; // já foi para outra tela (ex.: tocou em Entrada)
       const q = search.q.value.trim();
       history.replaceState(null, '', `#/infantil${q ? `?busca=${encodeURIComponent(q)}` : ''}`);
       ctx.params.set('busca', q);
