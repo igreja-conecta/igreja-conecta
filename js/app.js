@@ -1847,8 +1847,8 @@ const IMPORT_MAX = 1000;
 
 async function viewImport(ctx) {
   if (!requireLeader('/membros/importar')) return;
-  const { data: existing, error } = await sb.from('members').select('email').eq('church_id', state.church.id);
-  if (error) throw error;
+  // A lista de membros já está na memória quando se vem da tela Membros: abre na hora.
+  const existing = membersCache.get(state.church.id) ?? (await fetchMembers(state.church.id));
   if (!ctx.alive()) return;
   const emails = new Set(existing.map((r) => r.email).filter(Boolean));
   const room = (state.church.max_members ?? IMPORT_MAX) - existing.length;

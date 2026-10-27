@@ -121,3 +121,23 @@ test('o líder cria um plano de leitura; o membro entra, marca a leitura de hoje
   await expect(page.getByText('1 pessoa lendo').first()).toBeVisible();
   await expect(page.getByText('Progresso médio de quem está lendo: 3%.')).toBeVisible();
 });
+
+test('Devocional e Plano de leitura abrem na hora, mesmo com o banco demorando', async ({ page }) => {
+  await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/');
+  // O Início já busca o devocional e os planos em segundo plano.
+  await expect(page.locator('#home-devotional')).toContainText(tag);
+  await page.waitForLoadState('networkidle');
+  await page.route('**/rest/v1/**', async (route) => {
+    await new Promise((r) => setTimeout(r, 4000));
+    await route.continue().catch(() => {});
+  });
+  const fast = { timeout: 1000 };
+  await page.locator('#tabbar').getByRole('link', { name: 'Menu' }).click();
+  await page.getByRole('link', { name: 'Devocional', exact: true }).click();
+  await expect(page.locator('.devotional-today')).toContainText(tag, fast);
+  await page.locator('.devotional-today').click();
+  await expect(page.getByRole('heading', { name: `Descanso em Deus ${tag}` })).toBeVisible(fast);
+  await page.getByRole('link', { name: '← Devocional' }).click();
+  await page.getByRole('link', { name: 'Plano de leitura' }).click();
+  await expect(page.locator('section.reading-plan', { hasText: 'Salmos e Provérbios em 31 dias' })).toContainText('1 de 31 dias lidos', fast);
+});
