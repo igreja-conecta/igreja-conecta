@@ -114,7 +114,7 @@ code { background: var(--brand-soft); padding: 1px 5px; border-radius: 4px; }
 /* ---------- Formulários ---------- */
 .form { display: flex; flex-direction: column; gap: 14px; }
 label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: .95rem; }
-input:not([type="checkbox"]):not([type="color"]), textarea, select {
+input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), textarea, select {
   width: 100%; padding: 11px 12px;
   border: 1px solid var(--line); border-radius: 10px;
   background: var(--surface); color: var(--ink);
@@ -124,8 +124,10 @@ input:focus, textarea:focus { outline: 2px solid var(--brand); outline-offset: 1
 input[type="color"] { width: 64px; height: 44px; padding: 2px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 fieldset { margin: 0; display: flex; flex-direction: column; gap: 12px; }
 legend { font-weight: 700; padding: 0 4px; }
-.check { flex-direction: row; align-items: center; gap: 10px; font-weight: 400; }
-.check input { width: 20px; height: 20px; accent-color: var(--brand); }
+.check { display: grid; grid-template-columns: 20px 1fr; align-items: center; gap: 4px 10px; font-weight: 400; }
+/* Explicação embaixo da caixa de marcar, alinhada com o texto. */
+.check > small { grid-column: 2; }
+.check input { width: 20px; height: 20px; flex: none; accent-color: var(--brand); }
 .check.disabled { color: var(--muted); }
 .prefix-input { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 .prefix-input span { padding-left: 12px; color: var(--muted); font-weight: 400; }
