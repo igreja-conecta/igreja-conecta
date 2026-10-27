@@ -87,9 +87,12 @@ function screenFetch(name, fetcher) {
     const p = fetcher()
       .then((data) => {
         screenMem.set(key, data);
-        try {
-          localStorage.setItem(key, JSON.stringify(data));
-        } catch {}
+        // Pedidos de oração da moderação (inclui os privados): só na memória, nunca gravados no aparelho.
+        if (!name.startsWith('moderar:')) {
+          try {
+            localStorage.setItem(key, JSON.stringify(data));
+          } catch {}
+        }
         return data;
       })
       .finally(() => screenLoading.delete(key));
@@ -110,7 +113,35 @@ async function screenShow(ctx, name, fetcher, draw) {
     if (cached) return;
     throw err;
   }
-  if (ctx.alive() && JSON.stringify(data) !== JSON.stringify(cached)) draw(data);
+  if (!ctx.alive() || JSON.stringify(data) === JSON.stringify(cached)) return;
+  const typing = document.activeElement;
+  if (cached && $view.contains(typing) && /^(INPUT|TEXTAREA|SELECT)$/.test(typing.tagName)) return;
+  draw(data);
+}
+
+// Fotos dos membros já conhecidas (links ainda válidos), sem esperar a rede.
+function knownPhotos(paths) {
+  const now = Date.now();
+  const out = {};
+  for (const p of paths) {
+    const hit = photoLinks.get(p);
+    if (hit && hit.until > now) out[p] = hit.url;
+  }
+  return out;
+}
+
+// Como screenShow, para telas com fotos: desenha na hora com as fotos já conhecidas
+// (as outras com as iniciais) e de novo quando os links das que faltam chegam.
+// photosOf devolve os caminhos das fotos (os nulos são ignorados).
+async function screenShowWithPhotos(ctx, name, fetcher, photosOf, draw) {
+  const minisOf = (data) => photosOf(data).filter(Boolean).map(miniOf);
+  await screenShow(ctx, name, fetcher, (data) => draw(data, knownPhotos(minisOf(data))));
+  const data = screenCached(name);
+  if (!data || !ctx.alive()) return;
+  const paths = minisOf(data);
+  if (paths.every((p) => knownPhotos([p])[p])) return;
+  const minis = await signedPhotos(paths).catch(() => ({}));
+  if (ctx.alive()) draw(data, minis);
 }
 
 // Depois de criar, editar ou apagar: a próxima abertura espera o banco.
@@ -132,6 +163,23 @@ function prefetchScreens() {
       screenFetch('eventos', loadEventDetails).catch(() => {});
     }
     if (featureOn('avisos')) screenFetch('avisos', loadAnnouncements).catch(() => {});
+    if (featureOn('oracao')) screenFetch('mural', loadPrayerWall).catch(() => {});
+    screenFetch('notificacoes:todas', async () => {
+      const { data, error } = await sb
+        .from('notifications')
+        .select('id, kind, title, body, url, read_at, created_at')
+        .eq('church_id', state.church.id)
+        .order('created_at', { ascending: false })
+        .range(0, NOTIF_PAGE);
+      if (error) throw error;
+      return data;
+    }).catch(() => {});
+    if (featureOn('celulas')) screenFetch('celulas', loadCells).catch(() => {});
+    if (datesOn()) {
+      const now = new Date();
+      const [y, m] = [now.getFullYear(), now.getMonth() + 1];
+      screenFetch(`mes:${y}-${m}`, () => fetchBirthdays(isoLocal(new Date(y, m - 1, 1)), isoLocal(new Date(y, m, 0)))).catch(() => {});
+    }
   };
   'requestIdleCallback' in window ? requestIdleCallback(run, { timeout: 1500 }) : setTimeout(run, 300);
 }
@@ -2493,11 +2541,18 @@ function prayerTabs(active) {
     .join('')}</div>`;
 }
 
+async function loadPrayerWall() {
+  const { data, error } = await sb.rpc('prayer_wall', { p_church: state.church.id });
+  if (error) throw error;
+  return data;
+}
+
 async function viewPrayers(ctx) {
   if (!requireMemberFeature('/oracao', 'oracao')) return;
-  const { data: rows, error } = await sb.rpc('prayer_wall', { p_church: state.church.id });
-  if (error) throw error;
-  if (!ctx.alive()) return;
+  await screenShow(ctx, 'mural', loadPrayerWall, drawPrayerWall);
+}
+
+function drawPrayerWall(rows) {
   $view.innerHTML = `
     <div class="page">
       <h1>Pedidos de oração</h1>
@@ -2531,6 +2586,7 @@ async function viewPrayers(ctx) {
       b.classList.toggle('primary', on);
       b.setAttribute('aria-pressed', String(on));
       b.textContent = `🙏 ${on ? 'Estou orando' : 'Vou orar'}${praying ? ` · ${praying}` : ''}`;
+      screenForget('mural');
     };
   });
 }
@@ -2571,14 +2627,14 @@ async function viewPrayerForm() {
     });
     btn.disabled = false;
     if (error) return toast(errorText(error), 'error');
+    screenForget('meus-pedidos');
     toast(audience === 'igreja' ? 'Pedido enviado. Ele vai para o mural depois da aprovação.' : 'Pedido enviado aos pastores.');
     navigate('/oracao/meus');
   });
 }
 
-async function viewMyPrayers(ctx) {
-  if (!requireMemberFeature('/oracao/meus', 'oracao')) return;
-  const { data: rows, error } = await sb
+async function loadMyPrayers() {
+  const { data, error } = await sb
     .from('prayer_requests')
     .select('id, body, audience, anonymous, status, moderated_at, answered_at, created_at')
     .eq('church_id', state.church.id)
@@ -2586,7 +2642,15 @@ async function viewMyPrayers(ctx) {
     .order('created_at', { ascending: false })
     .limit(100);
   if (error) throw error;
-  if (!ctx.alive()) return;
+  return data;
+}
+
+async function viewMyPrayers(ctx) {
+  if (!requireMemberFeature('/oracao/meus', 'oracao')) return;
+  await screenShow(ctx, 'meus-pedidos', loadMyPrayers, drawMyPrayers);
+}
+
+function drawMyPrayers(rows) {
   $view.innerHTML = `
     <div class="page">
       <h1>Pedidos de oração</h1>
@@ -2619,6 +2683,8 @@ async function viewMyPrayers(ctx) {
     b.onclick = async () => {
       const { error: err } = await sb.from('prayer_requests').update({ answered_at: new Date().toISOString() }).eq('id', b.dataset.answered);
       if (err) return toast(errorText(err), 'error');
+      screenForget('meus-pedidos');
+      screenForget('mural');
       toast('Glória a Deus! 🙌');
       render();
     };
@@ -2628,6 +2694,8 @@ async function viewMyPrayers(ctx) {
       if (!confirm('Apagar este pedido? Ele sai também do mural.')) return;
       const { error: err } = await sb.from('prayer_requests').delete().eq('id', b.dataset.delete);
       if (err) return toast(errorText(err), 'error');
+      screenForget('meus-pedidos');
+      screenForget('mural');
       toast('Pedido apagado.');
       render();
     };
@@ -2638,6 +2706,10 @@ async function viewPrayerModeration(ctx) {
   if (!requireMemberFeature('/oracao/moderar', 'oracao')) return;
   if (!isPastoral()) return navigate('/oracao');
   const tab = ['pendente', 'privado', 'aprovado'].includes(ctx.params.get('ver')) ? ctx.params.get('ver') : 'pendente';
+  await screenShow(ctx, `moderar:${tab}`, () => loadModeration(tab), ({ rows, people }) => drawModeration(tab, rows, people));
+}
+
+async function loadModeration(tab) {
   let query = sb
     .from('prayer_requests')
     .select('id, user_id, body, anonymous, status, moderated_at, cared_at, answered_at, created_at')
@@ -2652,8 +2724,11 @@ async function viewPrayerModeration(ctx) {
   const { data: people } = ids.length
     ? await sb.from('members').select('user_id, name').eq('church_id', state.church.id).in('user_id', ids)
     : { data: [] };
-  if (!ctx.alive()) return;
-  const nameOf = new Map((people || []).map((m) => [m.user_id, m.name]));
+  return { rows, people: people || [] };
+}
+
+function drawModeration(tab, rows, people) {
+  const nameOf = new Map(people.map((m) => [m.user_id, m.name]));
   const views = [
     ['pendente', 'Para aprovar'],
     ['privado', 'Só para os pastores'],
@@ -2709,6 +2784,8 @@ async function viewPrayerModeration(ctx) {
       card.querySelectorAll('button').forEach((b) => (b.disabled = false));
       return toast(err ? errorText(err) : 'Você não tem permissão para isso.', 'error');
     }
+    for (const t of ['pendente', 'privado', 'aprovado']) screenForget(`moderar:${t}`);
+    screenForget('mural');
     toast(done);
     render();
   };
@@ -2742,19 +2819,39 @@ const cellWhen = (c) =>
     .filter(Boolean)
     .join(', às ');
 
-async function viewCells(ctx) {
-  if (!requireMemberFeature('/celulas', 'celulas')) return;
-  const leader = isLeaderRole(myRole());
+async function loadCells() {
   const { data: cells, error } = await sb
     .from('cells')
     .select('id, name, weekday, meets_at, location, active, cell_members(member_id, role)')
     .eq('church_id', state.church.id)
     .order('name');
   if (error) throw error;
-  if (!leader) {
+  if (!isLeaderRole(myRole())) return { cells };
+  // Liderança: a frequência dos últimos encontros e quem está sem célula.
+  const since = isoLocal(addDays(new Date(), -60));
+  const [meetings, people] = await Promise.all([
+    sb.from('cell_meetings').select('cell_id, meeting_date, cell_attendance(count)').gte('meeting_date', since).order('meeting_date', { ascending: false }),
+    sb.from('members').select('id, name, role, status').eq('church_id', state.church.id).eq('status', 'ativo').order('name'),
+  ]);
+  if (meetings.error) throw meetings.error;
+  if (people.error) throw people.error;
+  return { cells, meetings: meetings.data, people: people.data };
+}
+
+const forgetCell = (id) => {
+  screenForget('celulas');
+  screenForget(`celula:${id}`);
+};
+
+async function viewCells(ctx) {
+  if (!requireMemberFeature('/celulas', 'celulas')) return;
+  await screenShow(ctx, 'celulas', loadCells, (data) => drawCells(ctx, data));
+}
+
+function drawCells(ctx, { cells, meetings, people }) {
+  if (!isLeaderRole(myRole()) || !people) {
     const mine = cells.filter((c) => c.active);
     if (mine.length === 1) return navigate(`/celulas/${mine[0].id}`);
-    if (!ctx.alive()) return;
     $view.innerHTML = `
       <div class="page">
         <h1>Minha célula</h1>
@@ -2770,19 +2867,11 @@ async function viewCells(ctx) {
   }
 
   // Liderança: todas as células, a frequência dos últimos encontros e quem está sem célula.
-  const since = isoLocal(addDays(new Date(), -60));
-  const [meetings, people] = await Promise.all([
-    sb.from('cell_meetings').select('cell_id, meeting_date, cell_attendance(count)').gte('meeting_date', since).order('meeting_date', { ascending: false }),
-    sb.from('members').select('id, name, role, status').eq('church_id', state.church.id).eq('status', 'ativo').order('name'),
-  ]);
-  if (meetings.error) throw meetings.error;
-  if (people.error) throw people.error;
-  if (!ctx.alive()) return;
-  const nameOf = new Map(people.data.map((m) => [m.id, m.name]));
+  const nameOf = new Map(people.map((m) => [m.id, m.name]));
   const inCell = new Set(cells.filter((c) => c.active).flatMap((c) => c.cell_members.map((x) => x.member_id)));
-  const without = people.data.filter((m) => !inCell.has(m.id));
+  const without = people.filter((m) => !inCell.has(m.id));
   const freq = (c) => {
-    const last = meetings.data.filter((e) => e.cell_id === c.id).slice(0, 4);
+    const last = meetings.filter((e) => e.cell_id === c.id).slice(0, 4);
     const size = c.cell_members.length;
     if (!last.length || !size) return null;
     return Math.round((100 * last.reduce((n, e) => n + (e.cell_attendance[0]?.count || 0), 0)) / (last.length * size));
@@ -2872,6 +2961,7 @@ async function viewCellForm(ctx, id) {
       : await sb.from('cells').insert({ ...row, church_id: state.church.id }).select('id').single();
     btn.disabled = false;
     if (error) return toast(errorText(error), 'error');
+    forgetCell(id || data.id);
     toast(id ? 'Célula salva.' : 'Célula criada. Agora escolha o líder e os participantes.');
     navigate(`/celulas/${data.id}`);
   });
@@ -2879,13 +2969,13 @@ async function viewCellForm(ctx, id) {
     if (!confirm(`Excluir a célula "${c.name}"? O histórico de encontros e presenças também é apagado. Para guardar o histórico, prefira desmarcar "Célula ativa".`)) return;
     const { data, error } = await sb.from('cells').delete().eq('id', id).select('id');
     if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para excluir.', 'error');
+    forgetCell(id);
     toast('Célula excluída.');
     navigate('/celulas');
   });
 }
 
-async function viewCell(ctx, id) {
-  if (!requireMemberFeature(`/celulas/${id}`, 'celulas')) return;
+async function loadCell(id) {
   const [cellRes, rosterRes, manageRes] = await Promise.all([
     sb.from('cells').select('*').eq('id', id).maybeSingle(),
     sb.rpc('cell_roster', { p_cell: id }),
@@ -2893,17 +2983,9 @@ async function viewCell(ctx, id) {
   ]);
   if (cellRes.error) throw cellRes.error;
   if (rosterRes.error) throw rosterRes.error;
-  const c = cellRes.data;
-  if (!ctx.alive()) return;
-  if (!c) {
-    $view.innerHTML = `<div class="empty"><h2>Célula não encontrada</h2><a class="btn" href="#/celulas">Voltar</a></div>`;
-    return;
-  }
-  const roster = rosterRes.data;
   const manage = !!manageRes.data;
-  const leader = isLeaderRole(myRole());
   let meetings = [];
-  if (manage) {
+  if (cellRes.data && manage) {
     const { data, error } = await sb
       .from('cell_meetings')
       .select('id, meeting_date, topic, visitors, cell_attendance(count)')
@@ -2913,9 +2995,26 @@ async function viewCell(ctx, id) {
     if (error) throw error;
     meetings = data;
   }
-  if (!ctx.alive()) return;
-  const photos = await signedPhotos(roster.filter((p) => p.photo_path).map((p) => miniOf(p.photo_path))).catch(() => ({}));
-  if (!ctx.alive()) return;
+  return { c: cellRes.data, roster: rosterRes.data, manage, meetings };
+}
+
+async function viewCell(ctx, id) {
+  if (!requireMemberFeature(`/celulas/${id}`, 'celulas')) return;
+  await screenShowWithPhotos(
+    ctx,
+    `celula:${id}`,
+    () => loadCell(id),
+    (d) => d.roster.map((p) => p.photo_path),
+    (d, photos) => drawCell(id, d, photos),
+  );
+}
+
+function drawCell(id, { c, roster, manage, meetings }, photos) {
+  if (!c) {
+    $view.innerHTML = `<div class="empty"><h2>Célula não encontrada</h2><a class="btn" href="#/celulas">Voltar</a></div>`;
+    return;
+  }
+  const leader = isLeaderRole(myRole());
 
   $view.innerHTML = `
     <div class="page">
@@ -2993,6 +3092,7 @@ async function viewCell(ctx, id) {
     row.querySelector('[data-role]')?.addEventListener('change', async (e) => {
       const { data, error } = await sb.from('cell_members').update({ role: e.target.value }).eq('cell_id', id).eq('member_id', memberId).select('role');
       if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
+      forgetCell(id);
       toast('Papel na célula salvo.');
     });
     row.querySelector('[data-remove]')?.addEventListener('click', async () => {
@@ -3000,6 +3100,7 @@ async function viewCell(ctx, id) {
       if (!confirm(`Tirar ${name} da célula? As presenças dela continuam no histórico.`)) return;
       const { data, error } = await sb.from('cell_members').delete().eq('cell_id', id).eq('member_id', memberId).select('member_id');
       if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
+      forgetCell(id);
       toast('Participante tirado da célula.');
       render();
     });
@@ -3028,6 +3129,7 @@ async function viewCell(ctx, id) {
               b.disabled = false;
               return toast(errorText(error), 'error');
             }
+            forgetCell(id);
             toast(`${b.textContent.trim()} entrou na célula.`);
             render();
           };
@@ -3096,6 +3198,7 @@ async function viewCellMeeting(ctx, id) {
     });
     btn.disabled = false;
     if (error) return toast(errorText(error), 'error');
+    forgetCell(id);
     toast('Encontro salvo.');
     navigate(`/celulas/${id}`);
   });
@@ -3103,6 +3206,7 @@ async function viewCellMeeting(ctx, id) {
     if (!confirm('Apagar este encontro e a lista de presença dele?')) return;
     const { error } = await sb.from('cell_meetings').delete().eq('id', meeting.id);
     if (error) return toast(errorText(error), 'error');
+    forgetCell(id);
     toast('Encontro apagado.');
     navigate(`/celulas/${id}`);
   });
@@ -3191,10 +3295,17 @@ async function viewBirthdays(ctx) {
     : [now.getFullYear(), now.getMonth() + 1];
   const first = new Date(y, m - 1, 1);
   const last = new Date(y, m, 0);
-  const rows = await fetchBirthdays(isoLocal(first), isoLocal(last));
-  const minis = await signedPhotos(rows.filter((r) => r.photo_path).map((r) => miniOf(r.photo_path)));
-  if (!ctx.alive()) return;
+  await screenShowWithPhotos(
+    ctx,
+    `mes:${y}-${m}`,
+    () => fetchBirthdays(isoLocal(first), isoLocal(last)),
+    (rows) => rows.map((r) => r.photo_path),
+    (rows, minis) => drawBirthdays(rows, minis, y, m),
+  );
+}
 
+function drawBirthdays(rows, minis, y, m) {
+  const now = new Date();
   const month = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   const leader = isLeaderRole(myRole());
   const byDay = new Map();
@@ -3309,16 +3420,12 @@ async function viewNotifications(ctx) {
     if (filter) q = q.in('kind', NOTIF_GROUPS[filter].kinds);
     return q;
   };
-  const [{ data, error }, active] = await Promise.all([fetchPage(0), pushActive()]);
-  if (error) throw error;
-  if (!ctx.alive()) return;
-  // Quem chegou sem ler continua destacado nesta visita, mesmo depois de marcado como lido.
-  const mark = (rows) => rows.map((n) => ({ ...n, unread: !n.read_at }));
-  let items = mark(data.slice(0, NOTIF_PAGE));
-  let more = data.length > NOTIF_PAGE;
-  const support = pushSupport();
-  const blocked = support === 'ok' && Notification.permission === 'denied';
-  const offer = support === 'ok' && !blocked && !active;
+  // Primeiro a página com o guardado (já visto na última visita: sem destaque); depois o banco.
+  const name = `notificacoes:${filter || 'todas'}`;
+  const mark = (rows, seen = false) => rows.map((n) => ({ ...n, unread: !seen && !n.read_at }));
+  const cached = screenCached(name);
+  let items = cached ? mark(cached.slice(0, NOTIF_PAGE), true) : null;
+  let more = !!cached && cached.length > NOTIF_PAGE;
 
   $view.innerHTML = `
     <div class="page notif-page">
@@ -3326,18 +3433,7 @@ async function viewNotifications(ctx) {
         <h1>Notificações</h1>
         <button class="btn small" id="clear" hidden>Apagar as lidas</button>
       </div>
-      ${
-        offer
-          ? `<div class="notice push-invite">${icon.bell}
-              <span><strong>Receba no celular</strong><small>Avisos e lembretes da igreja, mesmo com o app fechado.</small></span>
-              <button class="btn primary small" id="push-on">Ativar</button>
-            </div>`
-          : support === 'ios-instalar'
-            ? `<div class="notice push-invite">${icon.bell}
-                <span><strong>Quer receber no iPhone?</strong><small>Instale o app: Compartilhar → "Adicionar à Tela de Início". Depois abra pelo ícone.</small></span>
-              </div>`
-            : ''
-      }
+      <div id="push-offer"></div>
       ${
         groups.length > 1
           ? `<div class="chips filters">
@@ -3348,30 +3444,83 @@ async function viewNotifications(ctx) {
       }
       <div id="notif-items"></div>
       <button class="btn" id="more" hidden>Ver mais</button>
-      <p class="hint center notif-push">${
-        active
-          ? `${icon.bell} Ativadas neste aparelho · <button class="link-btn" id="push-off">Desativar</button>`
-          : blocked
-            ? 'As notificações estão bloqueadas para este site. Libere nas configurações do navegador para receber no celular.'
-            : support === 'ok' || support === 'ios-instalar'
-              ? ''
-              : 'Este navegador não recebe notificações no celular. Use o Chrome (Android) ou o app instalado (iPhone).'
-      }</p>
+      <p class="hint center notif-push" id="push-line"></p>
     </div>`;
 
   const box = document.getElementById('notif-items');
   const moreBtn = document.getElementById('more');
   const clearBtn = document.getElementById('clear');
   const draw = () => {
-    box.innerHTML = items.length
-      ? notifList(items)
-      : `<div class="empty notif-empty">${icon.bell}
+    box.innerHTML = !items
+      ? '<p class="hint center">Carregando…</p>'
+      : items.length
+        ? notifList(items)
+        : `<div class="empty notif-empty">${icon.bell}
           <h2>Tudo em dia!</h2>
           <p>${filter ? `Nenhuma notificação de ${NOTIF_GROUPS[filter].label.toLowerCase()}.` : 'Avisos, lembretes da agenda e as mensagens da igreja aparecem aqui.'}</p>
         </div>`;
     moreBtn.hidden = !more;
-    clearBtn.hidden = !items.some((n) => !n.unread);
+    clearBtn.hidden = !items?.some((n) => !n.unread);
   };
+  draw();
+
+  // Notificações no celular: chegam à parte (perguntar ao aparelho pode demorar um pouco).
+  const togglePush = async (btn, on) => {
+    btn.disabled = true;
+    try {
+      if (on) {
+        const res = await enablePush(sb, CONFIG.VAPID_PUBLIC_KEY);
+        toast(res === 'ativo' ? 'Pronto! As notificações estão ativadas.' : 'Sem permissão para notificações.', res === 'ativo' ? '' : 'error');
+      } else {
+        await disablePush(sb);
+        toast('Notificações desativadas neste aparelho.');
+      }
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+    render();
+  };
+  pushActive().then((active) => {
+    if (!ctx.alive()) return;
+    const support = pushSupport();
+    const blocked = support === 'ok' && Notification.permission === 'denied';
+    document.getElementById('push-offer').innerHTML =
+      support === 'ok' && !blocked && !active
+        ? `<div class="notice push-invite">${icon.bell}
+            <span><strong>Receba no celular</strong><small>Avisos e lembretes da igreja, mesmo com o app fechado.</small></span>
+            <button class="btn primary small" id="push-on">Ativar</button>
+          </div>`
+        : support === 'ios-instalar'
+          ? `<div class="notice push-invite">${icon.bell}
+              <span><strong>Quer receber no iPhone?</strong><small>Instale o app: Compartilhar → "Adicionar à Tela de Início". Depois abra pelo ícone.</small></span>
+            </div>`
+          : '';
+    document.getElementById('push-line').innerHTML = active
+      ? `${icon.bell} Ativadas neste aparelho · <button class="link-btn" id="push-off">Desativar</button>`
+      : blocked
+        ? 'As notificações estão bloqueadas para este site. Libere nas configurações do navegador para receber no celular.'
+        : support === 'ok' || support === 'ios-instalar'
+          ? ''
+          : 'Este navegador não recebe notificações no celular. Use o Chrome (Android) ou o app instalado (iPhone).';
+    document.getElementById('push-on')?.addEventListener('click', (e) => togglePush(e.currentTarget, true));
+    document.getElementById('push-off')?.addEventListener('click', (e) => togglePush(e.currentTarget, false));
+  });
+
+  let data;
+  try {
+    data = await screenFetch(name, async () => {
+      const { data: rows, error } = await fetchPage(0);
+      if (error) throw error;
+      return rows;
+    });
+  } catch (err) {
+    if (cached) return;
+    throw err;
+  }
+  if (!ctx.alive()) return;
+  // Quem chegou sem ler continua destacado nesta visita, mesmo depois de marcado como lido.
+  items = mark(data.slice(0, NOTIF_PAGE));
+  more = data.length > NOTIF_PAGE;
   draw();
 
   // Abrir a central zera o sininho (as não lidas desta visita continuam destacadas).
@@ -3402,27 +3551,10 @@ async function viewNotifications(ctx) {
     if (filter) q = q.in('kind', NOTIF_GROUPS[filter].kinds);
     const { error: err } = await q;
     if (err) return toast(errorText(err), 'error');
+    for (const g of [null, ...groups]) screenForget(`notificacoes:${g || 'todas'}`);
     toast('Notificações lidas apagadas.');
     render();
   };
-
-  const togglePush = async (btn, on) => {
-    btn.disabled = true;
-    try {
-      if (on) {
-        const res = await enablePush(sb, CONFIG.VAPID_PUBLIC_KEY);
-        toast(res === 'ativo' ? 'Pronto! As notificações estão ativadas.' : 'Sem permissão para notificações.', res === 'ativo' ? '' : 'error');
-      } else {
-        await disablePush(sb);
-        toast('Notificações desativadas neste aparelho.');
-      }
-    } catch (err) {
-      toast(errorText(err), 'error');
-    }
-    render();
-  };
-  document.getElementById('push-on')?.addEventListener('click', (e) => togglePush(e.currentTarget, true));
-  document.getElementById('push-off')?.addEventListener('click', (e) => togglePush(e.currentTarget, false));
 }
 
 // Convite discreto na página inicial para ativar as notificações (some por 30 dias ao fechar).

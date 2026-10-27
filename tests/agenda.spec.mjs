@@ -160,4 +160,14 @@ test('Agenda, Avisos e o evento abrem na hora pelas abas, mesmo com o banco demo
   await page.locator('#tabbar').getByRole('link', { name: 'Agenda' }).click();
   await page.locator('.event-card', { hasText: `Culto ${tag}` }).first().click();
   await expect(page.getByRole('heading', { name: `Culto ${tag}` })).toBeVisible(fast);
+
+  // As outras telas do Menu e o sininho também já vêm prontas.
+  await page.locator('#tabbar').getByRole('link', { name: 'Menu' }).click();
+  await page.getByRole('link', { name: 'Pedidos de oração' }).click();
+  await expect(page.getByRole('link', { name: 'Fazer um pedido' })).toBeVisible(fast);
+  await page.locator('#tabbar').getByRole('link', { name: 'Menu' }).click();
+  await page.getByRole('link', { name: 'Aniversariantes do mês' }).click();
+  await expect(page.getByRole('heading', { name: /^Aniversariantes de / }).first()).toBeVisible(fast);
+  await page.getByRole('link', { name: 'Notificações' }).first().click();
+  await expect(page.locator('#notif-items')).not.toContainText('Carregando', fast);
 });
