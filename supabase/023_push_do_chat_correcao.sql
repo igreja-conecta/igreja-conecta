@@ -60,3 +60,41 @@ begin
 end $$;
 revoke execute on function public.message_push_targets(text, uuid) from public;
 grant execute on function public.message_push_targets(text, uuid) to anon;
+
+-- ---------------------------------------------------------------------
+-- Denúncias: o limite de 10 por dia não vale nas igrejas de teste (os testes automáticos
+-- denunciam a cada rodada). Nas igrejas de verdade, continua igual.
+-- ---------------------------------------------------------------------
+create or replace function public.chat_report(p_conv uuid, p_reason text default null)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  c public.conversations;
+  v_me text;
+  v_other text;
+  v_reason text := nullif(trim(left(p_reason, 500)), '');
+begin
+  select * into c from public.conversations where id = p_conv and auth.uid() in (user_a, user_b);
+  if c.id is null then
+    raise exception 'Conversa não encontrada.' using errcode = '42501';
+  end if;
+  if (select count(*) from public.chat_reports r where r.reporter_id = auth.uid() and r.created_at > now() - interval '1 day') >= 10
+     and not exists (select 1 from public.churches ch where ch.id = c.church_id and ch.is_test) then
+    raise exception 'Muitas denúncias em pouco tempo. Fale direto com a liderança da igreja.';
+  end if;
+  v_me := case when c.user_a = auth.uid() then c.name_a else c.name_b end;
+  v_other := case when c.user_a = auth.uid() then c.name_b else c.name_a end;
+  update public.conversations set blocked_by = auth.uid(), blocked_at = now()
+   where id = p_conv and blocked_by is null;
+  insert into public.chat_reports (church_id, conversation_id, reporter_id, reported_name, reason)
+  values (c.church_id, c.id, auth.uid(), v_other, v_reason);
+  insert into public.notifications (user_id, church_id, kind, title, body, url, dedupe_key, push_pending)
+  select m.user_id, c.church_id, 'chat', 'Denúncia no chat',
+         v_me || ' denunciou a conversa com ' || v_other || coalesce(': ' || v_reason, '.') ||
+         ' As mensagens não são mostradas a ninguém além das duas pessoas.',
+         '#/membros', 'chat-denuncia:' || c.id || ':' || (extract(epoch from clock_timestamp()) * 1000)::bigint, true
+  from public.members m
+  where m.church_id = c.church_id and m.role = 'admin' and m.status = 'ativo'
+    and m.user_id is not null and m.consent_at is not null and m.user_id not in (c.user_a, c.user_b)
+  on conflict do nothing;
+end $$;
+
