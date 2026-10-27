@@ -171,3 +171,30 @@ test('Agenda, Avisos e o evento abrem na hora pelas abas, mesmo com o banco demo
   await page.getByRole('link', { name: 'Notificações' }).first().click();
   await expect(page.locator('#notif-items')).not.toContainText('Carregando', fast);
 });
+
+test('Meu cadastro, a ficha do membro e editar evento e aviso também abrem na hora', async ({ page }) => {
+  await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/');
+  await expect(page.locator('#home-notices')).toContainText(`Aviso ${tag}`);
+  await page.waitForLoadState('networkidle');
+  await page.route('**/rest/v1/**', async (route) => {
+    await new Promise((r) => setTimeout(r, 4000));
+    await route.continue().catch(() => {});
+  });
+  const fast = { timeout: 1000 };
+  await page.locator('#tabbar').getByRole('link', { name: 'Menu' }).click();
+  await page.getByRole('link', { name: 'Meu cadastro' }).click();
+  await expect(page.getByLabel('Nome')).toHaveValue('Líder da A', fast);
+
+  await page.locator('#tabbar').getByRole('link', { name: 'Membros' }).click();
+  await page.locator('.member-row', { hasText: 'Fulano da A' }).click();
+  await expect(page.getByLabel('Nome')).toHaveValue('Fulano da A', fast);
+
+  await page.locator('#tabbar').getByRole('link', { name: 'Agenda' }).click();
+  await page.locator('.event-card', { hasText: `Culto ${tag}` }).first().click();
+  await page.getByRole('link', { name: 'Editar' }).click();
+  await expect(page.getByLabel('Título')).toHaveValue(`Culto ${tag}`, fast);
+
+  await page.locator('#tabbar').getByRole('link', { name: 'Avisos' }).click();
+  await page.locator('.announcement', { hasText: `Aviso ${tag}` }).getByRole('link', { name: 'Editar' }).click();
+  await expect(page.getByLabel('Título')).toHaveValue(`Aviso ${tag}`, fast);
+});
