@@ -903,3 +903,127 @@ test.describe('Visitantes (013)', () => {
     expect((await rpc('adm-a', 'clean_visitors', { p_secret: 'errada' })).ok()).toBe(false);
   });
 });
+
+test.describe('Devocional e plano de leitura (014)', () => {
+  const tag = `Devocional ${Date.now().toString(36)}`;
+  // Dias longe de hoje, diferentes a cada rodada (um devocional por dia em cada igreja).
+  const offset = Date.now() % 3000;
+  const dayFrom = (base, n) => new Date(Date.parse(base) + n * 864e5).toISOString().slice(0, 10);
+  const past = dayFrom('2001-01-01', offset);
+  const future = dayFrom('2091-01-01', offset);
+  const planStart = dayFrom('1995-01-01', offset);
+  const mine = `devotionals?select=id,publish_date&title=like.${encodeURIComponent(tag)}*`;
+  const write = (who, data) => api.post(rest('devotionals'), { headers: returning(as[who].headers), data });
+
+  test.afterAll(async () => {
+    if (!api) return;
+    await api.delete(rest(`devotionals?title=like.${encodeURIComponent(tag)}*`), { headers: as['lider-a'].headers });
+    await api.delete(rest(`reading_plans?church_id=eq.${church.a}&start_date=eq.${planStart}`), { headers: as['lider-a'].headers });
+  });
+
+  test('o pastor e os líderes escrevem; o membro só vê a partir do dia; a outra igreja não vê nada', async () => {
+    const base = { church_id: church.a, body: 'Mensagem de teste', verse_book: 'JHN', verse_chapter: 3, verse_from: 16 };
+    const old = await write('lider-a', { ...base, title: `${tag} passado`, publish_date: past });
+    expect(old.ok(), await old.text()).toBe(true);
+    const [p] = await old.json();
+    const later = await write('lider-a', { ...base, title: `${tag} futuro`, publish_date: future });
+    expect(later.ok(), await later.text()).toBe(true);
+    const [f] = await later.json();
+    // Um por dia na igreja.
+    expect((await write('adm-a', { ...base, title: `${tag} repetido`, publish_date: past })).ok()).toBe(false);
+    // O membro comum e a outra igreja não escrevem.
+    expect((await write('membro-a', { ...base, title: `${tag} membro`, publish_date: dayFrom(past, 1) })).ok()).toBe(false);
+    expect((await write('adm-b', { ...base, title: `${tag} outra`, publish_date: dayFrom(past, 2) })).ok()).toBe(false);
+    // Imagem só na pasta da própria igreja.
+    const img = { ...base, title: `${tag} imagem`, publish_date: dayFrom(past, 3), image_path: `${church.b}/devocionais/x.jpg` };
+    expect((await write('lider-a', img)).ok()).toBe(false);
+
+    expect((await get('lider-a', mine)).map((d) => d.id).sort()).toEqual([p.id, f.id].sort());
+    expect((await get('membro-a', mine)).map((d) => d.id)).toEqual([p.id]);
+    for (const who of ['adm-b', 'sem-igreja']) expect(await get(who, mine), who).toEqual([]);
+    const listed = async (who) => (await (await rpc(who, 'devotional_list', { p_church: church.a })).json()).map((d) => d.id);
+    expect(await listed('lider-a')).toEqual(expect.arrayContaining([p.id, f.id]));
+    expect(await listed('membro-a')).not.toContain(f.id);
+    expect(await listed('adm-b')).toEqual([]);
+    const one = async (who, id) => (await rpc(who, 'devotional_list', { p_church: church.a, p_id: id })).json();
+    expect((await one('membro-a', p.id)).map((d) => d.id)).toEqual([p.id]);
+    expect(await one('membro-a', f.id)).toEqual([]);
+
+    // Ninguém de fora muda ou apaga.
+    const patch = (who) => api.patch(rest(`devotionals?id=eq.${p.id}`), { headers: returning(as[who].headers), data: { title: `${tag} mudado` } });
+    for (const who of ['membro-a', 'adm-b']) expect(await (await patch(who)).text(), who).not.toContain(p.id);
+    const removed = await api.delete(rest(`devotionals?id=eq.${p.id}`), { headers: returning(as['adm-b'].headers) });
+    expect(await removed.text()).not.toContain(p.id);
+  });
+
+  test('"Amém": só quem é da igreja, só no devocional já publicado; ninguém lê quem marcou', async () => {
+    const rows = await get('lider-a', mine);
+    const p = rows.find((d) => d.publish_date === past);
+    const f = rows.find((d) => d.publish_date === future);
+    const amen = await rpc('membro-a', 'devotional_amen', { p_devotional: p.id });
+    expect(amen.ok(), await amen.text()).toBe(true);
+    expect(await amen.json()).toEqual([{ amens: 1, i_amen: true }]);
+    expect((await rpc('membro-a', 'devotional_amen', { p_devotional: f.id })).ok()).toBe(false);
+    expect((await rpc('adm-b', 'devotional_amen', { p_devotional: p.id })).ok()).toBe(false);
+    const [row] = await (await rpc('lider-a', 'devotional_list', { p_church: church.a, p_id: p.id })).json();
+    expect(row).toMatchObject({ amens: 1, i_amen: false });
+    const who = await api.get(rest('devotional_amens?select=*'), { headers: as['lider-a'].headers });
+    if (who.ok()) expect(await who.json()).toEqual([]);
+    expect((await rpc('membro-a', 'devotional_amen', { p_devotional: p.id })).ok()).toBe(true); // desmarca
+  });
+
+  test('imagem do devocional: o líder grava na pasta da igreja; o membro e a outra igreja, não', async () => {
+    const path = `${church.a}/devocionais/teste-${Date.now()}.png`;
+    await expectDenied(await upload('membro-a', 'igrejas', path), 'membro-a');
+    await expectDenied(await upload('adm-b', 'igrejas', path), 'adm-b');
+    await expectDenied(await upload('lider-a', 'igrejas', `${church.a}/aniversario/teste-${Date.now()}.png`), 'lider-a fora da pasta');
+    const ok = await upload('lider-a', 'igrejas', path);
+    expect(ok.ok(), await ok.text()).toBe(true);
+    await removeFile('lider-a', 'igrejas', path);
+  });
+
+  test('plano de leitura: a liderança cria; cada um vê e marca só o próprio progresso', async () => {
+    const plan = { church_id: church.a, plan_key: 'evangelhos-30', start_date: planStart, active: false };
+    expect((await api.post(rest('reading_plans'), { headers: as['membro-a'].headers, data: plan })).ok()).toBe(false);
+    expect((await api.post(rest('reading_plans'), { headers: as['adm-b'].headers, data: plan })).ok()).toBe(false);
+    const made = await api.post(rest('reading_plans'), { headers: returning(as['lider-a'].headers), data: plan });
+    expect(made.ok(), await made.text()).toBe(true);
+    const [{ id }] = await made.json();
+    expect(await get('adm-b', `reading_plans?select=id&id=eq.${id}`)).toEqual([]);
+
+    const join = (who, data = {}) => api.post(rest('reading_plan_members'), { headers: as[who].headers, data: { plan_id: id, ...data } });
+    const mark = (who, day, data = {}) => api.post(rest('reading_progress'), { headers: as[who].headers, data: { plan_id: id, day, ...data } });
+    expect((await join('adm-b')).ok()).toBe(false);
+    expect((await join('membro-a', { user_id: as['lider-a'].id })).ok()).toBe(false); // não põe outra pessoa
+    for (const who of ['membro-a', 'lider-a']) {
+      const res = await join(who);
+      expect(res.ok(), `${who}: ${await res.text()}`).toBe(true);
+    }
+    const first = await mark('membro-a', 1);
+    expect(first.ok(), await first.text()).toBe(true);
+    expect((await mark('membro-a', 31)).ok()).toBe(false); // o plano tem 30 dias
+    expect((await mark('membro-a', 2, { user_id: as['lider-a'].id })).ok()).toBe(false);
+    expect((await mark('lider-a', 2)).ok()).toBe(true);
+    expect((await mark('adm-b', 3)).ok()).toBe(false);
+
+    expect(await get('membro-a', `reading_progress?select=day&plan_id=eq.${id}`)).toEqual([{ day: 1 }]);
+    expect(await get('lider-a', `reading_progress?select=day&plan_id=eq.${id}`)).toEqual([{ day: 2 }]);
+    expect(await get('lider-a', `reading_plan_members?select=user_id&plan_id=eq.${id}`)).toEqual([{ user_id: as['lider-a'].id }]);
+    expect(await get('adm-b', `reading_progress?select=day&plan_id=eq.${id}`)).toEqual([]);
+
+    // Números: quantos leem para todos; a média só para a liderança; nada para a outra igreja.
+    const stats = async (who) => (await (await rpc(who, 'reading_plan_stats', { p_church: church.a })).json()).find((s) => s.plan_id === id);
+    expect(await stats('membro-a')).toEqual({ plan_id: id, readers: 2, avg_percent: null });
+    expect(await stats('lider-a')).toEqual({ plan_id: id, readers: 2, avg_percent: 3 });
+    expect(await stats('adm-b')).toBeUndefined();
+
+    // O membro não muda o plano; vê o próprio progresso no arquivo dos seus dados.
+    const changed = await api.patch(rest(`reading_plans?id=eq.${id}`), { headers: returning(as['membro-a'].headers), data: { active: true } });
+    expect(await changed.text()).not.toContain(id);
+    const data = await (await rpc('membro-a', 'export_my_data')).json();
+    const exported = data.planos_de_leitura.find((x) => x.plano === 'Evangelhos em 30 dias' && x.inicio === planStart);
+    expect(exported.dias_lidos.map((d) => d.dia)).toEqual([1]);
+
+    expect((await rpc('adm-a', 'deliver_devotional_notifications', { p_secret: 'errada' })).ok()).toBe(false);
+  });
+});

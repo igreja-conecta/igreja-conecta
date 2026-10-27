@@ -58,6 +58,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `011_mapa.sql` | Local exato no mapa (alfinete) no endereço da igreja, nos eventos e nas células; o app mostra o mapa (OpenStreetMap) e a rota no Google Maps e no Waze |
 | `012_seguranca.sql` | Reforços do scan de segurança: links das redes sociais, logo e imagens só com https://; notificações só para os serviços de push conhecidos; funções de gatilho fechadas |
 | `013_visitantes.sql` | Cadastro de visitantes pelo QR Code (sem login, com limite de envios e autorização), aviso para a liderança, acompanhamento, "cadastrar como membro" e limpeza em 12 meses |
+| `014_devocional.sql` | Devocional do dia (agendado, com Amém e aviso às 7h), planos de leitura da Bíblia com o progresso de cada um, tradução da Bíblia da igreja |
 
 ## Contas de teste
 

@@ -10,6 +10,7 @@ import { maybeSuggestInstall, installState, installNow, iconReady, ICON_PREPARIN
 import { pushSupport, pushActive, enablePush, disablePush, syncPush } from './push.js';
 import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg } from './pix.js';
 import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
+import { BOOKS, BIBLE_VERSIONS, bibleUrl, bookName, bookChapters, verseRef, READING_PLANS, planReading, passageLabel, readingLabel } from './biblia.js';
 
 const $view = document.getElementById('view');
 const configured = !CONFIG.SUPABASE_ANON_KEY.includes('COLE-AQUI');
@@ -197,6 +198,16 @@ function screenForget(name) {
   } catch {}
 }
 
+// Depois de uma mudança feita na própria tela: guarda a versão nova, sem esperar o banco.
+function screenUpdate(name, data) {
+  const key = screenKey(name);
+  screenMem.set(key, data);
+  if (PRIVATE_SCREENS.test(name)) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch {}
+}
+
 // No Início, já busca em segundo plano as telas mais usadas.
 function prefetchScreens() {
   if (!isActiveMember()) return;
@@ -222,6 +233,10 @@ function prefetchScreens() {
       return data;
     }).catch(() => {});
     if (featureOn('celulas')) screenFetch('celulas', loadCells).catch(() => {});
+    if (featureOn('devocional')) {
+      screenFetch('devocionais', loadDevotionals).catch(() => {});
+      screenFetch('leitura', loadReading).catch(() => {});
+    }
     if (datesOn()) {
       const now = new Date();
       const [y, m] = [now.getFullYear(), now.getMonth() + 1];
@@ -294,6 +309,7 @@ const icon = {
   print: '<svg viewBox="0 0 24 24"><path d="M7 9V3.5h10V9M7 17H4.5V9h15v8H17"/><path d="M7 14h10v6.5H7z"/></svg>',
   heart: '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>',
   pix: '<svg viewBox="0 0 24 24"><path d="M12 3.5 20.5 12 12 20.5 3.5 12z"/><path d="M8 12h8"/></svg>',
+  book: '<svg viewBox="0 0 24 24"><path d="M5 19.5V5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2 2 2 0 0 0 2 2h12v-4"/><path d="M12 6.5v6M9.5 8.8h5"/></svg>',
 };
 
 const SOCIAL = [
@@ -456,6 +472,13 @@ const churchRoutes = [
   [/^\/visitantes$/, viewVisitors],
   [/^\/visitantes\/qr$/, viewVisitorQr],
   [/^\/visitantes\/([0-9a-f-]{36})$/, viewVisitor],
+  [/^\/devocional$/, viewDevotionals],
+  [/^\/devocional\/novo$/, viewDevotionalForm],
+  [/^\/devocional\/([0-9a-f-]{36})$/, viewDevotional],
+  [/^\/devocional\/([0-9a-f-]{36})\/editar$/, viewDevotionalForm],
+  [/^\/leitura$/, viewReading],
+  [/^\/leitura\/novo$/, viewReadingForm],
+  [/^\/leitura\/([0-9a-f-]{36})$/, viewReadingPlan],
   [/^\/celulas$/, viewCells],
   [/^\/celulas\/nova$/, viewCellForm],
   [/^\/celulas\/([0-9a-f-]{36})$/, viewCell],
@@ -803,6 +826,7 @@ async function viewChurchHome() {
 
   // As telas destes atalhos chegam nas próximas entregas da Fase 1.
   const shortcuts = [
+    ['devocional', icon.book, 'Devocional', '#/devocional'],
     ['agenda', icon.calendar, 'Agenda', '#/agenda'],
     ['avisos', icon.megaphone, 'Avisos', '#/avisos'],
     ['aniversarios', icon.cake, 'Aniversariantes', '#/aniversariantes'],
@@ -829,6 +853,8 @@ async function viewChurchHome() {
       }
       <div class="carousel" id="home-carousel" hidden>
         <div class="carousel-track">
+          <div class="slide" id="home-devotional"></div>
+          <div class="slide" id="home-reading"></div>
           <div class="slide" id="home-notices"></div>
           <div class="slide" id="home-events"></div>
           <div class="slide" id="week-birthdays"></div>
@@ -841,6 +867,10 @@ async function viewChurchHome() {
   const slot = (id) => document.getElementById(id);
   const box = slot('home-carousel');
   const changed = () => setupCarousel(box);
+  if (featureOn('devocional')) {
+    homeDevotionalCard(slot('home-devotional'), changed).catch(() => {});
+    homeReadingCard(slot('home-reading'), changed).catch(() => {});
+  }
   if (featureOn('avisos')) homeNoticesCard(slot('home-notices'), changed).catch(() => {});
   if (featureOn('agenda')) homeEventsCard(slot('home-events'), changed).catch(() => {});
   if (datesOn()) weekBirthdaysCard(slot('week-birthdays'), changed).catch(() => {});
@@ -895,6 +925,7 @@ async function viewMenu() {
         ${datesOn() ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
         ${featureOn('visitantes') && isLeaderRole(m.role) ? `<a class="menu-row" href="#/visitantes">${icon.user}<span>Visitantes</span>${icon.chevron}</a>` : ''}
         ${featureOn('celulas') ? `<a class="menu-row" href="#/celulas">${icon.users}<span>${isLeaderRole(m.role) ? 'Células' : 'Minha célula'}</span>${icon.chevron}</a>` : ''}
+        ${featureOn('devocional') ? `<a class="menu-row" href="#/devocional">${icon.book}<span>Devocional</span>${icon.chevron}</a><a class="menu-row" href="#/leitura">${icon.book}<span>Plano de leitura</span>${icon.chevron}</a>` : ''}
         ${featureOn('oracao') ? `<a class="menu-row" href="#/oracao">${icon.heart}<span>Pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${featureOn('oracao') && isPastoral() ? `<a class="menu-row" href="#/oracao/moderar">${icon.heart}<span>Moderar pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${offerReady() ? `<a class="menu-row" href="#/ofertar">${icon.pix}<span>Dízimos e ofertas</span>${icon.chevron}</a>` : ''}
@@ -934,7 +965,7 @@ async function viewMyData() {
 
       <section class="card">
         <h2>${icon.upload} Baixar meus dados</h2>
-        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus pedidos de oração, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
+        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
         <button class="btn" id="export">Baixar arquivo</button>
         <p class="hint">Para corrigir algum dado, use "Meu cadastro" ou fale com a secretaria da igreja.</p>
       </section>
@@ -943,7 +974,7 @@ async function viewMyData() {
         here
           ? `<section class="card">
               <h2>Sair da ${esc(state.church.name)}</h2>
-              <p>O seu cadastro, a sua foto e os seus pedidos de oração nesta igreja são apagados, e você deixa de receber as mensagens dela. A sua conta e as outras igrejas continuam.</p>
+              <p>O seu cadastro, a sua foto, os seus pedidos de oração e os seus planos de leitura nesta igreja são apagados, e você deixa de receber as mensagens dela. A sua conta e as outras igrejas continuam.</p>
               <button class="btn danger-outline" id="leave">Sair desta igreja</button>
             </section>`
           : ''
@@ -1078,6 +1109,14 @@ function helpTopics() {
            <p><strong>Se você lidera a célula</strong> (líder ou auxiliar), toque em <em>Registrar encontro</em> depois de cada encontro: marque quem veio, quantos visitantes vieram e, se quiser, o tema. A lista mostra quem faltou nos últimos encontros, para você procurar. Você também coloca e tira participantes, buscando pelo nome no cadastro da igreja. A presença só é vista por você e pela liderança da igreja.</p>`,
         ]]
       : []),
+    ...(features('devocional')
+      ? [[
+          'Devocional e plano de leitura',
+          `<p>Em <a href="#/devocional">Devocional</a> você lê a mensagem do dia, escrita pelos pastores e líderes. Ela também aparece no Início. Toque em <em>Amém</em> 🙏 se a palavra falou com você (ninguém vê quem tocou, só o total) e em <em>Ler na Bíblia</em> para abrir o versículo na YouVersion.</p>
+           <p>Em <a href="#/leitura">Plano de leitura</a>, toque em <em>Entrar no plano</em>. Todo dia aparece a leitura de hoje: toque em cada trecho para ler e, depois, no círculo para marcar como lida. Se ficar para trás, as leituras atrasadas ficam separadas para você pôr em dia. Ninguém vê o seu progresso.</p>
+           <p>Às 7h chega o aviso do devocional (quando a liderança marcar) e o lembrete da leitura, se você ainda não leu. O lembrete se desliga dentro do plano, em <em>Minha participação</em>.</p>`,
+        ]]
+      : []),
     ...(features('oracao')
       ? [[
           'Pedidos de oração',
@@ -1172,6 +1211,18 @@ function helpTopics() {
           'Organizar as células',
           `<p>Em <a href="#/celulas">Menu &gt; Células</a>, toque em <em>Nova célula</em> e preencha o nome, o dia, o horário e o local. Depois, abra a célula e coloque os participantes buscando pelo nome. Ao lado de cada pessoa, escolha quem é <strong>Líder</strong> ou <strong>Auxiliar</strong>: qualquer pessoa do cadastro pode liderar uma célula, mesmo sem outro papel na igreja.</p>
            <p>A lista de células mostra o número de participantes e a <strong>frequência</strong> (a média de presença nos 4 últimos encontros). Embaixo ficam os <strong>membros sem célula</strong>, para encaminhar. Quando uma célula encerrar, desmarque <em>Célula ativa</em> na edição: o histórico fica guardado.</p>`,
+        ]]
+      : []),
+    ...(features('devocional')
+      ? [[
+          'Escrever o devocional e criar planos de leitura',
+          `${
+            isPastoral()
+              ? `<p>Em <a href="#/devocional">Devocional</a>, toque em <em>Novo devocional</em>. Escolha o dia em que ele aparece (um por dia), o título, o versículo-base e a mensagem; a imagem é opcional. Dá para deixar vários prontos: os <strong>agendados</strong> só aparecem para os membros no dia marcado. Marque <em>Avisar os membros às 7h</em> para mandar a notificação.</p>`
+              : '<p>Os devocionais são escritos pelo pastor (administrador) e pelos líderes.</p>'
+          }
+           <p>Em <a href="#/leitura">Plano de leitura</a>, toque em <em>Novo plano</em>, escolha um dos planos prontos e a data de início: todos leem a mesma parte no mesmo dia. Dentro do plano, a liderança vê quantas pessoas estão lendo e o progresso médio (nunca o de uma pessoa), muda a data de início ou encerra o plano.</p>
+           <p>O app não traz o texto da Bíblia (as traduções têm direitos autorais): os links abrem a YouVersion na tradução escolhida em <em>Configurar a igreja &gt; Bíblia</em>.</p>`,
         ]]
       : []),
     ...(features('oracao') && isPastoral()
@@ -1999,6 +2050,16 @@ async function viewSettings(ctx) {
       </fieldset>
 
       <fieldset class="card">
+        <legend>${icon.book} Bíblia</legend>
+        <label>Tradução usada nos links "Ler na Bíblia"
+          <select name="bible_version">
+            ${Object.entries(BIBLE_VERSIONS).map(([k, [label]]) => `<option value="${k}" ${k === (c.bible_version || 'NVI') ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+          </select>
+        </label>
+        <p class="hint">Vale para o devocional e o plano de leitura. Os links abrem o texto no app ou no site da YouVersion.</p>
+      </fieldset>
+
+      <fieldset class="card">
         <legend>Privacidade</legend>
         <label>E-mail para pedidos sobre dados pessoais<input name="privacy_email" type="email" maxlength="160" value="${esc(c.privacy_email || '')}"></label>
         <label>Complemento da política de privacidade (opcional)<textarea name="privacy_text" rows="4" maxlength="8000" placeholder="Quem cuida dos dados na igreja, por quanto tempo eles ficam guardados…">${esc(c.privacy_text || '')}</textarea></label>
@@ -2068,6 +2129,7 @@ async function viewSettings(ctx) {
         pix_key,
         pix_name: pix_key ? form.pix_name.value.trim() || null : null,
         features,
+        bible_version: form.bible_version.value,
         privacy_email: form.privacy_email.value.trim() || null,
         privacy_text: form.privacy_text.value.trim() || null,
       };
@@ -3191,6 +3253,629 @@ async function viewVisitorQr() {
 }
 
 // ---------------------------------------------------------------------
+// Devocional do dia (o pastor e os líderes escrevem) e planos de leitura da Bíblia
+// ---------------------------------------------------------------------
+const DEVOTIONAL_MAX = 6000;
+const bibleVersion = () => state.church?.bible_version || 'NVI';
+const devotionalImage = (path) => (path ? sb.storage.from('igrejas').getPublicUrl(path).data.publicUrl : null);
+const fmtLongDay = (iso) => parseIso(iso).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+const daysFrom = (fromIso, toIso) => Math.round((parseIso(toIso) - parseIso(fromIso)) / 864e5);
+const externalLink = (href, label) => `<a class="btn small" href="${esc(href)}" target="_blank" rel="noopener">${label}</a>`;
+
+// Botão "Ler na Bíblia" do versículo-base.
+function verseLink(d) {
+  if (!d.verse_book) return '';
+  const verse = d.verse_from ? `${d.verse_from}${d.verse_to && d.verse_to !== d.verse_from ? `-${d.verse_to}` : ''}` : '';
+  return externalLink(bibleUrl(bibleVersion(), d.verse_book, d.verse_chapter, verse), `${icon.book} Ler na Bíblia`);
+}
+
+function devotionalTabs(active) {
+  const tabs = [
+    ['/devocional', 'Devocional'],
+    ['/leitura', 'Plano de leitura'],
+  ];
+  return `<div class="chips filters">${tabs
+    .map(([href, label]) => `<a class="chip ${href === active ? 'active' : ''}" href="#${href}">${label}</a>`)
+    .join('')}</div>`;
+}
+
+async function loadDevotionals() {
+  const { data, error } = await sb.rpc('devotional_list', { p_church: state.church.id });
+  if (error) throw error;
+  return data;
+}
+
+async function loadDevotional(id) {
+  const { data, error } = await sb.rpc('devotional_list', { p_church: state.church.id, p_id: id });
+  if (error) throw error;
+  return data[0] ?? null;
+}
+
+async function viewDevotionals(ctx) {
+  if (!requireMemberFeature('/devocional', 'devocional')) return;
+  await screenShow(ctx, 'devocionais', loadDevotionals, drawDevotionals);
+}
+
+function drawDevotionals(all) {
+  const today = isoLocal(new Date());
+  const pastor = isPastoral();
+  // O guardado pode ser de ontem: para os membros, só o que já chegou ao dia.
+  const past = all.filter((d) => d.publish_date <= today);
+  const scheduled = pastor ? all.filter((d) => d.publish_date > today).reverse() : [];
+  const current = past[0]?.publish_date === today ? past[0] : null;
+  const older = current ? past.slice(1) : past;
+  const row = (d, note) => `
+    <a class="event-card" href="#/devocional/${d.id}">
+      <span><strong>${esc(d.title)}</strong><small>${esc(note)}${d.verse_book ? ` · ${esc(verseRef(d))}` : ''}</small></span>${icon.chevron}
+    </a>`;
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Devocional</h1>
+      ${devotionalTabs('/devocional')}
+      ${pastor ? `<div class="actions-row"><a class="btn primary" href="#/devocional/novo">${icon.plus} Novo devocional</a></div>` : ''}
+      ${
+        current
+          ? `<a class="card devotional-today" href="#/devocional/${current.id}">
+              <span class="tag role">Hoje</span>
+              <h2>${esc(current.title)}</h2>
+              ${current.verse_book ? `<p class="verse-ref">${esc(verseRef(current))}</p>` : ''}
+              <p class="pre clamp">${esc(current.body)}</p>
+              <span class="link-like">Ler o devocional</span>
+            </a>`
+          : `<div class="empty"><p>Nenhum devocional para hoje${older.length ? '. Os anteriores estão abaixo.' : '.'}</p></div>`
+      }
+      ${
+        scheduled.length
+          ? `<section class="card"><h2>${icon.clock} Agendados</h2><p class="hint">Só o pastor e os líderes veem antes do dia.</p>
+              <div class="list">${scheduled.map((d) => row(d, `Para ${fmtDate(d.publish_date)}`)).join('')}</div></section>`
+          : ''
+      }
+      ${older.length ? `<section class="card"><h2>Anteriores</h2><div class="list">${older.map((d) => row(d, fmtDayMonth(`${d.publish_date}T12:00`))).join('')}</div></section>` : ''}
+    </div>`;
+}
+
+async function viewDevotional(ctx, id) {
+  if (!requireMemberFeature(`/devocional/${id}`, 'devocional')) return;
+  const name = `devocional:${id}`;
+  const fromList = screenCached('devocionais')?.find((d) => d.id === id);
+  if (fromList && !screenCached(name)) drawDevotional(fromList);
+  await screenShow(ctx, name, () => loadDevotional(id), drawDevotional);
+}
+
+function drawDevotional(d) {
+  if (!d) {
+    $view.innerHTML = `<div class="empty"><h2>Devocional não encontrado</h2><a class="btn" href="#/devocional">Voltar</a></div>`;
+    return;
+  }
+  const today = isoLocal(new Date());
+  const published = d.publish_date <= today;
+  const amenText = (on, n) => `🙏 Amém${n ? ` · ${n}` : ''}`;
+  const img = devotionalImage(d.image_path);
+  $view.innerHTML = `
+    <article class="page devotional">
+      <a href="#/devocional" class="back">← Devocional</a>
+      ${img ? `<img class="devotional-img" src="${esc(img)}" alt="">` : ''}
+      <p class="hint">${published ? '' : '<span class="tag wait">Agendado</span> '}${esc(fmtLongDay(d.publish_date))}</p>
+      <h1>${esc(d.title)}</h1>
+      ${
+        d.verse_book
+          ? `<blockquote class="verse">
+              ${d.verse_text ? `<p class="pre">${esc(d.verse_text)}</p>` : ''}
+              <cite>${esc(verseRef(d))}</cite>
+            </blockquote>
+            <div class="actions-row">${verseLink(d)}</div>`
+          : ''
+      }
+      <p class="pre devotional-body">${esc(d.body)}</p>
+      <div class="actions-row">
+        ${published ? `<button class="btn ${d.i_amen ? 'primary' : ''}" id="amen" aria-pressed="${d.i_amen}">${amenText(d.i_amen, d.amens)}</button>` : ''}
+        ${
+          isPastoral()
+            ? `<a class="btn" href="#/devocional/${d.id}/editar">Editar</a><button class="btn danger-outline" id="delete">Excluir</button>`
+            : ''
+        }
+      </div>
+      ${isPastoral() && published ? `<p class="hint">Ninguém vê quem tocou em Amém, só o total.</p>` : ''}
+    </article>`;
+  const amen = document.getElementById('amen');
+  if (amen)
+    amen.onclick = async () => {
+      amen.disabled = true;
+      const { data, error } = await sb.rpc('devotional_amen', { p_devotional: d.id });
+      amen.disabled = false;
+      if (error) return toast(errorText(error), 'error');
+      const { amens, i_amen: on } = data[0];
+      amen.classList.toggle('primary', on);
+      amen.setAttribute('aria-pressed', String(on));
+      amen.textContent = amenText(on, amens);
+      screenForget(`devocional:${d.id}`);
+      screenForget('devocionais');
+    };
+  const del = document.getElementById('delete');
+  if (del)
+    del.onclick = async () => {
+      if (!confirm('Excluir este devocional?')) return;
+      const { data, error } = await sb.from('devotionals').delete().eq('id', d.id).select('id');
+      if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para excluir.', 'error');
+      if (d.image_path) await sb.storage.from('igrejas').remove([d.image_path]);
+      screenForget(`devocional:${d.id}`);
+      screenForget('devocionais');
+      toast('Devocional excluído.');
+      navigate('/devocional');
+    };
+}
+
+async function viewDevotionalForm(ctx, id) {
+  if (!requireMemberFeature(id ? `/devocional/${id}/editar` : '/devocional/novo', 'devocional')) return;
+  if (!isPastoral()) return navigate('/devocional');
+  const list = screenCached('devocionais') || [];
+  let d = { title: '', body: '', publish_date: '', verse_book: '', verse_chapter: null, verse_from: null, verse_to: null, verse_text: '', image_path: null, push: true };
+  if (id) {
+    const data = await editItem(ctx, list.find((x) => x.id === id), () => loadDevotional(id), () => screenForget('devocionais'));
+    if (!data) return navigate('/devocional');
+    d = data;
+  } else {
+    // Sugere o primeiro dia sem devocional, a partir de hoje.
+    const taken = new Set(list.map((x) => x.publish_date));
+    let day = new Date();
+    while (taken.has(isoLocal(day))) day = addDays(day, 1);
+    d.publish_date = isoLocal(day);
+  }
+  if (!ctx.alive()) return;
+  const img = devotionalImage(d.image_path);
+  $view.innerHTML = `
+    <form id="devotional" class="form page">
+      <a href="${id ? `#/devocional/${id}` : '#/devocional'}" class="back">← Devocional</a>
+      <h1>${id ? 'Editar devocional' : 'Novo devocional'}</h1>
+      <label>Dia em que aparece<input name="publish_date" type="date" required value="${esc(d.publish_date)}">
+        <small class="hint">Um devocional por dia. Os membros só veem a partir desse dia.</small></label>
+      <label>Título<input name="title" required minlength="3" maxlength="120" value="${esc(d.title)}"></label>
+      <fieldset class="card">
+        <legend>Versículo-base (opcional)</legend>
+        <div class="verse-pick">
+          <label>Livro
+            <select name="verse_book">
+              <option value="">—</option>
+              ${BOOKS.map(([code, name]) => `<option value="${code}" ${code === d.verse_book ? 'selected' : ''}>${esc(name)}</option>`).join('')}
+            </select>
+          </label>
+          <label>Capítulo<input name="verse_chapter" type="number" inputmode="numeric" min="1" max="150" value="${esc(d.verse_chapter ?? '')}"></label>
+          <label>Do versículo<input name="verse_from" type="number" inputmode="numeric" min="1" max="176" value="${esc(d.verse_from ?? '')}"></label>
+          <label>Até<input name="verse_to" type="number" inputmode="numeric" min="1" max="176" value="${esc(d.verse_to ?? '')}"></label>
+        </div>
+        <label>Texto do versículo<textarea name="verse_text" rows="3" maxlength="1000" placeholder="Copie aqui o texto, se quiser que apareça no devocional">${esc(d.verse_text || '')}</textarea>
+          <small class="hint">O botão <em>Ler na Bíblia</em> abre o trecho na YouVersion, na tradução da igreja (${esc(BIBLE_VERSIONS[bibleVersion()][0])}).</small></label>
+      </fieldset>
+      <label>Mensagem<textarea name="body" required rows="10" maxlength="${DEVOTIONAL_MAX}">${esc(d.body)}</textarea>
+        <small class="hint" id="count">${d.body.length} de ${DEVOTIONAL_MAX} letras</small></label>
+      <fieldset class="card">
+        <legend>Imagem (opcional)</legend>
+        <div class="bday-image" id="image-box">${img ? `<img src="${esc(img)}" alt="">` : '<p class="hint">Sem imagem.</p>'}</div>
+        <div class="actions-row">
+          <label class="btn small">${img ? 'Trocar a imagem' : 'Escolher imagem'}<input type="file" name="image" accept="image/*" hidden></label>
+          <button type="button" class="btn link small" id="image-remove" ${img ? '' : 'hidden'}>Remover imagem</button>
+        </div>
+      </fieldset>
+      <label class="check"><input type="checkbox" name="push" ${d.push ? 'checked' : ''}> Avisar os membros às 7h do dia
+        <small class="hint">Vai para a central de notificações de todos e para o celular de quem ativou as notificações.</small></label>
+      <button class="btn primary big">${id ? 'Salvar' : 'Publicar devocional'}</button>
+    </form>`;
+  const form = document.getElementById('devotional');
+  const count = document.getElementById('count');
+  form.body.addEventListener('input', () => (count.textContent = `${form.body.value.length} de ${DEVOTIONAL_MAX} letras`));
+  let imageFile = null;
+  let removeImage = false;
+  form.image.addEventListener('change', () => {
+    imageFile = form.image.files[0] || null;
+    if (!imageFile) return;
+    removeImage = false;
+    document.getElementById('image-box').innerHTML = `<img src="${URL.createObjectURL(imageFile)}" alt="">`;
+    document.getElementById('image-remove').hidden = false;
+  });
+  document.getElementById('image-remove').onclick = () => {
+    imageFile = null;
+    removeImage = true;
+    form.image.value = '';
+    document.getElementById('image-box').innerHTML = '<p class="hint">Sem imagem.</p>';
+    document.getElementById('image-remove').hidden = true;
+  };
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button.primary');
+    const num = (name) => (form[name].value ? Number(form[name].value) : null);
+    const book = form.verse_book.value || null;
+    const row = {
+      publish_date: form.publish_date.value,
+      title: form.title.value.trim(),
+      verse_book: book,
+      verse_chapter: book ? num('verse_chapter') : null,
+      verse_from: book ? num('verse_from') : null,
+      verse_to: book ? num('verse_to') : null,
+      verse_text: book ? form.verse_text.value.trim() || null : null,
+      body: form.body.value.trim(),
+      push: form.push.checked,
+    };
+    if (book && !row.verse_chapter) return toast('Escolha o capítulo do versículo.', 'error');
+    if (book && row.verse_chapter > bookChapters(book)) return toast(`${bookName(book)} tem ${bookChapters(book)} capítulos.`, 'error');
+    if (row.verse_to && !row.verse_from) return toast('Preencha também o primeiro versículo.', 'error');
+    if (row.verse_to && row.verse_to < row.verse_from) return toast('O último versículo vem depois do primeiro.', 'error');
+    btn.disabled = true;
+    try {
+      const bucket = sb.storage.from('igrejas');
+      if (imageFile) {
+        const img = await resizeImage(imageFile, 1080, 0.82);
+        const path = `${state.church.id}/devocionais/${Date.now()}.${img.type === 'image/webp' ? 'webp' : 'jpg'}`;
+        const up = await bucket.upload(path, img, { contentType: img.type, cacheControl: '31536000' });
+        if (up.error) throw up.error;
+        row.image_path = path;
+      } else if (removeImage) row.image_path = null;
+      const { data, error } = id
+        ? await sb.from('devotionals').update({ ...row, updated_at: new Date().toISOString() }).eq('id', id).select('id').single()
+        : await sb.from('devotionals').insert({ ...row, church_id: state.church.id }).select('id').single();
+      if (error) {
+        if (row.image_path) await bucket.remove([row.image_path]);
+        throw /duplicate key/i.test(error.message) ? new Error(`Já existe um devocional para ${fmtDate(row.publish_date)}. Escolha outro dia.`) : error;
+      }
+      // A imagem antiga não é mais usada.
+      if ((imageFile || removeImage) && d.image_path) await bucket.remove([d.image_path]);
+      screenForget('devocionais');
+      screenForget(`devocional:${data.id}`);
+      toast(id ? 'Devocional salvo.' : row.publish_date > isoLocal(new Date()) ? `Devocional agendado para ${fmtDate(row.publish_date)}.` : 'Devocional publicado.');
+      navigate(`/devocional/${data.id}`);
+    } catch (err) {
+      toast(errorText(err), 'error');
+      btn.disabled = false;
+    }
+  });
+}
+
+// Planos de leitura: os da igreja, os que eu entrei, os dias que eu li e os números de cada plano.
+async function loadReading() {
+  const [plans, mine, progress, stats] = await Promise.all([
+    sb.from('reading_plans').select('id, plan_key, start_date, active').eq('church_id', state.church.id).order('start_date', { ascending: false }),
+    sb.from('reading_plan_members').select('plan_id, remind'),
+    sb.from('reading_progress').select('plan_id, day'),
+    sb.rpc('reading_plan_stats', { p_church: state.church.id }),
+  ]);
+  for (const r of [plans, mine, progress, stats]) if (r.error) throw r.error;
+  const ids = new Set(plans.data.map((p) => p.id));
+  const done = {};
+  for (const r of progress.data) if (ids.has(r.plan_id)) (done[r.plan_id] ||= []).push(r.day);
+  for (const k of Object.keys(done)) done[k].sort((a, b) => a - b);
+  return {
+    plans: plans.data,
+    mine: Object.fromEntries(mine.data.filter((m) => ids.has(m.plan_id)).map((m) => [m.plan_id, { remind: m.remind }])),
+    done,
+    stats: Object.fromEntries(stats.data.map((s) => [s.plan_id, s])),
+  };
+}
+
+// Situação de um plano hoje: o dia de hoje (0 antes de começar; maior que o total depois de terminar).
+function planStatus(p, data) {
+  const meta = READING_PLANS[p.plan_key];
+  const today = daysFrom(p.start_date, isoLocal(new Date())) + 1;
+  const done = new Set(data.done[p.id] || []);
+  const upTo = Math.min(today, meta.days);
+  const late = [];
+  for (let day = 1; day < upTo; day++) if (!done.has(day)) late.push(day);
+  return { meta, today, done, late, joined: !!data.mine[p.id], finished: today > meta.days };
+}
+const planDate = (p, day) => isoLocal(addDays(parseIso(p.start_date), day - 1));
+
+function planWhen(p, s) {
+  if (s.today < 1) return `Começa em ${fmtDate(p.start_date)}`;
+  if (s.finished) return `Terminou em ${fmtDate(planDate(p, s.meta.days))}`;
+  return `Dia ${s.today} de ${s.meta.days}`;
+}
+
+// Um dia do plano: os trechos (cada um abre na Bíblia) e o botão "Li".
+function readingDay(p, day, done, title = `Dia ${day}`) {
+  const parts = planReading(p.plan_key, day);
+  return `
+    <div class="reading-day ${done ? 'done' : ''}">
+      <button type="button" class="reading-check" data-plan="${p.id}" data-day="${day}" aria-pressed="${done}"
+        aria-label="${done ? `Desmarcar o dia ${day}` : `Marcar o dia ${day} como lido`}">${done ? '✓' : ''}</button>
+      <span><strong>${esc(title)}</strong> <small class="hint">${esc(fmtDayMonth(`${planDate(p, day)}T12:00`))}</small>
+        <span class="passages">${parts
+          .map((x) => `<a href="${esc(bibleUrl(bibleVersion(), x.book, x.from))}" target="_blank" rel="noopener">${esc(passageLabel(x))}</a>`)
+          .join('')}</span></span>
+    </div>`;
+}
+
+function progressBar(doneCount, total) {
+  const pct = Math.round((100 * doneCount) / total);
+  return `<div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${doneCount}" aria-label="Progresso">
+      <span style="width:${pct}%"></span></div>
+    <p class="hint">${doneCount} de ${total} dias lidos (${pct}%)</p>`;
+}
+
+// Marca ou desmarca um dia. Quem ainda não está no plano entra nele ao marcar o primeiro dia.
+async function toggleReadingDay(data, planId, day) {
+  const done = new Set(data.done[planId] || []);
+  if (done.has(day)) {
+    const { error } = await sb.from('reading_progress').delete().eq('plan_id', planId).eq('user_id', state.user.id).eq('day', day);
+    if (error) throw error;
+    done.delete(day);
+  } else {
+    if (!data.mine[planId]) await joinReadingPlan(data, planId);
+    const { error } = await sb.from('reading_progress').insert({ plan_id: planId, day });
+    if (error && !/duplicate key/i.test(error.message)) throw error;
+    done.add(day);
+  }
+  data.done[planId] = [...done].sort((a, b) => a - b);
+  screenUpdate('leitura', data);
+}
+
+async function joinReadingPlan(data, planId) {
+  const { error } = await sb.from('reading_plan_members').insert({ plan_id: planId });
+  if (error && !/duplicate key/i.test(error.message)) throw error;
+  data.mine[planId] = { remind: true };
+  const st = (data.stats[planId] ||= { plan_id: planId, readers: 0, avg_percent: null });
+  st.readers += 1;
+  screenUpdate('leitura', data);
+}
+
+// Liga os botões "Li" e "Entrar no plano" da tela; depois de cada um, desenha de novo.
+function bindReading(data, redraw) {
+  $view.querySelectorAll('.reading-check').forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await toggleReadingDay(data, b.dataset.plan, Number(b.dataset.day));
+        redraw(data);
+      } catch (err) {
+        toast(errorText(err), 'error');
+        b.disabled = false;
+      }
+    };
+  });
+  $view.querySelectorAll('[data-join]').forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await joinReadingPlan(data, b.dataset.join);
+        toast('Você entrou no plano. Boa leitura!');
+        redraw(data);
+      } catch (err) {
+        toast(errorText(err), 'error');
+        b.disabled = false;
+      }
+    };
+  });
+}
+
+async function viewReading(ctx) {
+  if (!requireMemberFeature('/leitura', 'devocional')) return;
+  await screenShow(ctx, 'leitura', loadReading, drawReading);
+}
+
+function drawReading(data) {
+  const leader = isLeaderRole(myRole());
+  const plans = data.plans.filter((p) => p.active || leader);
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Plano de leitura</h1>
+      ${devotionalTabs('/leitura')}
+      ${leader ? `<div class="actions-row"><a class="btn primary" href="#/leitura/novo">${icon.plus} Novo plano</a></div>` : ''}
+      ${
+        plans.length
+          ? plans
+              .map((p) => {
+                const s = planStatus(p, data);
+                const st = data.stats[p.id];
+                const readers = st?.readers ? `${st.readers} ${st.readers === 1 ? 'pessoa lendo' : 'pessoas lendo'}` : 'Ninguém entrou ainda';
+                return `
+            <section class="card reading-plan">
+              <div class="tags-row">
+                ${p.active ? '' : '<span class="tag">Encerrado (só a liderança vê)</span>'}
+                ${s.joined ? '<span class="tag ok">Você está lendo</span>' : ''}
+              </div>
+              <h2>${icon.book} ${esc(s.meta.title)}</h2>
+              <p class="hint">${esc(planWhen(p, s))} · ${esc(readers)}${leader && st?.avg_percent != null ? ` · progresso médio ${st.avg_percent}%` : ''}</p>
+              ${
+                s.joined
+                  ? `${progressBar(s.done.size, s.meta.days)}
+                     ${s.today >= 1 && !s.finished ? readingDay(p, s.today, s.done.has(s.today), 'Leitura de hoje') : ''}
+                     ${s.late.length ? `<p class="late">${s.late.length === 1 ? '1 leitura atrasada' : `${s.late.length} leituras atrasadas`}</p>` : ''}`
+                  : `<p>${esc(s.meta.about)}</p>${p.active ? `<button class="btn primary" data-join="${p.id}">Entrar no plano</button>` : ''}`
+              }
+              <a href="#/leitura/${p.id}">${s.joined ? 'Abrir o plano' : 'Ver as leituras'}</a>
+            </section>`;
+              })
+              .join('')
+          : `<div class="empty"><p>A igreja ainda não escolheu um plano de leitura.${leader ? ' Toque em <em>Novo plano</em> para começar.' : ''}</p></div>`
+      }
+    </div>`;
+  bindReading(data, drawReading);
+}
+
+async function viewReadingPlan(ctx, id) {
+  if (!requireMemberFeature(`/leitura/${id}`, 'devocional')) return;
+  await screenShow(ctx, 'leitura', loadReading, (data) => drawReadingPlan(data, id));
+}
+
+function drawReadingPlan(data, id) {
+  const p = data.plans.find((x) => x.id === id);
+  const leader = isLeaderRole(myRole());
+  if (!p || (!p.active && !leader)) {
+    $view.innerHTML = `<div class="empty"><h2>Plano não encontrado</h2><a class="btn" href="#/leitura">Voltar</a></div>`;
+    return;
+  }
+  const s = planStatus(p, data);
+  const st = data.stats[p.id];
+  const all = Array.from({ length: s.meta.days }, (_, i) => i + 1);
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/leitura" class="back">← Plano de leitura</a>
+      <h1>${esc(s.meta.title)}</h1>
+      <p class="hint">${esc(planWhen(p, s))} · começou em ${esc(fmtDate(p.start_date))}${st?.readers ? ` · ${st.readers} ${st.readers === 1 ? 'pessoa lendo' : 'pessoas lendo'}` : ''}</p>
+      ${
+        s.joined
+          ? progressBar(s.done.size, s.meta.days)
+          : `<p>${esc(s.meta.about)}</p>${p.active ? `<div class="actions-row"><button class="btn primary" data-join="${p.id}">Entrar no plano</button></div>` : ''}`
+      }
+      ${s.today >= 1 && !s.finished ? `<section class="card">${readingDay(p, s.today, s.done.has(s.today), 'Leitura de hoje')}</section>` : ''}
+      ${
+        s.late.length
+          ? `<section class="card"><h2>Para pôr em dia</h2>
+              <div class="list">${s.late.slice(0, 30).map((day) => readingDay(p, day, false)).join('')}</div>
+              ${s.late.length > 30 ? `<p class="hint">E mais ${s.late.length - 30} em <em>Todos os dias</em>.</p>` : ''}</section>`
+          : ''
+      }
+      <details class="card">
+        <summary>Todos os dias</summary>
+        <div class="list">${all.map((day) => readingDay(p, day, s.done.has(day))).join('')}</div>
+      </details>
+      <p class="hint">Os links abrem a leitura na YouVersion (${esc(BIBLE_VERSIONS[bibleVersion()][0])}). Ninguém vê o seu progresso: a liderança vê só o total de pessoas e a média.</p>
+      ${
+        s.joined
+          ? `<section class="card">
+              <h2>Minha participação</h2>
+              <label class="check"><input type="checkbox" id="remind" ${data.mine[p.id].remind ? 'checked' : ''}> Lembrete às 7h, se eu ainda não tiver lido</label>
+              <button class="btn danger-outline small" id="leave-plan">Sair do plano</button>
+            </section>`
+          : ''
+      }
+      ${
+        leader
+          ? `<form class="card form" id="plan-admin">
+              <h2>Liderança</h2>
+              ${st?.avg_percent != null ? `<p>Progresso médio de quem está lendo: <strong>${st.avg_percent}%</strong>.</p>` : ''}
+              <label>Data de início<input type="date" name="start_date" required value="${esc(p.start_date)}"></label>
+              <label class="check"><input type="checkbox" name="active" ${p.active ? 'checked' : ''}> Plano ativo
+                <small class="hint">Desmarque para encerrar: o plano some para os membros e os lembretes param.</small></label>
+              <div class="actions-row"><button class="btn primary">Salvar</button><button type="button" class="btn danger-outline" id="delete-plan">Excluir o plano</button></div>
+            </form>`
+          : ''
+      }
+    </div>`;
+  const redraw = (d) => drawReadingPlan(d, id);
+  bindReading(data, redraw);
+  const remind = document.getElementById('remind');
+  remind?.addEventListener('change', async () => {
+    const { error } = await sb.from('reading_plan_members').update({ remind: remind.checked }).eq('plan_id', p.id).eq('user_id', state.user.id);
+    if (error) {
+      remind.checked = !remind.checked;
+      return toast(errorText(error), 'error');
+    }
+    data.mine[p.id].remind = remind.checked;
+    screenUpdate('leitura', data);
+    toast(remind.checked ? 'Lembrete ligado.' : 'Lembrete desligado.');
+  });
+  document.getElementById('leave-plan')?.addEventListener('click', async () => {
+    if (!confirm('Sair do plano? Os dias que você marcou como lidos serão apagados.')) return;
+    const { error } = await sb.from('reading_plan_members').delete().eq('plan_id', p.id).eq('user_id', state.user.id);
+    if (error) return toast(errorText(error), 'error');
+    screenForget('leitura');
+    toast('Você saiu do plano.');
+    navigate('/leitura');
+  });
+  const admin = document.getElementById('plan-admin');
+  admin?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const { data: rows, error } = await sb
+      .from('reading_plans')
+      .update({ start_date: admin.start_date.value, active: admin.active.checked })
+      .eq('id', p.id)
+      .select('id');
+    if (error || !rows.length) return toast(error ? errorText(error) : 'Você não tem permissão para mudar o plano.', 'error');
+    screenForget('leitura');
+    toast('Plano salvo.');
+    render();
+  });
+  document.getElementById('delete-plan')?.addEventListener('click', async () => {
+    if (!confirm('Excluir o plano? O progresso de todos que estão lendo será apagado.')) return;
+    const { data: rows, error } = await sb.from('reading_plans').delete().eq('id', p.id).select('id');
+    if (error || !rows.length) return toast(error ? errorText(error) : 'Você não tem permissão para excluir.', 'error');
+    screenForget('leitura');
+    toast('Plano excluído.');
+    navigate('/leitura');
+  });
+}
+
+async function viewReadingForm() {
+  if (!requireMemberFeature('/leitura/novo', 'devocional')) return;
+  if (!isLeaderRole(myRole())) return navigate('/leitura');
+  $view.innerHTML = `
+    <form id="plan" class="form page">
+      <a href="#/leitura" class="back">← Plano de leitura</a>
+      <h1>Novo plano de leitura</h1>
+      <fieldset>
+        <legend>Plano</legend>
+        ${Object.entries(READING_PLANS)
+          .map(
+            ([key, p], i) => `
+          <label class="check"><input type="radio" name="plan_key" value="${key}" ${i === 0 ? 'checked' : ''}> ${esc(p.title)}
+            <small class="hint">${esc(p.about)} Dia 1: ${esc(readingLabel(planReading(key, 1)))}.</small></label>`,
+          )
+          .join('')}
+      </fieldset>
+      <label>Data de início<input type="date" name="start_date" required value="${esc(isoLocal(new Date()))}">
+        <small class="hint">Todos leem a mesma parte no mesmo dia. Quem entrar depois pode pôr em dia as leituras atrasadas.</small></label>
+      <button class="btn primary big">Criar plano</button>
+    </form>`;
+  const form = document.getElementById('plan');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { data, error } = await sb
+      .from('reading_plans')
+      .insert({ church_id: state.church.id, plan_key: form.plan_key.value, start_date: form.start_date.value })
+      .select('id')
+      .single();
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    screenForget('leitura');
+    toast('Plano criado. Os membros já podem entrar.');
+    navigate(`/leitura/${data.id}`);
+  });
+}
+
+// Cartões do Início: o devocional de hoje e a leitura de hoje dos planos em que entrei.
+function homeDevotionalCard(el, changed) {
+  return homeCard(el, 'devocionais', loadDevotionals, (all) => {
+    const d = all.find((x) => x.publish_date === isoLocal(new Date()));
+    if (!d) return '';
+    return `
+    <section class="card">
+      <h2>${icon.book} Devocional de hoje</h2>
+      <a class="devotional-mini" href="#/devocional/${d.id}">
+        <strong>${esc(d.title)}</strong>
+        ${d.verse_book ? `<small class="verse-ref">${esc(verseRef(d))}</small>` : ''}
+        <p class="pre clamp">${esc(d.body)}</p>
+      </a>
+      <a href="#/devocional/${d.id}">Ler o devocional</a>
+    </section>`;
+  }, changed);
+}
+
+function homeReadingCard(el, changed) {
+  return homeCard(el, 'leitura', loadReading, (data) => {
+    const rows = data.plans
+      .filter((p) => p.active && data.mine[p.id])
+      .map((p) => [p, planStatus(p, data)])
+      .filter(([, s]) => s.today >= 1 && !s.finished);
+    if (!rows.length) return '';
+    return `
+    <section class="card">
+      <h2>${icon.book} Leitura de hoje</h2>
+      ${rows
+        .map(
+          ([p, s]) => `
+        <a class="event-card" href="#/leitura/${p.id}">
+          <span><strong>${esc(readingLabel(planReading(p.plan_key, s.today)))}</strong>
+            <small>${esc(s.meta.title)} · ${s.done.has(s.today) ? 'lida ✓' : `dia ${s.today}`}${s.late.length ? ` · ${s.late.length} atrasada${s.late.length > 1 ? 's' : ''}` : ''}</small></span>${icon.chevron}
+        </a>`,
+        )
+        .join('')}
+      <a href="#/leitura">Ver o plano de leitura</a>
+    </section>`;
+  }, changed);
+}
+
+// ---------------------------------------------------------------------
 // Células e pequenos grupos: participantes, encontros e presença
 // ---------------------------------------------------------------------
 const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
@@ -3759,6 +4444,7 @@ const NOTIF_GROUPS = {
   avisos: { label: 'Avisos', icon: 'megaphone', kinds: ['aviso'], on: () => featureOn('avisos') },
   agenda: { label: 'Agenda', icon: 'calendar', kinds: ['evento'], on: () => featureOn('agenda') },
   oracao: { label: 'Oração', icon: 'heart', kinds: ['oracao'], on: () => featureOn('oracao') },
+  devocional: { label: 'Devocional', icon: 'book', kinds: ['devocional', 'leitura'], on: () => featureOn('devocional') },
   datas: { label: 'Datas', icon: 'cake', kinds: ['aniversario', 'casamento', 'batismo', 'resumo_lideres'], on: () => datesOn() },
   visitantes: { label: 'Visitantes', icon: 'user', kinds: ['visitante'], on: () => featureOn('visitantes') && isLeaderRole(myRole()) },
 };

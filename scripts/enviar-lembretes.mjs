@@ -1,5 +1,5 @@
 // Lembretes dos eventos da agenda, notificações dos avisos novos e os avisos da central que
-// também vão por push (pedidos de oração).
+// também vão por push (pedidos de oração, visitantes, devocional e leitura do dia).
 // Roda no GitHub Actions a cada 10 minutos (.github/workflows/lembretes.yml). Precisa de:
 //   ENVIO_SECRET e VAPID_PRIVATE_KEY (segredos do GitHub) e SITE_URL.
 // As notificações da central do app são gravadas pelo próprio banco ao separar os envios.
@@ -91,6 +91,10 @@ await Promise.all(
   ),
 );
 
+// Às 7h: o devocional do dia e o lembrete da leitura de quem ainda não leu (o banco grava na central
+// e põe na fila do push logo abaixo).
+const daily = await rpc('deliver_devotional_notifications');
+
 // Avisos da central que também vão por push (ex.: pedido de oração novo para a liderança)
 const central = await rpc('claim_notification_push');
 await Promise.all(
@@ -109,7 +113,7 @@ await Promise.all(
 const count = (rows, key) => new Set(rows.map((r) => r[key])).size;
 console.log(
   `Lembretes: ${count(reminders, 'event_id')} evento(s); avisos: ${count(notices, 'announcement_id')}; ` +
-    `central: ${count(central, 'notification_id')}; ` +
+    `central: ${count(central, 'notification_id')} (devocional e leitura: ${daily}); ` +
     `${stats.push} push, ${stats.gone} aparelho(s) removido(s), ${stats.failed} falha(s).`,
 );
 if (stats.failed && !stats.push) process.exit(1);

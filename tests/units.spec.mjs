@@ -204,8 +204,47 @@ test('regras de segurança das páginas (CSP): os scripts do 404.html batem com 
   expect(index).toMatch(/http-equiv="Content-Security-Policy"[^>]*object-src 'none'/);
   expect(index).not.toMatch(/<script>(?!\s*<\/script>)/); // nenhum script escrito dentro da página
   // Nem comandos no HTML das telas (onclick="..."): a CSP bloquearia.
-  for (const file of ['app.js', 'map.js', 'install.js', 'push.js', 'pix.js']) {
+  for (const file of ['app.js', 'map.js', 'install.js', 'push.js', 'pix.js', 'biblia.js']) {
     const code = readFileSync(new URL(`../js/${file}`, import.meta.url), 'utf8');
     expect(code, file).not.toMatch(/\son[a-z]+="/);
   }
+});
+
+test('planos de leitura: cada plano lê todos os capítulos uma vez só, no número de dias do banco', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { BOOKS, READING_PLANS, planReading, readingLabel } = await import('../js/biblia.js');
+  expect(BOOKS).toHaveLength(66);
+  expect(BOOKS.reduce((n, b) => n + b[2], 0)).toBe(1189);
+  // Os mesmos planos e dias do supabase/014_devocional.sql.
+  const sql = readFileSync(new URL('../supabase/014_devocional.sql', import.meta.url), 'utf8');
+  for (const [key, plan] of Object.entries(READING_PLANS)) {
+    expect(sql, key).toContain(`when '${key}' then ${plan.days}`);
+    expect(sql, key).toContain(`when '${key}' then '${plan.title}'`);
+    const read = [];
+    for (let day = 1; day <= plan.days; day++) {
+      const parts = planReading(key, day);
+      expect(parts.length, `${key} dia ${day}`).toBeGreaterThan(0);
+      for (const p of parts) for (let c = p.from; c <= p.to; c++) read.push(`${p.book}.${c}`);
+    }
+    const all = plan.tracks.flat().map(([b, c]) => `${b}.${c}`);
+    expect(read.sort(), key).toEqual(all.sort());
+    expect(planReading(key, 0)).toEqual([]);
+    expect(planReading(key, plan.days + 1)).toEqual([]);
+  }
+  expect(readingLabel(planReading('biblia-1-ano', 1))).toBe('Gênesis 1–3');
+  expect(readingLabel(planReading('biblia-1-ano', 365))).toBe('Apocalipse 19–22');
+  expect(readingLabel(planReading('salmos-proverbios', 1))).toBe('Salmos 1–4; Provérbios 1');
+  expect(readingLabel(planReading('evangelhos-30', 30))).toBe('João 19–21');
+});
+
+test('links da Bíblia (YouVersion) e referência do versículo', async () => {
+  const { bibleUrl, verseRef, passageLabel } = await import('../js/biblia.js');
+  expect(bibleUrl('NVI', 'JHN', 3, '16')).toBe('https://www.bible.com/bible/129/JHN.3.16.NVI');
+  expect(bibleUrl('ARA', 'PSA', 23)).toBe('https://www.bible.com/bible/1608/PSA.23.ARA');
+  expect(bibleUrl('XYZ', 'GEN', 1)).toBe('https://www.bible.com/bible/129/GEN.1.NVI');
+  expect(verseRef({ verse_book: 'JHN', verse_chapter: 3, verse_from: 16, verse_to: 18 })).toBe('João 3:16-18');
+  expect(verseRef({ verse_book: 'PSA', verse_chapter: 23, verse_from: null, verse_to: null })).toBe('Salmos 23');
+  expect(verseRef({ verse_book: null })).toBe('');
+  expect(passageLabel({ book: 'OBA', from: 1, to: 1 })).toBe('Obadias');
+  expect(passageLabel({ book: 'GEN', from: 50, to: 50 })).toBe('Gênesis 50');
 });
