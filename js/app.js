@@ -4017,5 +4017,7 @@ boot().catch((e) => {
   console.error(e);
   // Já está na tela com o que ficou guardado (ex.: sem internet): só avisa.
   if (quickStarted) return toast(errorText(e), 'error');
-  $view.innerHTML = `<div class="empty"><h2>Não foi possível abrir o app</h2><p>${esc(errorText(e))}</p><button class="btn primary" onclick="location.reload()">Tentar de novo</button></div>`;
+  $view.innerHTML = `<div class="empty"><h2>Não foi possível abrir o app</h2><p>${esc(errorText(e))}</p><button class="btn primary" id="reload">Tentar de novo</button></div>`;
+  // Sem onclick no HTML: a regra de segurança (CSP) não deixa rodar código escrito na página.
+  document.getElementById('reload').onclick = () => location.reload();
 });

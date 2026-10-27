@@ -203,4 +203,9 @@ test('regras de segurança das páginas (CSP): os scripts do 404.html batem com 
   const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   expect(index).toMatch(/http-equiv="Content-Security-Policy"[^>]*object-src 'none'/);
   expect(index).not.toMatch(/<script>(?!\s*<\/script>)/); // nenhum script escrito dentro da página
+  // Nem comandos no HTML das telas (onclick="..."): a CSP bloquearia.
+  for (const file of ['app.js', 'map.js', 'install.js', 'push.js', 'pix.js']) {
+    const code = readFileSync(new URL(`../js/${file}`, import.meta.url), 'utf8');
+    expect(code, file).not.toMatch(/\son[a-z]+="/);
+  }
 });
