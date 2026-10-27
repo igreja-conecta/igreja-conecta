@@ -37,6 +37,8 @@ const myMember = () => state.memberships.find((m) => m.church.id === state.churc
 const isActiveMember = () => !!myMember()?.consent_at;
 const myRole = () => (isActiveMember() ? myMember().role : null);
 const featureOn = (key) => !!state.church?.features?.[key];
+// Pastor (administrador) e líderes: leem os pedidos de oração privados e moderam o mural.
+const isPastoral = () => ['admin', 'lider'].includes(myRole());
 // Datas comemoradas: aniversário (funcionalidade "aniversarios") e casamento e batismo ("datas_especiais").
 const MESSAGE_KINDS = {
   aniversario: { feature: 'aniversarios', menu: 'Mensagem de aniversário', emoji: '🎂', label: 'Aniversário' },
@@ -114,6 +116,7 @@ const icon = {
   help: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.1-2.4 3.6M12 17h.01"/></svg>',
   bell: '<svg viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
   print: '<svg viewBox="0 0 24 24"><path d="M7 9V3.5h10V9M7 17H4.5V9h15v8H17"/><path d="M7 14h10v6.5H7z"/></svg>',
+  heart: '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>',
   pix: '<svg viewBox="0 0 24 24"><path d="M12 3.5 20.5 12 12 20.5 3.5 12z"/><path d="M8 12h8"/></svg>',
 };
 
@@ -268,6 +271,10 @@ const churchRoutes = [
   [/^\/avisos\/novo$/, viewAnnouncementForm],
   [/^\/avisos\/([0-9a-f-]{36})\/editar$/, viewAnnouncementForm],
   [/^\/ofertar$/, viewOffer],
+  [/^\/oracao$/, viewPrayers],
+  [/^\/oracao\/novo$/, viewPrayerForm],
+  [/^\/oracao\/meus$/, viewMyPrayers],
+  [/^\/oracao\/moderar$/, viewPrayerModeration],
 ];
 
 let renderId = 0;
@@ -607,6 +614,7 @@ async function viewChurchHome() {
     ['agenda', icon.calendar, 'Agenda', '#/agenda'],
     ['avisos', icon.megaphone, 'Avisos', '#/avisos'],
     ['aniversarios', icon.cake, 'Aniversariantes', '#/aniversariantes'],
+    ['oracao', icon.heart, 'Oração', '#/oracao'],
     ['pix', icon.pix, 'Ofertar', '#/ofertar'],
   ].filter(([k]) => (k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : featureOn(k)));
   $view.innerHTML = `
@@ -652,6 +660,8 @@ async function viewMenu() {
         ${admin ? `<a class="menu-row" href="#/config">${icon.gear}<span>Configurar a igreja</span>${icon.chevron}</a>` : ''}
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         ${datesOn() ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
+        ${featureOn('oracao') ? `<a class="menu-row" href="#/oracao">${icon.heart}<span>Pedidos de oração</span>${icon.chevron}</a>` : ''}
+        ${featureOn('oracao') && isPastoral() ? `<a class="menu-row" href="#/oracao/moderar">${icon.heart}<span>Moderar pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${offerReady() ? `<a class="menu-row" href="#/ofertar">${icon.pix}<span>Dízimos e ofertas</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações</span>${icon.chevron}</a>
         ${admin ? messageLinks() : ''}
@@ -689,7 +699,7 @@ async function viewMyData() {
 
       <section class="card">
         <h2>${icon.upload} Baixar meus dados</h2>
-        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
+        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, os seus pedidos de oração, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
         <button class="btn" id="export">Baixar arquivo</button>
         <p class="hint">Para corrigir algum dado, use "Meu cadastro" ou fale com a secretaria da igreja.</p>
       </section>
@@ -698,7 +708,7 @@ async function viewMyData() {
         here
           ? `<section class="card">
               <h2>Sair da ${esc(state.church.name)}</h2>
-              <p>O seu cadastro e a sua foto nesta igreja são apagados, e você deixa de receber as mensagens dela. A sua conta e as outras igrejas continuam.</p>
+              <p>O seu cadastro, a sua foto e os seus pedidos de oração nesta igreja são apagados, e você deixa de receber as mensagens dela. A sua conta e as outras igrejas continuam.</p>
               <button class="btn danger-outline" id="leave">Sair desta igreja</button>
             </section>`
           : ''
@@ -706,7 +716,7 @@ async function viewMyData() {
 
       <section class="card danger-zone">
         <h2>Excluir minha conta</h2>
-        <p>Apaga a sua conta e os seus cadastros em <strong>todas</strong> as igrejas, com fotos, notificações e aparelhos. Não dá para desfazer. Os eventos e avisos que você publicou continuam na igreja, sem o seu nome.</p>
+        <p>Apaga a sua conta e os seus cadastros em <strong>todas</strong> as igrejas, com fotos, pedidos de oração, notificações e aparelhos. Não dá para desfazer. Os eventos e avisos que você publicou continuam na igreja, sem o seu nome.</p>
         <label>Para confirmar, digite EXCLUIR<input id="confirm-delete" autocomplete="off" autocapitalize="characters"></label>
         <button class="btn danger-outline" id="delete" disabled>Excluir minha conta para sempre</button>
       </section>
@@ -803,7 +813,8 @@ function helpTopics() {
          ${features('aniversarios') ? '<li>a mensagem da igreja no dia do seu aniversário, às 7h;</li>' : ''}
          ${features('datas_especiais') ? '<li>a mensagem no aniversário do seu casamento e do seu batismo, às 7h;</li>' : ''}
          ${features('agenda') ? '<li>os lembretes dos eventos da agenda;</li>' : ''}
-         ${features('avisos') ? '<li>os avisos que a liderança mandar com notificação (chegam em até uns 15 minutos).</li>' : ''}
+         ${features('avisos') ? '<li>os avisos que a liderança mandar com notificação (chegam em até uns 15 minutos);</li>' : ''}
+         ${features('oracao') ? '<li>o aviso de quando o seu pedido de oração for para o mural.</li>' : ''}
        </ul>
        <p><strong>No iPhone</strong>, as notificações só funcionam com o app instalado na tela inicial. O sininho no topo guarda tudo, mesmo sem ativar no celular.</p>
        <p>Bloqueou sem querer? Libere as notificações deste site nas configurações do navegador e ative de novo.</p>`,
@@ -823,6 +834,17 @@ function helpTopics() {
           'Aniversariantes',
           `<p>Em <a href="#/aniversariantes">Menu &gt; Aniversariantes do mês</a> você vê quem faz aniversário${features('datas_especiais') ? ' (de vida, de casamento e de batismo)' : ''}, mês a mês, e pode imprimir a lista.</p>
            <p>As suas datas só aparecem para os outros membros se você autorizar em <em>Meu cadastro</em>, e só o dia e o mês, nunca o ano. A liderança sempre vê.</p>`,
+        ]]
+      : []),
+    ...(features('oracao')
+      ? [[
+          'Pedidos de oração',
+          `<p>Em <a href="#/oracao">Pedidos de oração</a>, toque em <em>Fazer um pedido</em> e escolha para quem vai:</p>
+           <ul class="bullets">
+             <li><strong>Só para os pastores:</strong> só o pastor (administrador) e os líderes leem. A secretaria não vê.</li>
+             <li><strong>Para a igreja orar junto:</strong> vai para o mural depois da aprovação da liderança e fica lá por 30 dias. Se quiser, marque <em>Não mostrar meu nome</em> (a liderança continua vendo quem enviou).</li>
+           </ul>
+           <p>No mural, toque em <em>Vou orar</em> 🙏 nos pedidos pelos quais você vai orar. Ninguém vê quem tocou, só o total. Em <em>Meus pedidos</em> você acompanha os seus, marca <em>Deus respondeu</em> 🙌 ou apaga.</p>`,
         ]]
       : []),
     ...(offerReady()
@@ -858,7 +880,7 @@ function helpTopics() {
       `<table class="help-table">
          <tr><th>Administrador</th><td>Tudo da liderança, mais: configura a igreja, define os papéis, desliga contas e escreve a mensagem de aniversário.</td></tr>
          <tr><th>Secretaria</th><td>Cadastra, edita, inativa e exclui membros; publica eventos e avisos.</td></tr>
-         <tr><th>Líder</th><td>Cadastra, edita e inativa membros (não exclui); publica eventos e avisos.</td></tr>
+         <tr><th>Líder</th><td>Cadastra, edita e inativa membros (não exclui); publica eventos e avisos${features('oracao') ? '; lê os pedidos de oração só para os pastores e modera o mural' : ''}.</td></tr>
          <tr><th>Membro</th><td>Vê a agenda, os avisos e os aniversariantes que autorizaram; edita os próprios dados.</td></tr>
        </table>
        <p>Administrador, secretaria e líderes formam a liderança: veem o cadastro completo de todos e recebem o resumo dos aniversariantes. Use esse acesso só para cuidar da igreja.</p>`,
@@ -894,6 +916,18 @@ function helpTopics() {
            <p>Marque <strong>Mandar notificação para os membros</strong> só nos avisos importantes. Isso só pode ser escolhido ao publicar.</p>`,
         ]]
       : []),
+    ...(features('oracao') && isPastoral()
+      ? [[
+          'Moderar pedidos de oração',
+          `<p>O administrador e os líderes recebem uma notificação a cada pedido novo. Em <a href="#/oracao/moderar">Menu &gt; Moderar pedidos de oração</a>:</p>
+           <ul class="bullets">
+             <li><strong>Para aprovar:</strong> os pedidos para a igreja. Corrija o texto se precisar (por exemplo, para tirar um dado pessoal) e toque em <em>Aprovar</em> ou <em>Não publicar</em>. Quem pediu recebe um aviso.</li>
+             <li><strong>Só para os pastores:</strong> os pedidos privados. Marque <em>Já orei / já entrei em contato</em> para a liderança saber que alguém cuidou.</li>
+             <li><strong>No mural:</strong> os aprovados dos últimos 30 dias. Dá para tirar um do mural.</li>
+           </ul>
+           <p>A secretaria não vê os pedidos só para os pastores nem modera o mural. Nos pedidos anônimos, você vê o nome, mas os membros não.</p>`,
+        ]]
+      : []),
   ];
 
   const admins = [
@@ -904,7 +938,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -2212,6 +2246,268 @@ async function viewAnnouncementForm(ctx, id) {
 }
 
 // ---------------------------------------------------------------------
+// Pedidos de oração: mural da igreja, meus pedidos e moderação (administrador e líderes)
+// ---------------------------------------------------------------------
+const PRAYER_MAX = 500;
+const PRAYER_STATUS = {
+  privado: 'Só para os pastores',
+  pendente: 'Aguardando aprovação',
+  aprovado: 'No mural',
+  recusado: 'Não foi para o mural',
+};
+const fmtDayMonth = (iso) => new Date(iso).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
+const onWall = (p) => p.status === 'aprovado' && Date.now() - new Date(p.moderated_at).getTime() < 30 * 864e5;
+
+function prayerTabs(active) {
+  const tabs = [
+    ['/oracao', 'Mural'],
+    ['/oracao/meus', 'Meus pedidos'],
+    ...(isPastoral() ? [['/oracao/moderar', 'Moderação']] : []),
+  ];
+  return `<div class="chips filters">${tabs
+    .map(([href, label]) => `<a class="chip ${href === active ? 'active' : ''}" href="#${href}">${label}</a>`)
+    .join('')}</div>`;
+}
+
+async function viewPrayers(ctx) {
+  if (!requireMemberFeature('/oracao', 'oracao')) return;
+  const { data: rows, error } = await sb.rpc('prayer_wall', { p_church: state.church.id });
+  if (error) throw error;
+  if (!ctx.alive()) return;
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Pedidos de oração</h1>
+      ${prayerTabs('/oracao')}
+      <div class="actions-row"><a class="btn primary" href="#/oracao/novo">${icon.plus} Fazer um pedido</a></div>
+      ${
+        rows.length
+          ? rows
+              .map(
+                (p) => `
+            <article class="card prayer">
+              ${p.answered_at ? '<div class="tags-row"><span class="tag ok">Deus respondeu 🙌</span></div>' : ''}
+              <p class="pre">${esc(p.body)}</p>
+              <p class="hint">${p.author ? esc(p.author) : 'Pedido anônimo'}${p.anonymous && p.author ? ' (anônimo para os membros)' : ''} · ${esc(fmtDayMonth(p.approved_at))}</p>
+              <button class="btn small ${p.i_pray ? 'primary' : ''}" data-pray="${p.id}" aria-pressed="${p.i_pray}">
+                🙏 ${p.i_pray ? 'Estou orando' : 'Vou orar'}${p.praying ? ` · ${p.praying}` : ''}
+              </button>
+            </article>`,
+              )
+              .join('')
+          : `<div class="empty"><p>Nenhum pedido no mural agora. Os pedidos aprovados ficam aqui por 30 dias.</p></div>`
+      }
+    </div>`;
+  $view.querySelectorAll('[data-pray]').forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      const { data, error: err } = await sb.rpc('prayer_toggle', { p_request: b.dataset.pray });
+      b.disabled = false;
+      if (err) return toast(errorText(err), 'error');
+      const { praying, i_pray: on } = data[0];
+      b.classList.toggle('primary', on);
+      b.setAttribute('aria-pressed', String(on));
+      b.textContent = `🙏 ${on ? 'Estou orando' : 'Vou orar'}${praying ? ` · ${praying}` : ''}`;
+    };
+  });
+}
+
+async function viewPrayerForm() {
+  if (!requireMemberFeature('/oracao/novo', 'oracao')) return;
+  $view.innerHTML = `
+    <form id="prayer" class="form page">
+      <a href="#/oracao" class="back">← Pedidos de oração</a>
+      <h1>Fazer um pedido</h1>
+      <label>Seu pedido<textarea name="body" required minlength="3" maxlength="${PRAYER_MAX}" rows="6"></textarea>
+        <small class="hint" id="count">0 de ${PRAYER_MAX} letras</small></label>
+      <fieldset>
+        <legend>Para quem vai</legend>
+        <label class="check"><input type="radio" name="audience" value="pastores" checked> Só para os pastores
+          <small class="hint">Só o pastor (administrador) e os líderes leem. A secretaria não vê.</small></label>
+        <label class="check"><input type="radio" name="audience" value="igreja"> Para a igreja orar junto
+          <small class="hint">Vai para o mural depois da aprovação da liderança e fica lá por 30 dias.</small></label>
+      </fieldset>
+      <label class="check" id="anon-box" hidden><input type="checkbox" name="anonymous"> Não mostrar meu nome
+        <small class="hint">Os membros veem "Pedido anônimo". A liderança continua vendo quem enviou.</small></label>
+      <button class="btn primary big">Enviar pedido</button>
+    </form>`;
+  const form = document.getElementById('prayer');
+  const count = document.getElementById('count');
+  form.body.addEventListener('input', () => (count.textContent = `${form.body.value.length} de ${PRAYER_MAX} letras`));
+  form.addEventListener('change', () => (document.getElementById('anon-box').hidden = form.audience.value !== 'igreja'));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const audience = form.audience.value;
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { error } = await sb.from('prayer_requests').insert({
+      church_id: state.church.id,
+      body: form.body.value.trim(),
+      audience,
+      anonymous: audience === 'igreja' && form.anonymous.checked,
+    });
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    toast(audience === 'igreja' ? 'Pedido enviado. Ele vai para o mural depois da aprovação.' : 'Pedido enviado aos pastores.');
+    navigate('/oracao/meus');
+  });
+}
+
+async function viewMyPrayers(ctx) {
+  if (!requireMemberFeature('/oracao/meus', 'oracao')) return;
+  const { data: rows, error } = await sb
+    .from('prayer_requests')
+    .select('id, body, audience, anonymous, status, moderated_at, answered_at, created_at')
+    .eq('church_id', state.church.id)
+    .eq('user_id', state.user.id)
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  if (!ctx.alive()) return;
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Pedidos de oração</h1>
+      ${prayerTabs('/oracao/meus')}
+      <div class="actions-row"><a class="btn primary" href="#/oracao/novo">${icon.plus} Fazer um pedido</a></div>
+      ${
+        rows.length
+          ? rows
+              .map(
+                (p) => `
+            <article class="card prayer">
+              <div class="tags-row">
+                <span class="tag">${p.status === 'aprovado' && !onWall(p) ? 'Saiu do mural' : PRAYER_STATUS[p.status]}</span>
+                ${p.anonymous ? '<span class="tag">Anônimo</span>' : ''}
+                ${p.answered_at ? '<span class="tag ok">Deus respondeu 🙌</span>' : ''}
+              </div>
+              <p class="pre">${esc(p.body)}</p>
+              <p class="hint">Enviado em ${esc(fmtDayMonth(p.created_at))}${p.status === 'recusado' ? '. A liderança recebeu e vai orar por você.' : ''}</p>
+              <div class="actions-row">
+                ${p.answered_at ? '' : `<button class="btn small" data-answered="${p.id}">Deus respondeu 🙌</button>`}
+                <button class="btn small danger-outline" data-delete="${p.id}">Apagar</button>
+              </div>
+            </article>`,
+              )
+              .join('')
+          : `<div class="empty"><p>Você ainda não fez nenhum pedido.</p></div>`
+      }
+    </div>`;
+  $view.querySelectorAll('[data-answered]').forEach((b) => {
+    b.onclick = async () => {
+      const { error: err } = await sb.from('prayer_requests').update({ answered_at: new Date().toISOString() }).eq('id', b.dataset.answered);
+      if (err) return toast(errorText(err), 'error');
+      toast('Glória a Deus! 🙌');
+      render();
+    };
+  });
+  $view.querySelectorAll('[data-delete]').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm('Apagar este pedido? Ele sai também do mural.')) return;
+      const { error: err } = await sb.from('prayer_requests').delete().eq('id', b.dataset.delete);
+      if (err) return toast(errorText(err), 'error');
+      toast('Pedido apagado.');
+      render();
+    };
+  });
+}
+
+async function viewPrayerModeration(ctx) {
+  if (!requireMemberFeature('/oracao/moderar', 'oracao')) return;
+  if (!isPastoral()) return navigate('/oracao');
+  const tab = ['pendente', 'privado', 'aprovado'].includes(ctx.params.get('ver')) ? ctx.params.get('ver') : 'pendente';
+  let query = sb
+    .from('prayer_requests')
+    .select('id, user_id, body, anonymous, status, moderated_at, cared_at, answered_at, created_at')
+    .eq('church_id', state.church.id)
+    .eq('status', tab)
+    .order('created_at', { ascending: tab === 'pendente' })
+    .limit(100);
+  if (tab === 'aprovado') query = query.gt('moderated_at', new Date(Date.now() - 30 * 864e5).toISOString());
+  const { data: rows, error } = await query;
+  if (error) throw error;
+  const ids = [...new Set(rows.map((p) => p.user_id))];
+  const { data: people } = ids.length
+    ? await sb.from('members').select('user_id, name').eq('church_id', state.church.id).in('user_id', ids)
+    : { data: [] };
+  if (!ctx.alive()) return;
+  const nameOf = new Map((people || []).map((m) => [m.user_id, m.name]));
+  const views = [
+    ['pendente', 'Para aprovar'],
+    ['privado', 'Só para os pastores'],
+    ['aprovado', 'No mural'],
+  ];
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Pedidos de oração</h1>
+      ${prayerTabs('/oracao/moderar')}
+      <div class="chips filters">${views
+        .map(([k, label]) => `<a class="chip ${tab === k ? 'active' : ''}" href="#/oracao/moderar?ver=${k}">${label}</a>`)
+        .join('')}</div>
+      ${tab === 'privado' ? '<p class="hint">Só o administrador e os líderes veem estes pedidos.</p>' : ''}
+      ${
+        rows.length
+          ? rows
+              .map(
+                (p) => `
+            <article class="card prayer" data-id="${p.id}">
+              <div class="tags-row">
+                ${p.anonymous ? '<span class="tag">Anônimo para os membros</span>' : ''}
+                ${p.cared_at ? '<span class="tag ok">Já cuidado</span>' : ''}
+                ${p.answered_at ? '<span class="tag ok">Deus respondeu 🙌</span>' : ''}
+              </div>
+              ${
+                tab === 'pendente'
+                  ? `<label>Pedido<textarea rows="4" maxlength="${PRAYER_MAX}" data-body>${esc(p.body)}</textarea>
+                       <small class="hint">Se precisar, corrija o texto antes de aprovar (por exemplo, para tirar um dado pessoal).</small></label>`
+                  : `<p class="pre">${esc(p.body)}</p>`
+              }
+              <p class="hint">${esc(nameOf.get(p.user_id) || 'Pessoa que saiu da igreja')} · ${esc(fmtDayMonth(p.created_at))}</p>
+              <div class="actions-row">
+                ${
+                  tab === 'pendente'
+                    ? `<button class="btn small primary" data-status="aprovado">Aprovar</button>
+                       <button class="btn small" data-status="recusado">Não publicar</button>`
+                    : tab === 'privado'
+                      ? `<button class="btn small" data-cared="${p.cared_at ? '' : '1'}">${p.cared_at ? 'Desmarcar' : 'Já orei / já entrei em contato'}</button>`
+                      : `<button class="btn small danger-outline" data-remove>Tirar do mural</button>`
+                }
+              </div>
+            </article>`,
+              )
+              .join('')
+          : `<div class="empty"><p>${tab === 'pendente' ? 'Nenhum pedido esperando aprovação.' : tab === 'privado' ? 'Nenhum pedido só para os pastores.' : 'Nenhum pedido no mural.'}</p></div>`
+      }
+    </div>`;
+
+  const update = async (card, patch, done) => {
+    card.querySelectorAll('button').forEach((b) => (b.disabled = true));
+    const { data, error: err } = await sb.from('prayer_requests').update(patch).eq('id', card.dataset.id).select('id');
+    if (err || !data.length) {
+      card.querySelectorAll('button').forEach((b) => (b.disabled = false));
+      return toast(err ? errorText(err) : 'Você não tem permissão para isso.', 'error');
+    }
+    toast(done);
+    render();
+  };
+  $view.querySelectorAll('article.prayer').forEach((card) => {
+    card.querySelectorAll('[data-status]').forEach((b) => {
+      b.onclick = () => {
+        const body = card.querySelector('[data-body]').value.trim();
+        if (body.length < 3) return toast('O pedido ficou curto demais.', 'error');
+        const approve = b.dataset.status === 'aprovado';
+        update(card, { body, status: b.dataset.status }, approve ? 'Pedido aprovado: já está no mural.' : 'Pedido não publicado. Quem pediu recebe um aviso.');
+      };
+    });
+    card.querySelector('[data-cared]')?.addEventListener('click', (e) =>
+      update(card, { cared_at: e.currentTarget.dataset.cared ? new Date().toISOString() : null }, 'Pronto.'),
+    );
+    card.querySelector('[data-remove]')?.addEventListener('click', () => {
+      if (!confirm('Tirar este pedido do mural? Quem pediu continua vendo em "Meus pedidos".')) return;
+      update(card, { status: 'recusado' }, 'Pedido tirado do mural.');
+    });
+  });
+}
+
+// ---------------------------------------------------------------------
 // Aniversários: cartão da semana, aniversariantes do mês, mensagem da igreja, notificações
 // ---------------------------------------------------------------------
 const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -2332,7 +2628,7 @@ async function viewBirthdays(ctx) {
   document.getElementById('print').onclick = () => window.print();
 }
 
-const NOTIF_ICON = { aniversario: 'cake', casamento: 'cake', batismo: 'cake', resumo_lideres: 'cake', evento: 'calendar', aviso: 'megaphone', sistema: 'bell' };
+const NOTIF_ICON = { aniversario: 'cake', casamento: 'cake', batismo: 'cake', resumo_lideres: 'cake', evento: 'calendar', aviso: 'megaphone', oracao: 'heart', sistema: 'bell' };
 
 function timeAgo(iso) {
   const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);

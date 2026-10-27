@@ -1,4 +1,5 @@
-// Lembretes dos eventos da agenda e notificações dos avisos novos.
+// Lembretes dos eventos da agenda, notificações dos avisos novos e os avisos da central que
+// também vão por push (pedidos de oração).
 // Roda no GitHub Actions a cada 10 minutos (.github/workflows/lembretes.yml). Precisa de:
 //   ENVIO_SECRET e VAPID_PRIVATE_KEY (segredos do GitHub) e SITE_URL.
 // As notificações da central do app são gravadas pelo próprio banco ao separar os envios.
@@ -90,10 +91,25 @@ await Promise.all(
   ),
 );
 
+// Avisos da central que também vão por push (ex.: pedido de oração novo para a liderança)
+const central = await rpc('claim_notification_push');
+await Promise.all(
+  central.map((r) =>
+    push(r, {
+      title: `${r.church_name}: ${r.title}`,
+      body: r.body || '',
+      url: churchUrl(r.church_slug, r.url?.startsWith('#/') ? r.url : ''),
+      tag: `${r.kind}-${r.notification_id}`,
+      icon: churchUrl(r.church_slug, 'icon-192.png'),
+    }),
+  ),
+);
+
 // Só números: nada de nome ou endereço de aparelho no registro público do GitHub.
 const count = (rows, key) => new Set(rows.map((r) => r[key])).size;
 console.log(
   `Lembretes: ${count(reminders, 'event_id')} evento(s); avisos: ${count(notices, 'announcement_id')}; ` +
+    `central: ${count(central, 'notification_id')}; ` +
     `${stats.push} push, ${stats.gone} aparelho(s) removido(s), ${stats.failed} falha(s).`,
 );
 if (stats.failed && !stats.push) process.exit(1);
