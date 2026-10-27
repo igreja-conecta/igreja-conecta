@@ -48,3 +48,37 @@ test('o admin vê a prévia da mensagem com os campos trocados', async ({ page }
   await page.getByRole('button', { name: 'Colocar 🎉' }).click();
   await expect(page.locator('#pv-title')).toHaveText('Parabéns, Admin🎉');
 });
+
+// Datas especiais (008): na Teste A, "Casada da A" (12/06/2010, autorizou mostrar) e
+// "Batizado da A" (20/06/2020, não autorizou).
+test('a liderança vê casamento e batismo na lista do mês, com os anos', async ({ page }) => {
+  await openLoggedIn(page, accounts['lider-a'].session, '/i/teste-a/#/aniversariantes?mes=2027-06');
+  await expect(page.locator('.bday-day', { hasText: 'Casada da A' })).toContainText('💍 Casamento · 17 anos');
+  await expect(page.locator('.bday-day', { hasText: 'Batizado da A' })).toContainText('🕊️ Batismo · 7 anos');
+});
+
+test('o membro vê na lista do mês só as datas especiais autorizadas, sem os anos', async ({ page }) => {
+  await openLoggedIn(page, accounts['membro-a'].session, '/i/teste-a/#/aniversariantes?mes=2027-06');
+  const wedding = page.locator('.bday-day', { hasText: 'Casada da A' });
+  await expect(wedding).toContainText('💍 Casamento');
+  await expect(wedding).not.toContainText('anos');
+  await expect(page.getByText('Batizado da A')).toHaveCount(0);
+});
+
+test('o admin escreve a mensagem de casamento com {anos}', async ({ page }) => {
+  await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/menu');
+  await page.getByRole('link', { name: 'Mensagem de casamento' }).click();
+  await expect(page.getByRole('heading', { name: 'Mensagem de casamento' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '{idade}' })).toHaveCount(0);
+  await page.getByRole('textbox', { name: 'Mensagem', exact: true }).fill('Parabéns pelos ');
+  await page.getByRole('button', { name: '{anos}' }).click();
+  await expect(page.locator('#pv-body')).toHaveText('Parabéns pelos 10 anos');
+});
+
+test('o membro vê as datas de casamento e batismo no próprio cadastro', async ({ page }) => {
+  await openLoggedIn(page, accounts['membro-a'].session, '/i/teste-a/#/perfil');
+  await expect(page.getByLabel('Data de casamento')).toBeVisible();
+  await expect(page.getByLabel('Data de batismo')).toBeVisible();
+  await expect(page.getByLabel('Meu aniversário de casamento (dia e mês)')).toBeVisible();
+  await expect(page.getByLabel('Meu aniversário de batismo (dia e mês)')).toBeVisible();
+});

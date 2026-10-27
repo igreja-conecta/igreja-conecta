@@ -78,7 +78,7 @@ export const FEATURES = [
   { key: 'aniversarios', label: 'Aniversariantes', phase: 1 },
   { key: 'agenda', label: 'Agenda de cultos e eventos', phase: 1 },
   { key: 'avisos', label: 'Mural de avisos', phase: 1 },
-  { key: 'datas_especiais', label: 'Aniversário de casamento e batismo', phase: 2, soon: true },
+  { key: 'datas_especiais', label: 'Aniversário de casamento e batismo', phase: 2 },
   { key: 'oracao', label: 'Pedidos de oração', phase: 2, soon: true },
   { key: 'escalas', label: 'Escalas de ministérios', phase: 2, soon: true },
   { key: 'pix', label: 'Dízimos e ofertas por Pix', phase: 2 },
@@ -100,7 +100,7 @@ export const fold = (s) =>
     .toLowerCase()
     .trim();
 
-// Data de nascimento digitada ("15/03/1980", "15-3-80", "1980-03-15") → "1980-03-15", ou null.
+// Data digitada (nascimento, casamento, batismo) ("15/03/1980", "15-3-80", "1980-03-15") → "1980-03-15", ou null.
 // Ano com dois dígitos: até o ano atual vira 20xx, depois 19xx.
 export function parseBirthDate(s, today = new Date()) {
   const t = String(s ?? '').trim();
@@ -165,6 +165,8 @@ const COLUMNS = {
   email: ['email', 'e-mail', 'e mail'],
   phone: ['telefone', 'celular', 'whatsapp', 'fone', 'tel'],
   birth_date: ['nascimento', 'data de nascimento', 'data nascimento', 'aniversario', 'data'],
+  wedding_date: ['casamento', 'data de casamento', 'data casamento'],
+  baptism_date: ['batismo', 'data de batismo', 'data batismo'],
 };
 export const MEMBERS_CSV_TEMPLATE = 'nome;email;telefone;nascimento\r\nMaria da Silva;maria@exemplo.com;(61) 99999-0000;15/03/1980\r\n';
 
@@ -193,11 +195,17 @@ export function parseMembersCsv(text, existingEmails = new Set(), today = new Da
     const birthRaw = get('birth_date');
     const birth_date = birthRaw ? parseBirthDate(birthRaw, today) : null;
     if (birthRaw && !birth_date) errors.push('data de nascimento inválida');
+    const weddingRaw = get('wedding_date');
+    const wedding_date = weddingRaw ? parseBirthDate(weddingRaw, today) : null;
+    if (weddingRaw && !wedding_date) errors.push('data de casamento inválida');
+    const baptismRaw = get('baptism_date');
+    const baptism_date = baptismRaw ? parseBirthDate(baptismRaw, today) : null;
+    if (baptismRaw && !baptism_date) errors.push('data de batismo inválida');
     let skip = null;
     if (email && existingEmails.has(email)) skip = 'já cadastrado';
     else if (email && seen.has(email)) skip = 'e-mail repetido na planilha';
     if (email) seen.add(email);
-    return { line: i + 2, name, email, phone, birth_date, errors, skip };
+    return { line: i + 2, name, email, phone, birth_date, wedding_date, baptism_date, errors, skip };
   });
   return { rows };
 }
@@ -206,12 +214,16 @@ export const firstName = (name) => String(name ?? '').trim().split(/\s+/)[0] || 
 
 // Campos da mensagem de aniversário: {nome}, {primeiro_nome}, {igreja}, {idade}.
 export const MESSAGE_FIELDS = ['nome', 'primeiro_nome', 'igreja', 'idade'];
+// Casamento e batismo: {anos} no lugar de {idade}.
+export const SPECIAL_FIELDS = ['nome', 'primeiro_nome', 'igreja', 'anos'];
+// "1 ano", "10 anos" (igual a public.years_text no banco).
+export const yearsText = (n) => (n == null || n === '' ? '' : Number(n) === 1 ? '1 ano' : `${n} anos`);
 
 // Atalhos na tela da mensagem; o teclado do celular também põe qualquer outro emoji.
 export const MESSAGE_EMOJIS = ['🎂', '🎉', '🎈', '🎁', '🥳', '🙏', '🙌', '❤️', '😊', '✨', '🌟', '🌷', '🕊️', '✝️', '📖', '🎶'];
 
 export function renderMessage(template, { name, church, age }) {
-  const values = { nome: name, primeiro_nome: firstName(name), igreja: church, idade: age ?? '' };
+  const values = { nome: name, primeiro_nome: firstName(name), igreja: church, idade: age ?? '', anos: yearsText(age) };
   return String(template ?? '')
     .replace(/\{(\w+)\}/g, (all, key) => (key in values ? String(values[key]) : all))
     .replace(/[ \t]{2,}/g, ' ')
