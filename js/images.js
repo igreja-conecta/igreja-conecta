@@ -68,3 +68,15 @@ export async function makeIconSet(file, background) {
     URL.revokeObjectURL(img.src);
   }
 }
+
+// Galeria: foto grande leve (até ~300 KB; o banco recusa acima de 400 KB) e miniatura para a grade.
+// Se a foto ficar pesada, reduz o tamanho e a qualidade até caber.
+export async function resizeForGallery(file) {
+  let big;
+  for (const [max, quality] of [[1600, 0.72], [1280, 0.65], [1024, 0.6], [800, 0.55]]) {
+    big = await resizeImage(file, max, quality);
+    if (big.size <= 300 * 1024) break;
+  }
+  const mini = await resizeImage(file, 360, 0.6);
+  return { big, mini, ext: big.type === 'image/webp' ? 'webp' : 'jpg' };
+}

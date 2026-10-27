@@ -266,7 +266,7 @@ const SEM_GUARDADO = {
   viewReadingForm: 'formulário com os planos prontos do js/biblia.js',
   viewCardVerify: 'conferência pública da carteirinha: sempre pergunta ao banco (mostra "Conferindo…" antes)',
 };
-const CACHE = /\b(screenShow|screenShowWithPhotos|editItem|formFresh|screenCached)\(|membersCache\.get\(/;
+const CACHE = /\b(screenShow|screenShowWithPhotos|showWithGalleryLinks|editItem|formFresh|screenCached)\(|membersCache\.get\(/;
 
 test('toda tela nova abre na hora: usa o guardado ou está na lista das que não buscam nada antes de aparecer', async () => {
   const { readFileSync } = await import('node:fs');

@@ -253,3 +253,28 @@ test.describe('Banco: visitante sem login (relatórios)', () => {
     expect((await rpc(request, 'church_report', { p_church: UUID, p_from: '2026-01-01', p_to: '2026-03-31' })).ok()).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (galeria)', () => {
+  test('não lê álbuns, fotos nem arquivos; não registra nem pede retirada', async ({ request }) => {
+    for (const table of ['gallery_albums', 'gallery_photos', 'gallery_removal_requests']) {
+      const res = await request.get(rest(`${table}?select=*`), { headers });
+      if (res.ok()) expect(await res.json(), table).toEqual([]);
+    }
+    expect((await request.post(rest('gallery_albums'), { headers, data: { church_id: UUID, title: 'Intruso' } })).ok()).toBe(false);
+    const calls = {
+      gallery_album_list: { p_church: UUID },
+      gallery_add_photo: { p_album: UUID, p_ext: 'webp' },
+      gallery_request_removal: { p_photo: UUID },
+      can_gallery: { p_church: UUID },
+    };
+    for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
+    expect((await rpc(request, 'gallery_albums_guard')).ok()).toBe(false);
+    const list = await request.post(`${SUPABASE_URL}/storage/v1/object/list/galeria`, { headers: storageHeaders, data: { prefix: '', limit: 10 } });
+    if (list.ok()) expect(await list.json()).toEqual([]);
+    const up = await request.post(`${SUPABASE_URL}/storage/v1/object/galeria/${UUID}/x.webp`, {
+      headers: { ...storageHeaders, 'Content-Type': 'image/webp' },
+      data: Buffer.from('52494646', 'hex'),
+    });
+    expect(up.ok()).toBe(false);
+  });
+});
