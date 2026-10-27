@@ -70,7 +70,7 @@ const SCREEN_PREFIX = 'tela:';
 const screenMem = new Map();
 const screenLoading = new Map();
 // Telas com dados sensíveis de outras pessoas: guardadas só na memória, nunca gravadas no aparelho.
-const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:)/;
+const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:|infantil$)/;
 const screenKey = (name) => `${SCREEN_PREFIX}${state.user?.id}:${state.church?.id}:${name}`;
 
 function screenCached(name) {
@@ -222,6 +222,8 @@ function prefetchScreens() {
     }
     if (featureOn('avisos')) screenFetch('avisos', loadAnnouncements).catch(() => {});
     if (regsOn()) screenFetch('inscricoes', loadRegistrations).catch(() => {});
+    if (featureOn('infantil')) screenFetch('filhos', loadMyKids).catch(() => {});
+    if (kidsTeam()) screenFetch('infantil', loadKids).catch(() => {});
     const me = myMember();
     screenFetch('perfil', () => loadProfile(me.id))
       .then((m) => m.photo_path && signedPhotos([m.photo_path]))
@@ -291,6 +293,7 @@ function errorText(err) {
   if (/duplicate key.*slug/i.test(msg)) return 'Já existe uma igreja com esse endereço.';
   if (/duplicate key.*email/i.test(msg)) return 'Esse e-mail já está no cadastro desta igreja.';
   if (/ministries_visitors_idx/i.test(msg)) return 'Outro ministério já recebe os avisos de visitantes. Desmarque nele primeiro.';
+  if (/ministries_kids_idx/i.test(msg)) return 'Outro ministério já faz o check-in das crianças. Desmarque nele primeiro.';
   if (/row-level security|permission denied/i.test(msg)) return 'Você não tem permissão para isso.';
   if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return 'Sem conexão. Confira sua internet e tente de novo.';
   return msg;
@@ -322,6 +325,7 @@ const icon = {
   heart: '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>',
   pix: '<svg viewBox="0 0 24 24"><path d="M12 3.5 20.5 12 12 20.5 3.5 12z"/><path d="M8 12h8"/></svg>',
   clipboard: '<svg viewBox="0 0 24 24"><path d="M9 4.5H6.5a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1H15"/><rect x="9" y="3" width="6" height="3" rx="1"/><path d="M9 11h6M9 15h4"/></svg>',
+  child: '<svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="3"/><path d="M12 9v6M8 11.5l4-1 4 1M9.5 21l2.5-6 2.5 6"/></svg>',
   book: '<svg viewBox="0 0 24 24"><path d="M5 19.5V5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2 2 2 0 0 0 2 2h12v-4"/><path d="M12 6.5v6M9.5 8.8h5"/></svg>',
 };
 
@@ -414,7 +418,7 @@ async function loadMemberships() {
   const [mem, pa] = await Promise.all([
     sb
       .from('members')
-      .select('id, role, consent_at, name, visitor_team, church:churches(id, slug, name, logo_url, primary_color)')
+      .select('id, role, consent_at, name, visitor_team, kids_team, church:churches(id, slug, name, logo_url, primary_color)')
       .eq('user_id', state.user.id)
       .eq('status', 'ativo'),
     sb.rpc('is_platform_admin'),
@@ -499,6 +503,16 @@ const churchRoutes = [
   [/^\/ministerios\/([0-9a-f-]{36})\/editar$/, viewMinistryForm],
   [/^\/ministerios\/([0-9a-f-]{36})\/escala$/, viewScheduleForm],
   [/^\/ministerios\/([0-9a-f-]{36})\/escala\/([0-9a-f-]{36})$/, viewScheduleForm],
+  [/^\/filhos$/, viewMyKids],
+  [/^\/filhos\/novo$/, viewChildForm],
+  [/^\/filhos\/([0-9a-f-]{36})$/, viewChildForm],
+  [/^\/infantil$/, viewKids],
+  [/^\/infantil\/crianca\/nova$/, viewChildForm],
+  [/^\/infantil\/crianca\/([0-9a-f-]{36})$/, viewChildForm],
+  [/^\/infantil\/entrada\/([0-9a-f-]{36})$/, viewKidCheckin],
+  [/^\/infantil\/etiqueta\/([0-9a-f-]{36})$/, viewKidLabel],
+  [/^\/infantil\/retirada$/, viewKidCheckout],
+  [/^\/infantil\/salas$/, viewKidRooms],
   [/^\/celulas$/, viewCells],
   [/^\/celulas\/nova$/, viewCellForm],
   [/^\/celulas\/([0-9a-f-]{36})$/, viewCell],
@@ -853,10 +867,11 @@ async function viewChurchHome() {
     ['oracao', icon.heart, 'Oração', '#/oracao'],
     ['celulas', icon.users, isLeaderRole(m.role) ? 'Células' : 'Célula', '#/celulas'],
     ['escalas', icon.clipboard, 'Escalas', '#/escalas'],
+    ['infantil', icon.child, 'Check-in', '#/infantil'],
     ['visitantes', icon.user, 'Visitantes', '#/visitantes'],
     ['pix', icon.pix, 'Ofertar', '#/ofertar'],
   ].filter(([k]) =>
-    k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : k === 'visitantes' ? visitorTeam() : featureOn(k),
+    k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : k === 'visitantes' ? visitorTeam() : k === 'infantil' ? kidsTeam() : featureOn(k),
   );
   $view.innerHTML = `
     <div class="page">
@@ -874,6 +889,7 @@ async function viewChurchHome() {
       }
       <div class="carousel" id="home-carousel" hidden>
         <div class="carousel-track">
+          <div class="slide" id="home-kids"></div>
           <div class="slide" id="home-schedules"></div>
           <div class="slide" id="home-devotional"></div>
           <div class="slide" id="home-reading"></div>
@@ -893,6 +909,7 @@ async function viewChurchHome() {
     homeDevotionalCard(slot('home-devotional'), changed).catch(() => {});
     homeReadingCard(slot('home-reading'), changed).catch(() => {});
   }
+  if (featureOn('infantil')) homeKidsCard(slot('home-kids'), changed).catch(() => {});
   if (featureOn('escalas')) homeSchedulesCard(slot('home-schedules'), changed).catch(() => {});
   if (featureOn('avisos')) homeNoticesCard(slot('home-notices'), changed).catch(() => {});
   if (featureOn('agenda')) homeEventsCard(slot('home-events'), changed).catch(() => {});
@@ -947,6 +964,8 @@ async function viewMenu() {
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         ${datesOn() ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
         ${visitorTeam() ? `<a class="menu-row" href="#/visitantes">${icon.user}<span>Visitantes</span>${icon.chevron}</a>` : ''}
+        ${featureOn('infantil') ? `<a class="menu-row" href="#/filhos">${icon.child}<span>Meus filhos</span>${icon.chevron}</a>` : ''}
+        ${kidsTeam() ? `<a class="menu-row" href="#/infantil">${icon.child}<span>Check-in infantil</span>${icon.chevron}</a>` : ''}
         ${featureOn('escalas') ? `<a class="menu-row" href="#/escalas">${icon.clipboard}<span>Ministérios e escalas</span>${icon.chevron}</a>` : ''}
         ${featureOn('celulas') ? `<a class="menu-row" href="#/celulas">${icon.users}<span>${isLeaderRole(m.role) ? 'Células' : 'Minha célula'}</span>${icon.chevron}</a>` : ''}
         ${featureOn('devocional') ? `<a class="menu-row" href="#/devocional">${icon.book}<span>Devocional</span>${icon.chevron}</a><a class="menu-row" href="#/leitura">${icon.book}<span>Plano de leitura</span>${icon.chevron}</a>` : ''}
@@ -989,7 +1008,7 @@ async function viewMyData() {
 
       <section class="card">
         <h2>${icon.upload} Baixar meus dados</h2>
-        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, as suas inscrições em eventos, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
+        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, as suas inscrições em eventos, os seus filhos e as entradas deles no infantil, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
         <button class="btn" id="export">Baixar arquivo</button>
         <p class="hint">Para corrigir algum dado, use "Meu cadastro" ou fale com a secretaria da igreja.</p>
       </section>
@@ -1144,6 +1163,17 @@ function helpTopics() {
            <p>Em cada ministério de que você participa, você vê a equipe e as próximas escalas. <strong>Se você lidera o ministério</strong>, toque em <em>Nova escala</em>: escolha a data e o horário, marque quem serve e escreva a função de cada um (ex.: Vocal, Teclado, Recepção). Você também coloca e tira pessoas da equipe.</p>`,
         ]]
       : []),
+    ...(features('infantil')
+      ? [[
+          'Ministério infantil (check-in)',
+          `<p>Em <a href="#/filhos">Menu &gt; Meus filhos</a>, cadastre os seus filhos com a data de nascimento e, se houver, as alergias e os cuidados. Só você, a equipe do infantil e a liderança veem.</p>
+           <p>No culto, a equipe faz a entrada e você recebe no app um <strong>código de retirada</strong> de 4 letras e números (ele também aparece no Início). Para buscar a criança, mostre o código: sem ele, a equipe não libera. Você recebe um aviso na entrada e na retirada.</p>${
+             kidsTeam()
+               ? `<p><strong>Se você é da equipe do infantil:</strong> em <a href="#/infantil">Menu &gt; Check-in infantil</a>, busque a criança e toque em <em>Entrada</em>; confira a sala (sugerida pela idade) e imprima as etiquetas, uma para a criança e outra com o código para o responsável. Sem impressora, escreva o código num adesivo. Na saída, toque em <em>Retirada por código</em> e digite o código que o responsável mostrar. Crianças de quem não usa o app são cadastradas na hora, em <em>Cadastrar criança</em>.</p>`
+               : ''
+           }`,
+        ]]
+      : []),
     ...(features('devocional')
       ? [[
           'Devocional e plano de leitura',
@@ -1290,7 +1320,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -4593,7 +4623,7 @@ const SLOT_STATUS = { pendente: ['Falta confirmar', 'wait'], confirmado: ['Confi
 const MINISTRY_SUGGESTIONS = [
   ['Louvor', 'Música e ministração nos cultos.'],
   ['Acolhimento', 'Recebe quem chega e acompanha os visitantes.'],
-  ['Infantil', 'Cuida das crianças durante os cultos.'],
+  ['Infantil', 'Cuida das crianças durante os cultos e faz o check-in.'],
   ['Mídia', 'Som, projeção, transmissão e redes sociais.'],
 ];
 // "domingo, 8/11 às 19h"
@@ -4612,7 +4642,7 @@ async function loadSchedules() {
 
 async function loadMinistry(id) {
   const [miRes, rosterRes, schedRes, manageRes] = await Promise.all([
-    sb.from('ministries').select('id, name, description, receives_visitors, active').eq('id', id).maybeSingle(),
+    sb.from('ministries').select('id, name, description, receives_visitors, kids_checkin, active').eq('id', id).maybeSingle(),
     sb.rpc('ministry_roster', { p_ministry: id }),
     sb.rpc('ministry_schedules', { p_ministry: id }),
     sb.rpc('can_manage_ministry', { p_ministry: id }),
@@ -4743,13 +4773,13 @@ function drawSchedules(data) {
 async function viewMinistryForm(ctx, id) {
   if (!requireMemberFeature(id ? `/ministerios/${id}/editar` : '/ministerios/novo', 'escalas')) return;
   if (!isLeaderRole(myRole())) return navigate('/escalas');
-  let mi = { name: '', description: '', receives_visitors: false, active: true };
+  let mi = { name: '', description: '', receives_visitors: false, kids_checkin: false, active: true };
   if (id) {
     const data = await editItem(
       ctx,
       screenCached(`ministerio:${id}`)?.mi,
       async () => {
-        const { data: row, error } = await sb.from('ministries').select('id, name, description, receives_visitors, active').eq('id', id).maybeSingle();
+        const { data: row, error } = await sb.from('ministries').select('id, name, description, receives_visitors, kids_checkin, active').eq('id', id).maybeSingle();
         if (error) throw error;
         return row;
       },
@@ -4778,6 +4808,12 @@ async function viewMinistryForm(ctx, id) {
               <small class="hint">A equipe deste ministério recebe o aviso de cada visitante e vê os cadastros para fazer o acompanhamento, mesmo quem não é da liderança. Só um ministério por igreja. Sem ele, o aviso vai para a liderança.</small></label>`
           : ''
       }
+      ${
+        featureOn('infantil')
+          ? `<label class="check"><input type="checkbox" name="kids_checkin" ${mi.kids_checkin ? 'checked' : ''}> Faz o check-in das crianças
+              <small class="hint">A equipe deste ministério faz a entrada e a retirada no infantil e vê o cadastro das crianças (com alergias e cuidados). Só um ministério por igreja. Sem ele, só a liderança faz o check-in.</small></label>`
+          : ''
+      }
       ${id ? `<label class="check"><input type="checkbox" name="active" ${mi.active ? 'checked' : ''}> Ministério ativo
         <small class="hint">Desmarque para guardar o ministério sem que ele apareça para os membros.</small></label>` : ''}
       ${id ? '' : '<p class="hint">Depois de criar, abra o ministério para escolher o líder e a equipe.</p>'}
@@ -4791,6 +4827,7 @@ async function viewMinistryForm(ctx, id) {
       form.name.value = name;
       form.description.value = about;
       if (form.receives_visitors) form.receives_visitors.checked = name === 'Acolhimento';
+      if (form.kids_checkin) form.kids_checkin.checked = name === 'Infantil';
     };
   });
   form.addEventListener('submit', async (e) => {
@@ -4799,6 +4836,7 @@ async function viewMinistryForm(ctx, id) {
       name: form.name.value.trim(),
       description: form.description.value.trim() || null,
       ...(form.receives_visitors ? { receives_visitors: form.receives_visitors.checked } : {}),
+      ...(form.kids_checkin ? { kids_checkin: form.kids_checkin.checked } : {}),
     };
     const btn = form.querySelector('button.primary');
     btn.disabled = true;
@@ -4868,6 +4906,7 @@ function drawMinistry(id, { mi, roster, schedules, manage }, photos) {
       ${!mi.active ? '<p class="notice">Este ministério está desativado.</p>' : ''}
       ${mi.description ? `<p>${esc(mi.description)}</p>` : ''}
       ${mi.receives_visitors && featureOn('visitantes') ? '<p class="hint">Esta equipe recebe os avisos de visitantes e faz o acompanhamento em Menu &gt; Visitantes.</p>' : ''}
+      ${mi.kids_checkin && featureOn('infantil') ? '<p class="hint">Esta equipe faz o check-in das crianças em Menu &gt; Check-in infantil.</p>' : ''}
       ${
         manage || leader
           ? `<div class="actions-row">
@@ -5062,6 +5101,540 @@ async function viewScheduleForm(ctx, id, scheduleId) {
 }
 
 // ---------------------------------------------------------------------
+// Check-in do ministério infantil: o responsável cadastra os filhos; a equipe faz a entrada
+// (com o código de retirada) e a retirada (só com o código certo)
+// ---------------------------------------------------------------------
+// Faz o check-in: a liderança e a equipe do ministério marcado "Faz o check-in das crianças".
+const kidsTeam = () => featureOn('infantil') && (isLeaderRole(myRole()) || (isActiveMember() && !!myMember().kids_team));
+const SUGGESTED_ROOMS = [
+  ['Berçário', 0, 2],
+  ['Maternal', 3, 5],
+  ['Kids', 6, 10],
+  ['Juniores', 11, 12],
+];
+
+function ageOf(birth) {
+  if (!birth) return null;
+  const b = parseIso(birth);
+  const now = new Date();
+  let age = now.getFullYear() - b.getFullYear();
+  if (now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())) age--;
+  return age;
+}
+const ageText = (birth) => {
+  const a = ageOf(birth);
+  return a == null ? '' : a < 1 ? 'menos de 1 ano' : a === 1 ? '1 ano' : `${a} anos`;
+};
+const roomAges = (r) =>
+  r.min_age == null && r.max_age == null ? '' : r.max_age == null ? `${r.min_age}+ anos` : `${r.min_age ?? 0} a ${r.max_age} anos`;
+// Sala sugerida pela idade.
+function roomFor(rooms, birth) {
+  const a = ageOf(birth);
+  if (a == null) return null;
+  return rooms.find((r) => (r.min_age == null || a >= r.min_age) && (r.max_age == null || a <= r.max_age)) ?? null;
+}
+const kidTime = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+// Os filhos da pessoa e as entradas de hoje.
+async function loadMyKids() {
+  const { data: kids, error } = await sb
+    .from('children')
+    .select('id, name, birth_date, care_notes')
+    .eq('guardian_member_id', myMember().id)
+    .order('name');
+  if (error) throw error;
+  if (!kids.length) return { kids, checkins: [] };
+  const { data: checkins, error: err } = await sb
+    .from('kids_checkins')
+    .select('id, child_id, room_name, code, checkin_date, checked_in_at, checked_out_at')
+    .in('child_id', kids.map((k) => k.id))
+    .gte('checkin_date', isoLocal(addDays(new Date(), -1)))
+    .order('checked_in_at', { ascending: false });
+  if (err) throw err;
+  return { kids, checkins };
+}
+
+// A entrada de hoje da criança (o guardado pode ser de ontem).
+const todayCheckin = (checkins, childId) => checkins.find((k) => k.child_id === childId && k.checkin_date === isoLocal(new Date())) ?? null;
+
+function homeKidsCard(el, changed) {
+  return homeCard(el, 'filhos', loadMyKids, ({ kids, checkins }) => {
+    const inside = kids.map((k) => [k, todayCheckin(checkins, k.id)]).filter(([, c]) => c && !c.checked_out_at);
+    if (!inside.length) return '';
+    return `
+    <section class="card">
+      <h2>${icon.child} No infantil agora</h2>
+      ${inside
+        .map(
+          ([k, c]) => `
+        <a class="event-card" href="#/filhos">
+          <span><strong>${esc(firstName(k.name))}${c.room_name ? ` · ${esc(c.room_name)}` : ''}</strong>
+            <small>Código de retirada: <strong class="kid-code-inline">${esc(c.code)}</strong></small></span>${icon.chevron}
+        </a>`,
+        )
+        .join('')}
+    </section>`;
+  }, changed);
+}
+
+async function viewMyKids(ctx) {
+  if (!requireMemberFeature('/filhos', 'infantil')) return;
+  await screenShow(ctx, 'filhos', loadMyKids, drawMyKids);
+}
+
+function drawMyKids({ kids, checkins }) {
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Meus filhos</h1>
+      <p class="hint">Cadastre os seus filhos para o check-in do ministério infantil. Na entrada, você recebe aqui o código para buscar.</p>
+      <div class="actions-row"><a class="btn primary" href="#/filhos/novo">${icon.plus} Cadastrar filho</a></div>
+      ${
+        kids.length
+          ? kids
+              .map((k) => {
+                const c = todayCheckin(checkins, k.id);
+                return `
+          <section class="card kid-card">
+            <h2>${esc(k.name)}</h2>
+            <p class="hint">${esc([ageText(k.birth_date), k.care_notes ? `⚠️ ${k.care_notes}` : ''].filter(Boolean).join(' · '))}</p>
+            ${
+              c && !c.checked_out_at
+                ? `<div class="kid-inside">
+                    <p>🟢 No infantil${c.room_name ? ` (${esc(c.room_name)})` : ''} desde ${esc(kidTime(c.checked_in_at))}</p>
+                    <p class="kid-code" aria-label="Código de retirada">${esc(c.code)}</p>
+                    <p class="hint">Mostre este código para buscar ${esc(firstName(k.name))}.</p>
+                  </div>`
+                : c
+                  ? `<p>✅ Retirado às ${esc(kidTime(c.checked_out_at))}.</p>`
+                  : ''
+            }
+            <a class="btn small" href="#/filhos/${k.id}">Editar</a>
+          </section>`;
+              })
+              .join('')
+          : '<div class="empty"><p>Nenhum filho cadastrado.</p></div>'
+      }
+    </div>`;
+}
+
+// Cadastro da criança: pelo responsável (/filhos) ou pela equipe na recepção (/infantil/crianca).
+async function viewChildForm(ctx, id) {
+  const team = ctx.path.startsWith('/infantil');
+  const back = team ? '/infantil' : '/filhos';
+  if (!requireMemberFeature(ctx.path, 'infantil')) return;
+  if (team && !kidsTeam()) return navigate('/filhos');
+  let c = { name: '', birth_date: null, care_notes: '', guardian_member_id: null, guardian_name: '', guardian_phone: '' };
+  if (id) {
+    const fromList = team ? screenCached('infantil')?.kids.find((k) => k.id === id) : screenCached('filhos')?.kids.find((k) => k.id === id);
+    const data = await editItem(
+      ctx,
+      fromList && !team ? fromList : null,
+      async () => {
+        const { data: row, error } = await sb
+          .from('children')
+          .select('id, name, birth_date, care_notes, guardian_member_id, guardian_name, guardian_phone')
+          .eq('id', id)
+          .maybeSingle();
+        if (error) throw error;
+        return row;
+      },
+      () => (screenForget('filhos'), screenForget('infantil')),
+    );
+    if (!data) return navigate(back);
+    c = { ...c, ...data };
+  }
+  if (!ctx.alive()) return;
+  const desk = team && !c.guardian_member_id && (!id || c.guardian_name);
+  const canDelete = !team || isLeaderRole(myRole());
+  $view.innerHTML = `
+    <form id="child" class="form page">
+      <a href="#${back}" class="back">← ${team ? 'Check-in infantil' : 'Meus filhos'}</a>
+      <h1>${id ? 'Editar criança' : team ? 'Cadastrar criança' : 'Cadastrar filho'}</h1>
+      <label>Nome da criança<input name="name" required minlength="2" maxlength="120" value="${esc(c.name)}" autocomplete="off"></label>
+      <label>Data de nascimento<input name="birth_date" type="date" value="${esc(c.birth_date || '')}" max="${isoLocal(new Date())}"></label>
+      <label>Alergias e cuidados (opcional)<textarea name="care_notes" rows="2" maxlength="300" placeholder="Ex.: alergia a amendoim; usa bombinha">${esc(c.care_notes || '')}</textarea>
+        <small class="hint">Aparece com ⚠️ na etiqueta e para a equipe do infantil.</small></label>
+      ${
+        desk
+          ? `<label>Nome do responsável<input name="guardian_name" required minlength="2" maxlength="120" value="${esc(c.guardian_name || '')}"></label>
+             <label>WhatsApp do responsável<input name="guardian_phone" type="tel" inputmode="tel" value="${c.guardian_phone ? esc(fmtPhone(c.guardian_phone)) : ''}" placeholder="(61) 99999-0000"></label>`
+          : team && id
+            ? '<p class="hint">O responsável usa o app: só ele muda os dados de contato.</p>'
+            : ''
+      }
+      ${
+        id
+          ? ''
+          : `<label class="check"><input type="checkbox" name="consent" required> ${
+              team ? 'O responsável autorizou a igreja a guardar estes dados para o check-in.' : 'Autorizo a igreja a guardar estes dados do meu filho para o check-in do infantil.'
+            }
+            <small class="hint">Só o responsável, a equipe do infantil e a liderança veem. O histórico de entradas é apagado em 12 meses.</small></label>`
+      }
+      <button class="btn primary big">${id ? 'Salvar' : 'Cadastrar'}</button>
+      ${id && canDelete ? '<button class="btn danger-outline" type="button" id="delete">Excluir cadastro da criança</button>' : ''}
+    </form>`;
+  const form = document.getElementById('child');
+  const forget = () => {
+    screenForget('filhos');
+    screenForget('infantil');
+  };
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const row = {
+      name: form.name.value.trim(),
+      birth_date: form.birth_date.value || null,
+      care_notes: form.care_notes.value.trim() || null,
+    };
+    if (desk) {
+      const phone = form.guardian_phone.value.trim() ? normalizePhone(form.guardian_phone.value) : null;
+      if (form.guardian_phone.value.trim() && !phone) return toast('WhatsApp inválido. Use DDD + número.', 'error');
+      Object.assign(row, { guardian_name: form.guardian_name.value.trim(), guardian_phone: phone });
+    }
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { error } = id
+      ? await sb.from('children').update({ ...row, updated_at: new Date().toISOString() }).eq('id', id).select('id').single()
+      : await sb
+          .from('children')
+          .insert({ ...row, church_id: state.church.id, ...(team ? {} : { guardian_member_id: myMember().id }) })
+          .select('id')
+          .single();
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    forget();
+    toast(id ? 'Salvo.' : 'Criança cadastrada.');
+    navigate(back);
+  });
+  document.getElementById('delete')?.addEventListener('click', async () => {
+    if (!confirm(`Excluir o cadastro de ${c.name}? O histórico de entradas também é apagado.`)) return;
+    const { data, error } = await sb.from('children').delete().eq('id', id).select('id');
+    if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para excluir.', 'error');
+    forget();
+    toast('Cadastro excluído.');
+    navigate(back);
+  });
+}
+
+// Recepção do infantil: todas as crianças, quem está em cada sala e os botões de entrada e retirada.
+async function loadKids() {
+  const [kids, rooms] = await Promise.all([
+    sb.rpc('kids_roster', { p_church: state.church.id }),
+    sb.from('kids_rooms').select('id, name, min_age, max_age').eq('church_id', state.church.id).order('min_age', { nullsFirst: false }),
+  ]);
+  if (kids.error) throw kids.error;
+  if (rooms.error) throw rooms.error;
+  return { kids: kids.data, rooms: rooms.data, day: isoLocal(new Date()) };
+}
+
+function requireKidsTeam(next) {
+  if (!requireMemberFeature(next, 'infantil')) return false;
+  if (kidsTeam()) return true;
+  navigate('/filhos');
+  return false;
+}
+
+async function viewKids(ctx) {
+  if (!requireKidsTeam('/infantil')) return;
+  await screenShow(ctx, 'infantil', loadKids, (d) => drawKids(ctx, d));
+}
+
+function drawKids(ctx, { kids, rooms, day }) {
+  // O guardado pode ser de outro dia: as entradas de ontem não contam.
+  const today = day === isoLocal(new Date());
+  const open = today ? kids.filter((k) => k.checkin_id && !k.checked_out_at) : [];
+  const byRoom = new Map();
+  for (const k of open) {
+    const r = k.room_name || 'Sem sala';
+    if (!byRoom.has(r)) byRoom.set(r, []);
+    byRoom.get(r).push(k);
+  }
+  const term = fold(ctx.params.get('busca') || '');
+  const list = term ? kids.filter((k) => fold(k.name).includes(term) || fold(k.guardian).includes(term)) : kids;
+  const status = (k) =>
+    !today || !k.checkin_id
+      ? ''
+      : k.checked_out_at
+        ? `<span class="tag">Retirado ${esc(kidTime(k.checked_out_at))}</span>`
+        : `<span class="tag ok">${esc(k.room_name || 'No infantil')} · ${esc(k.code)}</span>`;
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Check-in infantil</h1>
+      <p class="hint">${esc(fmtLongDay(isoLocal(new Date())))}</p>
+      <div class="actions-row">
+        <a class="btn primary" href="#/infantil/retirada">Retirada por código</a>
+        <a class="btn" href="#/infantil/crianca/nova">${icon.plus} Cadastrar criança</a>
+        ${isLeaderRole(myRole()) ? '<a class="btn" href="#/infantil/salas">Salas</a>' : ''}
+      </div>
+      ${rooms.length ? '' : `<p class="notice">Nenhuma sala criada ainda. ${isLeaderRole(myRole()) ? '<a href="#/infantil/salas">Criar as salas</a>' : 'Peça à liderança para criar as salas.'}</p>`}
+      <h2>Nas salas agora (${open.length})</h2>
+      ${
+        open.length
+          ? [...byRoom]
+              .map(
+                ([room, list]) => `
+          <section class="card">
+            <h3>${esc(room)} (${list.length})</h3>
+            <ul class="kids-in">${list
+              .map(
+                (k) => `<li><span>${esc(k.name)}${k.care_notes ? ` <span class="kid-alert" title="${esc(k.care_notes)}">⚠️ ${esc(k.care_notes)}</span>` : ''}</span>
+                  ${k.phone ? `<a class="btn small" href="${esc(whatsappLink(k.phone, ''))}" target="_blank" rel="noopener" aria-label="WhatsApp do responsável por ${esc(k.name)}">WhatsApp</a>` : ''}</li>`,
+              )
+              .join('')}</ul>
+          </section>`,
+              )
+              .join('')
+          : '<div class="empty"><p>Nenhuma criança nas salas.</p></div>'
+      }
+      <h2>Crianças (${kids.length})</h2>
+      <form id="kid-search" class="form"><label>Buscar<input name="q" type="search" value="${esc(ctx.params.get('busca') || '')}" placeholder="Nome da criança ou do responsável" autocomplete="off"></label></form>
+      <div class="list">${
+        list
+          .map(
+            (k) => `
+        <div class="member-row" data-kid="${k.id}">
+          ${avatar(k.name, null)}
+          <span><strong>${esc(k.name)}</strong>
+            <small>${esc([ageText(k.birth_date), k.guardian ? `resp.: ${k.guardian}` : ''].filter(Boolean).join(' · '))}${k.care_notes ? ' · ⚠️' : ''}</small></span>
+          <span class="tags">
+            ${status(k)}
+            ${
+              today && k.checkin_id && !k.checked_out_at
+                ? `<a class="btn small" href="#/infantil/retirada?id=${k.checkin_id}">Retirada</a>`
+                : `<a class="btn small primary" href="#/infantil/entrada/${k.id}">Entrada</a>`
+            }
+          </span>
+        </div>`,
+          )
+          .join('') || `<div class="empty"><p>${term ? 'Ninguém com esse nome.' : 'Nenhuma criança cadastrada.'}</p></div>`
+      }</div>
+    </div>`;
+  const search = document.getElementById('kid-search');
+  search.addEventListener('submit', (e) => e.preventDefault());
+  let timer;
+  search.q.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const q = search.q.value.trim();
+      history.replaceState(null, '', `#/infantil${q ? `?busca=${encodeURIComponent(q)}` : ''}`);
+      ctx.params.set('busca', q);
+      const pos = search.q.selectionStart;
+      drawKids(ctx, { kids, rooms, day });
+      const input = document.getElementById('kid-search').q;
+      input.focus();
+      input.setSelectionRange(pos, pos);
+    }, 200);
+  });
+}
+
+// Entrada: confirma a sala (sugerida pela idade) e gera o código.
+async function viewKidCheckin(ctx, childId) {
+  if (!requireKidsTeam(`/infantil/entrada/${childId}`)) return;
+  const saved = screenCached('infantil');
+  const d = await editItem(ctx, saved?.kids.some((k) => k.id === childId) ? saved : null, loadKids, () => screenForget('infantil'));
+  if (!ctx.alive()) return;
+  const k = d.kids.find((x) => x.id === childId);
+  if (!k) return navigate('/infantil');
+  const suggested = roomFor(d.rooms, k.birth_date);
+  $view.innerHTML = `
+    <form id="checkin" class="form page">
+      <a href="#/infantil" class="back">← Check-in infantil</a>
+      <h1>Entrada: ${esc(k.name)}</h1>
+      <p class="hint">${esc([ageText(k.birth_date), k.guardian ? `Responsável: ${k.guardian}` : ''].filter(Boolean).join(' · '))}</p>
+      ${k.care_notes ? `<p class="notice kid-warning">⚠️ <strong>Atenção:</strong> ${esc(k.care_notes)}</p>` : ''}
+      <label>Sala
+        <select name="room">
+          ${d.rooms.map((r) => `<option value="${esc(r.name)}" ${suggested?.id === r.id ? 'selected' : ''}>${esc(r.name)}${roomAges(r) ? ` (${esc(roomAges(r))})` : ''}</option>`).join('')}
+          <option value="" ${d.rooms.length && suggested ? '' : 'selected'}>Sem sala</option>
+        </select>
+      </label>
+      ${k.has_app ? '<p class="hint">O responsável recebe o código de retirada no app.</p>' : '<p class="hint">O responsável não usa o app: entregue a segunda etiqueta (ou anote o código para ele).</p>'}
+      <button class="btn primary big">Confirmar entrada</button>
+    </form>`;
+  const form = document.getElementById('checkin');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { data, error } = await sb.rpc('kids_checkin', { p_child: k.id, p_room: form.room.value });
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    const [row] = data;
+    // Guarda a entrada na hora: a etiqueta abre sem esperar o banco.
+    Object.assign(k, { checkin_id: row.checkin_id, code: row.code, room_name: row.room_name, checked_in_at: new Date().toISOString(), checked_out_at: null });
+    screenUpdate('infantil', { ...d, day: isoLocal(new Date()) });
+    navigate(`/infantil/etiqueta/${row.checkin_id}`);
+  });
+}
+
+// Etiquetas: uma para a criança e outra (com o código) para o responsável.
+async function viewKidLabel(ctx, checkinId) {
+  if (!requireKidsTeam(`/infantil/etiqueta/${checkinId}`)) return;
+  await screenShow(ctx, 'infantil', loadKids, ({ kids }) => {
+    const k = kids.find((x) => x.checkin_id === checkinId);
+    if (!k) {
+      $view.innerHTML = `<div class="empty"><h2>Entrada não encontrada</h2><a class="btn" href="#/infantil">Voltar</a></div>`;
+      return;
+    }
+    const day = new Date(k.checked_in_at).toLocaleDateString('pt-BR');
+    $view.innerHTML = `
+      <div class="page kid-labels">
+        <a href="#/infantil" class="back no-print">← Check-in infantil</a>
+        <h1 class="no-print">Entrada confirmada</h1>
+        <p class="no-print">Código de retirada de ${esc(firstName(k.name))}:</p>
+        <p class="kid-code no-print">${esc(k.code)}</p>
+        <div class="actions-row no-print">
+          <button class="btn primary" id="print">${icon.print} Imprimir etiquetas</button>
+          <a class="btn" href="#/infantil">Próxima criança</a>
+        </div>
+        <p class="hint no-print">Sem impressora? Escreva o código num adesivo para a criança e outro para o responsável.</p>
+        <div class="kid-label">
+          <p class="kid-label-name">${esc(k.name)}</p>
+          <p>${esc([k.room_name, ageText(k.birth_date)].filter(Boolean).join(' · '))}</p>
+          ${k.care_notes ? `<p class="kid-label-alert">⚠️ ${esc(k.care_notes)}</p>` : ''}
+          <p class="kid-label-code">${esc(k.code)}</p>
+          <p class="kid-label-foot">${esc(state.church.name)} · ${esc(day)}</p>
+        </div>
+        <div class="kid-label">
+          <p class="kid-label-name">Retirada</p>
+          <p>${esc(k.name)}${k.room_name ? ` · ${esc(k.room_name)}` : ''}</p>
+          <p class="kid-label-code">${esc(k.code)}</p>
+          <p class="kid-label-foot">Mostre este código para buscar a criança · ${esc(day)}</p>
+        </div>
+      </div>`;
+    document.getElementById('print').onclick = () => window.print();
+  });
+}
+
+// Retirada: pelo código (a equipe digita o que o responsável mostra) ou a partir da lista.
+async function viewKidCheckout(ctx) {
+  if (!requireKidsTeam('/infantil/retirada')) return;
+  const fromList = ctx.params.get('id');
+  const k = fromList ? screenCached('infantil')?.kids.find((x) => x.checkin_id === fromList) : null;
+  $view.innerHTML = `
+    <form id="checkout" class="form page">
+      <a href="#/infantil" class="back">← Check-in infantil</a>
+      <h1>Retirada</h1>
+      ${k ? `<p><strong>${esc(k.name)}</strong>${k.room_name ? ` · ${esc(k.room_name)}` : ''}${k.guardian ? `<br><span class="hint">Responsável: ${esc(k.guardian)}</span>` : ''}</p>` : ''}
+      <label>Código de retirada<input name="code" required minlength="4" maxlength="4" autocomplete="off" autocapitalize="characters" class="code-input" placeholder="K7P3"></label>
+      <p class="hint">Peça ao responsável o código da etiqueta ou do app.</p>
+      <div id="found"></div>
+      <button class="btn primary big">${k ? 'Confirmar retirada' : 'Conferir código'}</button>
+    </form>`;
+  const form = document.getElementById('checkout');
+  const found = document.getElementById('found');
+  let checkinId = fromList;
+  const done = async (code) => {
+    const { data: name, error } = await sb.rpc('kids_checkout', { p_checkin: checkinId, p_code: code });
+    if (error) return toast(errorText(error), 'error');
+    screenForget('infantil');
+    toast(`${firstName(name)} foi retirado.`);
+    navigate('/infantil');
+  };
+  form.code.addEventListener('input', () => {
+    form.code.value = form.code.value.toUpperCase();
+    if (!fromList) {
+      checkinId = null;
+      found.innerHTML = '';
+      form.querySelector('button.primary').textContent = 'Conferir código';
+    }
+  });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button.primary');
+    const code = form.code.value.trim().toUpperCase();
+    btn.disabled = true;
+    try {
+      if (checkinId) return await done(code);
+      const { data, error } = await sb.rpc('kids_lookup_code', { p_church: state.church.id, p_code: code });
+      if (error) return toast(errorText(error), 'error');
+      if (!data.length) return toast('Nenhuma criança no infantil com esse código hoje.', 'error');
+      const [x] = data;
+      checkinId = x.checkin_id;
+      found.innerHTML = `<p class="notice"><strong>${esc(x.child_name)}</strong>${x.room_name ? ` · ${esc(x.room_name)}` : ''}<br>Responsável: ${esc(x.guardian || '—')} · entrou às ${esc(kidTime(x.checked_in_at))}</p>`;
+      btn.textContent = 'Confirmar retirada';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+// Salas por idade (a liderança cria e apaga).
+async function loadRooms() {
+  const { data, error } = await sb.from('kids_rooms').select('id, name, min_age, max_age').eq('church_id', state.church.id).order('min_age', { nullsFirst: false });
+  if (error) throw error;
+  return data;
+}
+
+async function viewKidRooms(ctx) {
+  if (!requireKidsTeam('/infantil/salas')) return;
+  if (!isLeaderRole(myRole())) return navigate('/infantil');
+  await screenShow(ctx, 'salas', loadRooms, drawKidRooms);
+}
+
+function drawKidRooms(rooms) {
+  const ageOpts = (v) => `<option value="">—</option>${Array.from({ length: 18 }, (_, i) => `<option value="${i}" ${v === i ? 'selected' : ''}>${i}</option>`).join('')}`;
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/infantil" class="back">← Check-in infantil</a>
+      <h1>Salas</h1>
+      <p class="hint">Na entrada, o app sugere a sala pela idade da criança.</p>
+      ${
+        rooms.length
+          ? `<div class="list">${rooms
+              .map(
+                (r) => `
+          <div class="member-row">
+            <span><strong>${esc(r.name)}</strong><small>${esc(roomAges(r) || 'qualquer idade')}</small></span>
+            <span class="tags"><button class="btn small danger-outline" data-del="${r.id}" aria-label="Apagar a sala ${esc(r.name)}">Apagar</button></span>
+          </div>`,
+              )
+              .join('')}</div>`
+          : `<div class="empty"><p>Nenhuma sala ainda.</p><button class="btn" id="suggest">Criar as salas sugeridas</button>
+             <p class="hint">${SUGGESTED_ROOMS.map(([n, a, b]) => `${n} (${a} a ${b} anos)`).join(', ')}</p></div>`
+      }
+      <form id="room" class="form card">
+        <h2>Nova sala</h2>
+        <label>Nome<input name="name" required minlength="2" maxlength="40" placeholder="Kids"></label>
+        <div class="colors">
+          <label>Idade de<select name="min_age">${ageOpts(null)}</select></label>
+          <label>até<select name="max_age">${ageOpts(null)}</select></label>
+        </div>
+        <button class="btn primary">Criar sala</button>
+      </form>
+    </div>`;
+  const done = (msg) => {
+    screenForget('salas');
+    screenForget('infantil');
+    toast(msg);
+    render();
+  };
+  const insert = (rows) => sb.from('kids_rooms').insert(rows.map((r) => ({ ...r, church_id: state.church.id })));
+  document.getElementById('suggest')?.addEventListener('click', async () => {
+    const { error } = await insert(SUGGESTED_ROOMS.map(([name, min_age, max_age]) => ({ name, min_age, max_age })));
+    if (error) return toast(errorText(error), 'error');
+    done('Salas criadas.');
+  });
+  const form = document.getElementById('room');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const num = (v) => (v === '' ? null : Number(v));
+    const row = { name: form.name.value.trim(), min_age: num(form.min_age.value), max_age: num(form.max_age.value) };
+    if (row.min_age != null && row.max_age != null && row.min_age > row.max_age) return toast('A idade inicial precisa ser menor que a final.', 'error');
+    const { error } = await insert([row]);
+    if (error) return toast(errorText(error), 'error');
+    done('Sala criada.');
+  });
+  $view.querySelectorAll('[data-del]').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm('Apagar esta sala? As entradas antigas continuam no histórico.')) return;
+      const { data, error } = await sb.from('kids_rooms').delete().eq('id', b.dataset.del).select('id');
+      if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
+      done('Sala apagada.');
+    };
+  });
+}
+
+// ---------------------------------------------------------------------
 // Aniversários: cartão da semana, aniversariantes do mês, mensagem da igreja, notificações
 // ---------------------------------------------------------------------
 const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -5209,6 +5782,7 @@ const NOTIF_GROUPS = {
   agenda: { label: 'Agenda', icon: 'calendar', kinds: ['evento', 'inscricao'], on: () => featureOn('agenda') },
   oracao: { label: 'Oração', icon: 'heart', kinds: ['oracao'], on: () => featureOn('oracao') },
   escalas: { label: 'Escalas', icon: 'clipboard', kinds: ['escala'], on: () => featureOn('escalas') },
+  infantil: { label: 'Infantil', icon: 'child', kinds: ['infantil'], on: () => featureOn('infantil') },
   devocional: { label: 'Devocional', icon: 'book', kinds: ['devocional', 'leitura'], on: () => featureOn('devocional') },
   datas: { label: 'Datas', icon: 'cake', kinds: ['aniversario', 'casamento', 'batismo', 'resumo_lideres'], on: () => datesOn() },
   visitantes: { label: 'Visitantes', icon: 'user', kinds: ['visitante'], on: () => visitorTeam() },

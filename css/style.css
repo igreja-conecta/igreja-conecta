@@ -509,3 +509,27 @@ a.notice { display: block; color: inherit; text-decoration: none; }
 #reg-box h2 { margin-top: 0; }
 #reg-box .btn { margin-top: 8px; }
 .reg-status { font-weight: 600; }
+
+/* Check-in infantil */
+.notif-icon.k-infantil { background: color-mix(in srgb, #f08c00 16%, var(--surface)); color: color-mix(in srgb, #e67700 85%, var(--ink)); }
+.kid-code { font-size: 2.6rem; font-weight: 800; letter-spacing: .25em; text-align: center; margin: 8px 0; font-family: ui-monospace, monospace; }
+.kid-code-inline { letter-spacing: .15em; font-family: ui-monospace, monospace; }
+.kid-inside { background: var(--brand-soft); border-radius: var(--radius); padding: 10px 14px; margin: 8px 0; }
+.kid-inside p { margin: 4px 0; }
+.kid-alert { color: var(--warn); font-size: .85rem; }
+.kid-warning { border-left: 4px solid var(--warn); }
+.kids-in { list-style: none; padding: 0; margin: 0; }
+.kids-in li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.kids-in li:last-child { border-bottom: 0; }
+.code-input { font-size: 1.6rem; letter-spacing: .3em; text-transform: uppercase; font-family: ui-monospace, monospace; }
+.kid-label { border: 2px dashed var(--line); border-radius: 10px; padding: 12px; margin: 12px 0; text-align: center; background: #fff; color: #000; }
+.kid-label p { margin: 2px 0; }
+.kid-label-name { font-size: 1.4rem; font-weight: 800; }
+.kid-label-alert { font-weight: 700; }
+.kid-label-code { font-size: 2.2rem; font-weight: 800; letter-spacing: .25em; font-family: ui-monospace, monospace; }
+.kid-label-foot { font-size: .75rem; }
+@media print {
+  @page { margin: 3mm; }
+  .kid-labels .kid-label { border: 0; margin: 0; padding: 2mm; break-after: page; page-break-after: always; }
+  .kid-labels .kid-label:last-child { break-after: auto; page-break-after: auto; }
+}

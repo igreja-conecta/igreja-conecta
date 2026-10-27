@@ -212,3 +212,25 @@ test.describe('Banco: visitante sem login (inscrição em eventos)', () => {
     for (const fn of ['event_registrations_left', 'events_registration_changed']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (check-in infantil)', () => {
+  test('não lê nem grava crianças, salas e entradas; não chama as funções', async ({ request }) => {
+    for (const table of ['children', 'kids_rooms', 'kids_checkins']) {
+      const res = await request.get(rest(`${table}?select=*`), { headers });
+      if (res.ok()) expect(await res.json(), table).toEqual([]);
+    }
+    expect((await request.post(rest('children'), { headers, data: { church_id: UUID, name: 'Intrusa', guardian_name: 'X' } })).ok()).toBe(false);
+    const calls = {
+      kids_roster: { p_church: UUID },
+      kids_checkin: { p_child: UUID, p_room: null },
+      kids_lookup_code: { p_church: UUID, p_code: 'ABCD' },
+      kids_checkout: { p_checkin: UUID, p_code: 'ABCD' },
+      kids_new_code: { p_church: UUID, p_day: '2030-01-01' },
+      can_kids: { p_church: UUID },
+      my_member_id: { p_church: UUID },
+    };
+    for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
+    expect((await rpc(request, 'clean_kids', { p_secret: 'errada' })).ok()).toBe(false);
+    expect((await rpc(request, 'children_guard')).ok()).toBe(false);
+  });
+});
