@@ -90,7 +90,9 @@ test('o membro abre a central de notificações pelo sininho', async ({ page }) 
 });
 
 test('a central mostra as notificações por dia, com destaque nas não lidas', async ({ page }) => {
-  const now = Date.now();
+  // Meio-dia fixo: perto da meia-noite, "30 horas atrás" já não seria "ontem".
+  const now = new Date('2027-06-10T12:00:00-03:00').getTime();
+  await page.clock.setFixedTime(now);
   const rows = [
     { id: 1, kind: 'oracao', title: 'Seu pedido de oração está no mural', body: 'A igreja já pode orar com você.', url: '#/oracao/meus', read_at: null, created_at: new Date(now - 5 * 60e3).toISOString() },
     { id: 2, kind: 'evento', title: 'Culto de domingo', body: 'Amanhã às 19h', url: '#/agenda', read_at: new Date(now).toISOString(), created_at: new Date(now - 30 * 3600e3).toISOString() },
