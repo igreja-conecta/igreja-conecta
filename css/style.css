@@ -396,3 +396,21 @@ select:disabled, input:disabled { opacity: .65; }
 .offer .qr { display: grid; place-items: center; min-height: 240px; background: #fff; border-radius: 12px; padding: 8px; color: #333; margin: 12px 0; }
 .offer .qr svg { width: min(260px, 100%); height: auto; }
 .offer .key { font-size: 1.05em; word-break: break-all; }
+
+/* ---------- Carrossel do Início ---------- */
+.carousel { margin-top: 4px; }
+.carousel-track {
+  display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+  padding: 2px 0 8px;
+}
+.carousel-track::-webkit-scrollbar { display: none; }
+.carousel .slide { flex: 0 0 calc(100% - 28px); scroll-snap-align: start; display: flex; }
+.carousel .slide:only-child { flex-basis: 100%; }
+.carousel .slide > .card { flex: 1; margin: 0; }
+.carousel-dots { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
+.carousel-dots button {
+  width: 8px; height: 8px; padding: 0; border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--line); transition: width .2s, background .2s;
+}
+.carousel-dots button[aria-current="true"] { width: 22px; background: var(--brand); }

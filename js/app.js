@@ -627,8 +627,6 @@ async function viewChurchHome() {
   $view.innerHTML = `
     <div class="page">
       ${head}
-      <div id="home-notices"></div>
-      <div id="home-events"></div>
       ${
         shortcuts.length
           ? `<div class="shortcuts">${shortcuts
@@ -640,16 +638,53 @@ async function viewChurchHome() {
               .join('')}</div>`
           : ''
       }
-      <div id="week-birthdays"></div>
+      <div class="carousel" id="home-carousel" hidden>
+        <div class="carousel-track">
+          <div class="slide" id="home-notices"></div>
+          <div class="slide" id="home-events"></div>
+          <div class="slide" id="week-birthdays"></div>
+        </div>
+        <div class="carousel-dots"></div>
+      </div>
       <div id="push-invite"></div>
       ${aboutCard(c)}
     </div>`;
-  if (featureOn('avisos')) homeNoticesCard(document.getElementById('home-notices')).catch(() => {});
-  if (featureOn('agenda')) homeEventsCard(document.getElementById('home-events')).catch(() => {});
-  if (datesOn()) weekBirthdaysCard(document.getElementById('week-birthdays')).catch(() => {});
+  const slot = (id) => document.getElementById(id);
+  Promise.allSettled([
+    featureOn('avisos') && homeNoticesCard(slot('home-notices')),
+    featureOn('agenda') && homeEventsCard(slot('home-events')),
+    datesOn() && weekBirthdaysCard(slot('week-birthdays')),
+  ]).then(() => setupCarousel(slot('home-carousel')));
   pushInvite(document.getElementById('push-invite')).catch(() => {});
   maybeSuggestInstall(c);
   prefetchMembers();
+}
+
+// Carrossel do Início: só os cartões com conteúdo; desliza para o lado e as bolinhas
+// mostram (e levam a) cada cartão. Não passa sozinho.
+function setupCarousel(box) {
+  if (!box?.isConnected) return;
+  const track = box.querySelector('.carousel-track');
+  track.querySelectorAll('.slide').forEach((s) => !s.children.length && s.remove());
+  const slides = [...track.children];
+  if (!slides.length) return;
+  box.hidden = false;
+  const dots = box.querySelector('.carousel-dots');
+  if (slides.length < 2) return dots.remove();
+  const titleOf = (s) => s.querySelector('h2')?.textContent.trim() || 'Cartão';
+  dots.innerHTML = slides
+    .map((s, i) => `<button type="button" aria-label="${esc(titleOf(s))}" ${i ? '' : 'aria-current="true"'}></button>`)
+    .join('');
+  const buttons = [...dots.children];
+  buttons.forEach((b, i) => (b.onclick = () => track.scrollTo({ left: slides[i].offsetLeft - slides[0].offsetLeft, behavior: 'smooth' })));
+  track.addEventListener(
+    'scroll',
+    () => {
+      const i = Math.min(slides.length - 1, Math.round(track.scrollLeft / (slides[1].offsetLeft - slides[0].offsetLeft)));
+      buttons.forEach((b, j) => (j === i ? b.setAttribute('aria-current', 'true') : b.removeAttribute('aria-current')));
+    },
+    { passive: true },
+  );
 }
 
 async function viewMenu() {
