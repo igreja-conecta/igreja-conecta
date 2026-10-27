@@ -247,3 +247,9 @@ test.describe('Banco: visitante sem login (carteirinha)', () => {
     expect((await request.get(rest('members?select=card_token'), { headers })).ok()).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (relatórios)', () => {
+  test('não calcula relatórios', async ({ request }) => {
+    expect((await rpc(request, 'church_report', { p_church: UUID, p_from: '2026-01-01', p_to: '2026-03-31' })).ok()).toBe(false);
+  });
+});
