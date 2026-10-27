@@ -339,6 +339,8 @@ const icon = {
   chart: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16.5V11M12 16.5V6M17 16.5v-8"/></svg>',
   idcard: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16.5a3.4 3.4 0 0 1 6.4 0M14.5 10h4M14.5 13.5h3"/></svg>',
   child: '<svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="3"/><path d="M12 9v6M8 11.5l4-1 4 1M9.5 21l2.5-6 2.5 6"/></svg>',
+  sun: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12H5M19 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>',
+  moon: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
   chat: '<svg viewBox="0 0 24 24"><path d="M4 5.5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>',
   send: '<svg viewBox="0 0 24 24"><path d="m4 12 16-7.5-6 15-2.5-6z"/><path d="m11.5 13.5 8.5-9"/></svg>',
   book: '<svg viewBox="0 0 24 24"><path d="M5 19.5V5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2 2 2 0 0 0 2 2h12v-4"/><path d="M12 6.5v6M9.5 8.8h5"/></svg>',
@@ -350,6 +352,45 @@ const SOCIAL = [
   ['facebook', 'Facebook', 'https://facebook.com/suaigreja'],
   ['site', 'Site', 'https://suaigreja.com.br'],
 ];
+
+// ---------------------------------------------------------------------
+// Tema claro ou escuro: escolhido no botão do topo e guardado só neste aparelho (js/tema.js
+// aplica antes de a página aparecer). Sem escolha, segue o tema do celular.
+// ---------------------------------------------------------------------
+const THEME_KEY = 'tema';
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
+const currentTheme = () => document.documentElement.dataset.theme || (systemDark.matches ? 'dark' : 'light');
+const themeChosen = () => {
+  try {
+    return !!localStorage.getItem(THEME_KEY);
+  } catch {
+    return false;
+  }
+};
+
+// t: 'light', 'dark' ou null (voltar a seguir o celular).
+function setTheme(t) {
+  try {
+    if (t) localStorage.setItem(THEME_KEY, t === 'dark' ? 'escuro' : 'claro');
+    else localStorage.removeItem(THEME_KEY);
+  } catch {}
+  if (t) document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  updateThemeButton();
+}
+
+function updateThemeButton() {
+  const btn = document.getElementById('theme-btn');
+  if (!btn) return;
+  const dark = currentTheme() === 'dark';
+  const label = dark ? 'Usar tema claro' : 'Usar tema escuro';
+  btn.innerHTML = dark ? icon.sun : icon.moon;
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+}
+document.getElementById('theme-btn')?.addEventListener('click', () => setTheme(currentTheme() === 'dark' ? 'light' : 'dark'));
+systemDark.addEventListener?.('change', updateThemeButton);
+updateThemeButton();
 
 // ---------------------------------------------------------------------
 // Aparência da igreja (cor, nome, logo)
@@ -1017,12 +1058,18 @@ async function viewMenu() {
         <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações</span>${icon.chevron}</a>
         ${admin ? messageLinks() : ''}
         <a class="menu-row" href="#/meus-dados">${icon.user}<span>Meus dados: baixar ou excluir</span>${icon.chevron}</a>
+        ${themeChosen() ? `<button class="menu-row" id="theme-auto">${currentTheme() === 'dark' ? icon.moon : icon.sun}<span>Tema: seguir o celular</span></button>` : ''}
         <a class="menu-row" href="#/ajuda">${icon.help}<span>Ajuda: como funciona</span>${icon.chevron}</a>
         <a class="menu-row" href="#/privacidade">${icon.shield}<span>Privacidade e termos</span>${icon.chevron}</a>
         <button class="menu-row" id="logout">${icon.logout}<span>Sair</span></button>
       </div>
     </div>`;
   document.getElementById('logout').onclick = signOut;
+  document.getElementById('theme-auto')?.addEventListener('click', () => {
+    setTheme(null);
+    toast('Pronto: o tema volta a seguir o do celular.');
+    render();
+  });
 }
 
 async function viewChurchPrivacy() {
