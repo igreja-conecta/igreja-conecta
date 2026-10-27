@@ -450,3 +450,35 @@ select:disabled, input:disabled { opacity: .65; }
   .visitor-qr h1 { font-size: 2.4rem; }
   .visitor-qr .qr { width: 70%; }
 }
+
+/* Devocional e plano de leitura */
+.notif-icon.k-devocional { background: color-mix(in srgb, #2f9e44 16%, var(--surface)); color: color-mix(in srgb, #2b8a3e 85%, var(--ink)); }
+.devotional-today { display: block; text-decoration: none; color: inherit; }
+.devotional-today h2 { margin: 8px 0 4px; }
+.devotional-today .link-like, .link-like { color: var(--link); text-decoration: underline; }
+.verse-ref { color: var(--link); font-weight: 600; margin: 0 0 6px; }
+.devotional-mini { display: block; text-decoration: none; color: inherit; padding: 4px 0 8px; }
+.devotional-mini .verse-ref { display: block; margin: 2px 0 0; }
+.devotional-mini p { margin: 4px 0 0; color: var(--muted); }
+.devotional-img { display: block; width: 100%; max-height: 320px; object-fit: cover; border-radius: 12px; margin: 0 0 12px; }
+.devotional h1 { margin-top: 4px; }
+.devotional-body { font-size: 1.05rem; line-height: 1.6; }
+.verse { margin: 0 0 12px; padding: 12px 16px; border-left: 4px solid var(--brand); background: var(--brand-soft); border-radius: 0 10px 10px 0; }
+.verse p { margin: 0 0 6px; font-style: italic; }
+.verse cite { font-style: normal; font-weight: 700; color: var(--link); }
+.verse-pick { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 8px; }
+@media (max-width: 480px) { .verse-pick { grid-template-columns: 1fr 1fr 1fr; } .verse-pick label:first-child { grid-column: 1 / -1; } }
+.progress { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 8px 0 4px; }
+.progress span { display: block; height: 100%; background: var(--brand); border-radius: 999px; }
+.reading-day { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.reading-day:last-child { border-bottom: 0; }
+.reading-day > span { flex: 1; min-width: 0; }
+.reading-check {
+  flex: none; width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--brand); background: var(--surface);
+  color: var(--brand-ink); font-weight: 700; font-size: 1rem; cursor: pointer; display: grid; place-items: center;
+}
+.reading-day.done .reading-check { background: var(--brand); }
+.reading-day.done strong { color: var(--muted); }
+.passages { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 2px; }
+.reading-plan .late { color: color-mix(in srgb, #e67700 85%, var(--ink)); font-weight: 600; margin: 8px 0; }
+details.card > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }

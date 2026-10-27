@@ -149,3 +149,21 @@ test.describe('Banco: visitante sem login (cadastro de visitantes)', () => {
     expect(reg.ok()).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (devocional e plano de leitura)', () => {
+  test('não lê nem grava devocionais, planos e progresso; não chama as funções', async ({ request }) => {
+    for (const table of ['devotionals', 'devotional_amens', 'reading_plans', 'reading_plan_members', 'reading_progress']) {
+      const res = await request.get(rest(`${table}?select=*`), { headers });
+      if (res.ok()) expect(await res.json(), table).toEqual([]);
+    }
+    const dev = await request.post(rest('devotionals'), { headers, data: { church_id: UUID, title: 'Intruso', body: 'x', publish_date: '2030-01-01' } });
+    expect(dev.ok()).toBe(false);
+    const plan = await request.post(rest('reading_plans'), { headers, data: { church_id: UUID, plan_key: 'nt-90', start_date: '2030-01-01' } });
+    expect(plan.ok()).toBe(false);
+    expect(await (await rpc(request, 'devotional_list', { p_church: UUID })).text()).not.toMatch(/"body"/);
+    expect((await rpc(request, 'devotional_amen', { p_devotional: UUID })).ok()).toBe(false);
+    expect((await rpc(request, 'reading_plan_stats', { p_church: UUID })).ok()).toBe(false);
+    expect((await rpc(request, 'deliver_devotional_notifications', { p_secret: 'errada' })).ok()).toBe(false);
+    for (const fn of ['devotionals_guard', 'reading_progress_guard']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
+  });
+});

@@ -19,6 +19,7 @@ const SHELL = [
   'js/push.js',
   'js/pix.js',
   'js/map.js',
+  'js/biblia.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
 ];

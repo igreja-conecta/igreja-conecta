@@ -89,7 +89,7 @@ export const FEATURES = [
   { key: 'carteirinha', label: 'Carteirinha digital', phase: 3, soon: true },
   { key: 'relatorios', label: 'Relatórios', phase: 3, soon: true },
   { key: 'galeria', label: 'Galeria de fotos', phase: 3, soon: true },
-  { key: 'devocional', label: 'Devocional e plano de leitura', phase: 3, soon: true },
+  { key: 'devocional', label: 'Devocional e plano de leitura', phase: 3 },
 ];
 
 // Texto sem acentos e em minúsculas, para buscas e nomes de colunas.
