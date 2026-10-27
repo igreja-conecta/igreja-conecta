@@ -18,6 +18,7 @@ const SHELL = [
   'js/install.js',
   'js/push.js',
   'js/pix.js',
+  'js/map.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
 ];

@@ -110,3 +110,32 @@ test('a central mostra as notificações por dia, com destaque nas não lidas', 
   await expect(page.getByRole('button', { name: 'Apagar as lidas' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Ver mais' })).toBeHidden();
 });
+
+test('a líder marca o local do evento no mapa, e o membro vê o mapa e a rota', async ({ page, browser }) => {
+  // A busca de endereço responde sempre o mesmo ponto (o serviço de verdade fica fora do teste).
+  await page.route('https://nominatim.openstreetmap.org/**', (r) =>
+    r.fulfill({ json: [{ lat: '-15.7942', lon: '-47.8822', display_name: 'Praça dos Três Poderes, Brasília' }] }),
+  );
+  await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/agenda/novo');
+  await page.getByLabel('Título').fill(`Mapa ${tag}`);
+  await page.getByLabel('Data').fill(tomorrow());
+  await page.getByLabel('Começa').fill('19:00');
+  await page.getByLabel('Local (opcional)').fill('Praça dos Três Poderes');
+  await expect(page.getByText('Sem alfinete no mapa')).toBeVisible();
+  await page.getByRole('button', { name: 'Marcar no mapa' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Marcar no mapa' });
+  // Já busca o endereço digitado; com um resultado só, o alfinete vai para lá.
+  await expect(dialog.locator('.map-pin')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Usar este ponto' }).click();
+  await expect(page.getByText('📍 Local marcado no mapa')).toBeVisible();
+  await page.getByRole('button', { name: 'Criar evento' }).click();
+  await expect(page.getByRole('heading', { name: `Mapa ${tag}` })).toBeVisible();
+
+  const member = await (await browser.newContext({ ...test.info().project.use, baseURL: 'http://localhost:4173/' })).newPage();
+  await openLoggedIn(member, as['membro-a'].session, '/i/teste-a/#/agenda');
+  await member.locator('.event-card', { hasText: `Mapa ${tag}` }).first().click();
+  await expect(member.locator('.place-map .map-pin')).toBeVisible();
+  await expect(member.getByRole('link', { name: 'Rota no Google Maps' })).toHaveAttribute('href', /destination=-15\.7942,-47\.8822$/);
+  await expect(member.getByRole('link', { name: 'Ir com o Waze' })).toHaveAttribute('href', /ll=-15\.7942,-47\.8822&navigate=yes$/);
+  await member.context().close();
+});

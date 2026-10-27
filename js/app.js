@@ -9,6 +9,7 @@ import { resizeImage, resizeLogo, makeIconSet } from './images.js';
 import { maybeSuggestInstall, installState, installNow, iconReady, ICON_PREPARING } from './install.js';
 import { pushSupport, pushActive, enablePush, disablePush, syncPush } from './push.js';
 import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg } from './pix.js';
+import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
 
 const $view = document.getElementById('view');
 const configured = !CONFIG.SUPABASE_ANON_KEY.includes('COLE-AQUI');
@@ -37,6 +38,8 @@ const myMember = () => state.memberships.find((m) => m.church.id === state.churc
 const isActiveMember = () => !!myMember()?.consent_at;
 const myRole = () => (isActiveMember() ? myMember().role : null);
 const featureOn = (key) => !!state.church?.features?.[key];
+// Alfinete da igreja no mapa: ponto de partida para marcar eventos e células.
+const churchPin = () => (state.church?.lat != null ? { lat: state.church.lat, lng: state.church.lng } : null);
 // Pastor (administrador) e líderes: leem os pedidos de oração privados e moderam o mural.
 const isPastoral = () => ['admin', 'lider'].includes(myRole());
 // Datas comemoradas: aniversário (funcionalidade "aniversarios") e casamento e batismo ("datas_especiais").
@@ -299,6 +302,7 @@ async function render() {
     window.scrollTo(0, 0);
     try {
       await view(ctx, ...m.slice(1));
+      if (ctx.alive()) mountPlaceMaps($view).catch(() => {});
     } catch (e) {
       if (!ctx.alive()) return;
       console.error(e);
@@ -539,6 +543,7 @@ function aboutCard(c) {
       <h2>Sobre a igreja</h2>
       ${c.about_text ? `<p class="pre">${esc(c.about_text)}</p>` : ''}
       ${c.address ? `<p class="meta">${icon.pin}${esc(c.address)}${c.city ? ` · ${esc(c.city)}` : ''}</p>` : ''}
+      ${placeBlock({ lat: c.lat, lng: c.lng, address: [c.address, c.city].filter(Boolean).join(', ') })}
       ${socialLinks(c)}
     </section>`;
 }
@@ -830,7 +835,7 @@ function helpTopics() {
     ...(features('agenda')
       ? [[
           'Agenda',
-          `<p>A aba <a href="#/agenda">Agenda</a> mostra os cultos e eventos dos próximos 3 meses. Toque num evento para ver os detalhes e o local (que abre no mapa).</p>
+          `<p>A aba <a href="#/agenda">Agenda</a> mostra os cultos e eventos dos próximos 3 meses. Toque num evento para ver os detalhes, o mapa do local e a rota pelo Google Maps ou pelo Waze.</p>
            <p><strong>Adicionar à agenda</strong> baixa um arquivo: abra-o para salvar na agenda do celular. Cultos que se repetem entram na agenda toda semana. Se preferir, use o botão <em>Google Agenda</em>.</p>`,
         ]]
       : []),
@@ -921,6 +926,7 @@ function helpTopics() {
       ? [[
           'Criar eventos e cultos',
           `<p>Na <a href="#/agenda">Agenda</a>, toque em <em>Novo evento</em>. Para os cultos fixos, marque <strong>Repetir toda semana</strong> (e, se quiser, até quando).</p>
+           <p>Em <strong>Marcar no mapa</strong>, busque o endereço ou toque no ponto exato: quem abrir o evento vê o mapa e tem os botões de rota pelo Google Maps e pelo Waze. O mesmo vale para o local das células e o endereço da igreja.</p>
            <p>Escolha o <strong>lembrete</strong>: os membros com notificação ativada recebem 1 hora, 2 horas, 3 horas ou 1 dia antes. Editar ou excluir um evento que se repete vale para todas as semanas.</p>`,
         ]]
       : []),
@@ -1696,6 +1702,8 @@ async function viewSettings(ctx) {
         <label>Sobre a igreja<textarea name="about_text" rows="4" maxlength="2000" placeholder="Horários dos cultos, história, pastores…">${esc(c.about_text || '')}</textarea></label>
         <label>Endereço<input name="address" maxlength="200" value="${esc(c.address || '')}"></label>
         <label>Cidade<input name="city" maxlength="80" value="${esc(c.city || '')}"></label>
+        ${pinField(c)}
+        <small class="hint">Com o alfinete no mapa, a página da igreja mostra o mapa e a rota pelo Google Maps e pelo Waze.</small>
       </fieldset>
 
       <fieldset class="card">
@@ -1741,6 +1749,7 @@ async function viewSettings(ctx) {
     </form>`;
 
   const form = document.getElementById('settings');
+  bindPinField(form, { address: () => [form.address.value.trim(), form.city.value.trim()].filter(Boolean).join(', ') });
   let logoFile = null;
   const colorWarn = () => (document.getElementById('color-warn').hidden = readableOnWhite(form.primary_color.value));
   colorWarn();
@@ -1794,6 +1803,7 @@ async function viewSettings(ctx) {
         about_text: form.about_text.value.trim() || null,
         address: form.address.value.trim() || null,
         city: form.city.value.trim() || null,
+        ...pinValues(form),
         social: newSocial,
         pix_key,
         pix_name: pix_key ? form.pix_name.value.trim() || null : null,
@@ -1924,8 +1934,6 @@ function fmtEventWhen(ev) {
   if (!e) return `${day} · ${fmtHour(s)}`;
   return isoLocal(e) === isoLocal(s) ? `${day} · ${fmtHour(s)}–${fmtHour(e)}` : `${day} · ${fmtHour(s)} até ${fmtDayShort(e)} ${fmtHour(e)}`;
 }
-
-const mapsUrl = (place) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}`;
 
 async function fetchEvents(from, to) {
   const { data, error } = await sb.rpc('events_between', { p_church: state.church.id, p_from: from.toISOString(), p_to: to.toISOString() });
@@ -2068,7 +2076,8 @@ async function viewEvent(ctx, id) {
       <a href="#/agenda" class="back">← Agenda</a>
       <h1>${esc(ev.title)}</h1>
       <p class="meta">${icon.clock}${esc(fmtEventWhen(occ))}</p>
-      ${ev.location ? `<p class="meta">${icon.pin}<a href="${esc(mapsUrl(ev.location))}" target="_blank" rel="noopener">${esc(ev.location)}</a></p>` : ''}
+      ${ev.location ? `<p class="meta">${icon.pin}${esc(ev.location)}</p>` : ''}
+      ${placeBlock({ lat: ev.lat, lng: ev.lng, address: ev.location })}
       ${ev.repeat_weekly ? `<p class="hint">Repete toda semana${ev.repeat_until ? ` até ${esc(fmtDate(ev.repeat_until))}` : ''}.</p>` : ''}
       ${ev.description ? `<div class="card"><p class="pre">${esc(ev.description)}</p></div>` : ''}
       ${ev.remind_minutes ? `<p class="hint">${icon.bell} Lembrete por notificação ${esc(remind.toLowerCase())}.</p>` : ''}
@@ -2127,6 +2136,7 @@ async function viewEventForm(ctx, id) {
         <label>Termina (opcional)<input name="end" type="time" value="${e ? timeValue(e) : ''}"></label>
       </div>
       <label>Local (opcional)<input name="location" maxlength="200" value="${esc(ev.location || '')}" placeholder="Templo principal"></label>
+      ${pinField(ev)}
       <label>Descrição (opcional)<textarea name="description" rows="4" maxlength="2000">${esc(ev.description || '')}</textarea></label>
       <label class="check"><input type="checkbox" name="repeat_weekly" ${ev.repeat_weekly ? 'checked' : ''}> Repetir toda semana</label>
       <label id="until-box" ${ev.repeat_weekly ? '' : 'hidden'}>Repetir até (opcional)<input name="repeat_until" type="date" value="${esc(ev.repeat_until || '')}"></label>
@@ -2138,6 +2148,7 @@ async function viewEventForm(ctx, id) {
     </form>`;
 
   const form = document.getElementById('event');
+  bindPinField(form, { address: () => form.location.value.trim(), near: churchPin() });
   form.repeat_weekly.addEventListener('change', () => (document.getElementById('until-box').hidden = !form.repeat_weekly.checked));
   form.addEventListener('submit', async (evt) => {
     evt.preventDefault();
@@ -2151,6 +2162,7 @@ async function viewEventForm(ctx, id) {
       title: form.title.value.trim(),
       description: form.description.value.trim() || null,
       location: form.location.value.trim() || null,
+      ...pinValues(form),
       starts_at: start.toISOString(),
       ends_at: end ? end.toISOString() : null,
       repeat_weekly: weekly,
@@ -2643,6 +2655,7 @@ async function viewCellForm(ctx, id) {
         <label>Horário<input name="meets_at" type="time" value="${esc(c.meets_at ? c.meets_at.slice(0, 5) : '')}"></label>
       </div>
       <label>Local (opcional)<input name="location" maxlength="200" value="${esc(c.location || '')}" placeholder="Rua das Flores, 10 · ou: on-line"></label>
+      ${pinField(c)}
       <label>Descrição (opcional)<textarea name="description" rows="3" maxlength="1000">${esc(c.description || '')}</textarea></label>
       ${id ? `<label class="check"><input type="checkbox" name="active" ${c.active ? 'checked' : ''}> Célula ativa
         <small class="hint">Desmarque quando a célula encerrar: ela some para os participantes, e o histórico fica guardado.</small></label>` : ''}
@@ -2651,6 +2664,7 @@ async function viewCellForm(ctx, id) {
       ${id ? '<button class="btn danger-outline" type="button" id="delete">Excluir célula</button>' : ''}
     </form>`;
   const form = document.getElementById('cell');
+  bindPinField(form, { address: () => form.location.value.trim(), near: churchPin() });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const row = {
@@ -2658,6 +2672,7 @@ async function viewCellForm(ctx, id) {
       weekday: form.weekday.value === '' ? null : Number(form.weekday.value),
       meets_at: form.meets_at.value || null,
       location: form.location.value.trim() || null,
+      ...pinValues(form),
       description: form.description.value.trim() || null,
     };
     const btn = form.querySelector('button.primary');
@@ -2718,7 +2733,8 @@ async function viewCell(ctx, id) {
       <h1>${esc(c.name)}</h1>
       ${!c.active ? '<p class="notice">Esta célula está encerrada.</p>' : ''}
       ${cellWhen(c) ? `<p class="meta">${icon.clock}${esc(cellWhen(c))}</p>` : ''}
-      ${c.location ? `<p class="meta">${icon.pin}${/^on-?line$/i.test(c.location.trim()) ? esc(c.location) : `<a href="${esc(mapsUrl(c.location))}" target="_blank" rel="noopener">${esc(c.location)}</a>`}</p>` : ''}
+      ${c.location ? `<p class="meta">${icon.pin}${esc(c.location)}</p>` : ''}
+      ${placeBlock({ lat: c.lat, lng: c.lng, address: c.location })}
       ${c.description ? `<div class="card"><p class="pre">${esc(c.description)}</p></div>` : ''}
       ${
         manage
