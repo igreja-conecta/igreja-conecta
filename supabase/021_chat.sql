@@ -229,7 +229,7 @@ revoke execute on function public.chat_message_guard() from public, anon, authen
 create or replace function public.chat_message_after()
 returns trigger language plpgsql security definer set search_path = '' as $$
 declare
-  c public.conversations;
+  v_conv public.conversations;
   payload jsonb;
 begin
   update public.conversations c
@@ -239,13 +239,13 @@ begin
          read_a = case when new.sender_id = c.user_a then new.created_at else c.read_a end,
          read_b = case when new.sender_id = c.user_b then new.created_at else c.read_b end
    where c.id = new.conversation_id
-  returning * into c;
+  returning * into v_conv;
   payload := jsonb_build_object(
     'id', new.id, 'church_id', new.church_id, 'conversation_id', new.conversation_id,
     'sender_id', new.sender_id, 'body', new.body, 'created_at', new.created_at);
   begin
-    perform realtime.send(payload, 'message', 'user:' || c.user_a, true);
-    perform realtime.send(payload, 'message', 'user:' || c.user_b, true);
+    perform realtime.send(payload, 'message', 'user:' || v_conv.user_a, true);
+    perform realtime.send(payload, 'message', 'user:' || v_conv.user_b, true);
   exception when others then
     null; -- falha no tempo real nunca impede a mensagem (o app ressincroniza)
   end;
