@@ -133,3 +133,19 @@ test.describe('Banco: visitante sem login (oração, células e mapa)', () => {
     }
   });
 });
+
+test.describe('Banco: visitante sem login (cadastro de visitantes)', () => {
+  test('não lê os cadastros, não grava direto, não vira membro e não limpa', async ({ request }) => {
+    const res = await request.get(rest('visitors?select=*'), { headers });
+    if (res.ok()) expect(await res.json()).toEqual([]);
+    const direct = await request.post(rest('visitors'), { headers, data: { church_id: UUID, name: 'Intruso', consent_at: new Date().toISOString() } });
+    expect(direct.ok()).toBe(false);
+    expect((await rpc(request, 'visitor_to_member', { p_visitor: UUID })).ok()).toBe(false);
+    expect((await rpc(request, 'clean_visitors', { p_secret: 'errada' })).ok()).toBe(false);
+    // Igreja que não existe (ou sem a funcionalidade): o cadastro é recusado.
+    const reg = await rpc(request, 'register_visitor', {
+      p_church: UUID, p_name: 'Fulano', p_phone: null, p_email: null, p_first_time: true, p_source: null, p_wants_contact: true, p_message: null, p_consent: true,
+    });
+    expect(reg.ok()).toBe(false);
+  });
+});

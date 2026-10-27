@@ -3,7 +3,7 @@ import { CONFIG } from './config.js';
 import {
   esc, slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone,
   ROLES, isLeaderRole, FEATURES, fold, fmtDate, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
-  renderMessage, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
+  renderMessage, firstName, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
 } from './util.js';
 import { resizeImage, resizeLogo, makeIconSet } from './images.js';
 import { maybeSuggestInstall, installState, installNow, iconReady, ICON_PREPARING } from './install.js';
@@ -66,6 +66,8 @@ const offerReady = () => featureOn('pix') && !!state.church?.pix_key;
 const SCREEN_PREFIX = 'tela:';
 const screenMem = new Map();
 const screenLoading = new Map();
+// Telas com dados sensíveis de outras pessoas: guardadas só na memória, nunca gravadas no aparelho.
+const PRIVATE_SCREENS = /^(moderar:|visitantes$)/;
 const screenKey = (name) => `${SCREEN_PREFIX}${state.user?.id}:${state.church?.id}:${name}`;
 
 function screenCached(name) {
@@ -88,7 +90,7 @@ function screenFetch(name, fetcher) {
       .then((data) => {
         screenMem.set(key, data);
         // Pedidos de oração da moderação (inclui os privados): só na memória, nunca gravados no aparelho.
-        if (!name.startsWith('moderar:')) {
+        if (!PRIVATE_SCREENS.test(name)) {
           try {
             localStorage.setItem(key, JSON.stringify(data));
           } catch {}
@@ -450,6 +452,10 @@ const churchRoutes = [
   [/^\/oracao\/novo$/, viewPrayerForm],
   [/^\/oracao\/meus$/, viewMyPrayers],
   [/^\/oracao\/moderar$/, viewPrayerModeration],
+  [/^\/visitante$/, viewVisitorForm],
+  [/^\/visitantes$/, viewVisitors],
+  [/^\/visitantes\/qr$/, viewVisitorQr],
+  [/^\/visitantes\/([0-9a-f-]{36})$/, viewVisitor],
   [/^\/celulas$/, viewCells],
   [/^\/celulas\/nova$/, viewCellForm],
   [/^\/celulas\/([0-9a-f-]{36})$/, viewCell],
@@ -777,6 +783,7 @@ async function viewChurchHome() {
         <a class="btn primary big" href="#/entrar">Entrar</a>
         <p class="hint center">Entre com o e-mail que você deu à secretaria da igreja.</p>
         ${offerReady() ? `<a class="btn" href="#/ofertar">${icon.pix} Dízimos e ofertas</a>` : ''}
+        ${featureOn('visitantes') ? `<a class="btn" href="#/visitante">${icon.user} Sou visitante: deixar meu contato</a>` : ''}
         ${aboutCard(c)}
       </div>`;
     return;
@@ -801,8 +808,11 @@ async function viewChurchHome() {
     ['aniversarios', icon.cake, 'Aniversariantes', '#/aniversariantes'],
     ['oracao', icon.heart, 'Oração', '#/oracao'],
     ['celulas', icon.users, isLeaderRole(m.role) ? 'Células' : 'Célula', '#/celulas'],
+    ['visitantes', icon.user, 'Visitantes', '#/visitantes'],
     ['pix', icon.pix, 'Ofertar', '#/ofertar'],
-  ].filter(([k]) => (k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : featureOn(k)));
+  ].filter(([k]) =>
+    k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : k === 'visitantes' ? featureOn(k) && isLeaderRole(m.role) : featureOn(k),
+  );
   $view.innerHTML = `
     <div class="page">
       ${head}
@@ -883,6 +893,7 @@ async function viewMenu() {
         ${admin ? `<a class="menu-row" href="#/config">${icon.gear}<span>Configurar a igreja</span>${icon.chevron}</a>` : ''}
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         ${datesOn() ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
+        ${featureOn('visitantes') && isLeaderRole(m.role) ? `<a class="menu-row" href="#/visitantes">${icon.user}<span>Visitantes</span>${icon.chevron}</a>` : ''}
         ${featureOn('celulas') ? `<a class="menu-row" href="#/celulas">${icon.users}<span>${isLeaderRole(m.role) ? 'Células' : 'Minha célula'}</span>${icon.chevron}</a>` : ''}
         ${featureOn('oracao') ? `<a class="menu-row" href="#/oracao">${icon.heart}<span>Pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${featureOn('oracao') && isPastoral() ? `<a class="menu-row" href="#/oracao/moderar">${icon.heart}<span>Moderar pedidos de oração</span>${icon.chevron}</a>` : ''}
@@ -1148,6 +1159,14 @@ function helpTopics() {
            <p>Marque <strong>Mandar notificação para os membros</strong> só nos avisos importantes. Isso só pode ser escolhido ao publicar.</p>`,
         ]]
       : []),
+    ...(features('visitantes')
+      ? [[
+          'Visitantes',
+          `<p>Em <a href="#/visitantes">Menu &gt; Visitantes</a>, toque em <em>QR Code para o culto</em> e projete no telão ou imprima. O visitante aponta a câmera, preenche um cadastro rápido (sem precisar de conta) e autoriza a igreja a guardar os dados.</p>
+           <p>A cada visitante, a liderança recebe uma notificação. Abra o cadastro para <strong>chamar no WhatsApp</strong> (a mensagem já vem escrita), mudar a situação (<em>Novo, Contatado, Acompanhando, Virou membro, Sem interesse</em>) e anotar o acompanhamento. <em>Cadastrar como membro</em> leva os dados para o cadastro de membros.</p>
+           <p>O administrador muda a mensagem do WhatsApp na tela do QR Code. Quem não virou membro é apagado sozinho 12 meses depois do cadastro.</p>`,
+        ]]
+      : []),
     ...(features('celulas')
       ? [[
           'Organizar as células',
@@ -1177,7 +1196,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -2907,6 +2926,271 @@ function drawModeration(tab, rows, people) {
 }
 
 // ---------------------------------------------------------------------
+// Visitantes: cadastro rápido pelo QR Code do culto (sem login) e acompanhamento pela liderança
+// ---------------------------------------------------------------------
+const VISITOR_STATUS = {
+  novo: ['Novo', 'wait'],
+  contatado: ['Contatado', ''],
+  acompanhando: ['Acompanhando', 'role'],
+  membro: ['Virou membro', 'ok'],
+  sem_interesse: ['Sem interesse', ''],
+};
+const VISITOR_SOURCES = { amigos: 'Amigos ou família', redes: 'Redes sociais', passando: 'Passando na frente', outro: 'Outro' };
+const VISITOR_WHATSAPP_DEFAULT =
+  'Olá, {primeiro_nome}! Aqui é da {igreja}. Foi uma alegria ter você com a gente! Se precisar de algo ou quiser conversar, é só responder esta mensagem. 🙏';
+const visitorUrl = () => `${PAGE_URL}#/visitante`;
+const whatsappLink = (phone, text) => `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+const visitorWhatsapp = (v) =>
+  whatsappLink(v.phone, renderMessage(state.church.visitor_whatsapp_text || VISITOR_WHATSAPP_DEFAULT, { name: v.name, church: state.church.name }));
+
+// Formulário público: funciona sem entrar no app.
+async function viewVisitorForm() {
+  const c = state.church;
+  if (!featureOn('visitantes')) {
+    $view.innerHTML = `<div class="empty"><h2>Cadastro de visitantes desligado</h2><a class="btn" href="#/">Ir para o início</a></div>`;
+    return;
+  }
+  $view.innerHTML = `
+    <form id="visitor" class="form page">
+      <section class="church-hero">
+        <img src="${esc(c.logo_url || 'icons/icon-192.png')}" alt="" width="72" height="72">
+        <h1>Seja bem-vindo!</h1>
+        <p>Que bom ter você na ${esc(c.name)}. Deixe o seu contato para a gente te conhecer melhor.</p>
+      </section>
+      <label>Seu nome<input name="name" required minlength="2" maxlength="120" autocomplete="name"></label>
+      <label>WhatsApp<input name="phone" type="tel" inputmode="tel" placeholder="(61) 99999-9999" autocomplete="tel"></label>
+      <label>E-mail (opcional)<input name="email" type="email" maxlength="160" autocomplete="email"></label>
+      <fieldset>
+        <legend>É a sua primeira vez aqui?</legend>
+        <label class="check"><input type="radio" name="first_time" value="sim" checked> Sim</label>
+        <label class="check"><input type="radio" name="first_time" value="nao"> Não, já vim antes</label>
+      </fieldset>
+      <label>Como conheceu a igreja?
+        <select name="source"><option value="">—</option>${Object.entries(VISITOR_SOURCES).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+      </label>
+      <label class="check"><input type="checkbox" name="wants_contact" checked> Quero que alguém da igreja fale comigo</label>
+      <label>Mensagem ou pedido de oração (opcional)<textarea name="message" rows="3" maxlength="1000"></textarea></label>
+      <label class="hp" aria-hidden="true">Site<input name="website" tabindex="-1" autocomplete="off"></label>
+      <label class="check"><input type="checkbox" name="consent" required> Autorizo a ${esc(c.name)} a guardar estes dados para entrar em contato comigo.
+        <small class="hint">Só a liderança da igreja vê. Se você não virar membro, os dados são apagados em 12 meses. <a href="#/privacidade">Privacidade</a></small></label>
+      <button class="btn primary big">Enviar</button>
+    </form>`;
+  const form = document.getElementById('visitor');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const rawPhone = form.phone.value.trim();
+    const phone = rawPhone ? normalizePhone(rawPhone) : null;
+    if (rawPhone && !phone) return toast('Confira o WhatsApp: com DDD, como (61) 99999-9999.', 'error');
+    const email = form.email.value.trim();
+    if (email && !EMAIL_RE.test(email)) return toast('Confira o e-mail.', 'error');
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { error } = await sb.rpc('register_visitor', {
+      p_church: c.id,
+      p_name: form.name.value.trim(),
+      p_phone: phone,
+      p_email: email || null,
+      p_first_time: form.first_time.value === 'sim',
+      p_source: form.source.value || null,
+      p_wants_contact: form.wants_contact.checked,
+      p_message: form.message.value.trim() || null,
+      p_consent: form.consent.checked,
+      p_website: form.website.value,
+    });
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    window.scrollTo(0, 0);
+    $view.innerHTML = `
+      <div class="page">
+        <section class="church-hero">
+          <img src="${esc(c.logo_url || 'icons/icon-192.png')}" alt="" width="72" height="72">
+          <h1>Obrigado, ${esc(firstName(form.name.value))}!</h1>
+          <p>${esc(c.welcome_text || `É uma alegria ter você na ${c.name}.`)}</p>
+        </section>
+        ${form.wants_contact.checked ? '<p class="center">Em breve alguém da igreja vai falar com você.</p>' : ''}
+        ${aboutCard(c)}
+      </div>`;
+    mountPlaceMaps($view).catch(() => {});
+  });
+}
+
+async function loadVisitors() {
+  const { data, error } = await sb
+    .from('visitors')
+    .select('id, name, phone, email, first_time, source, wants_contact, message, status, notes, member_id, created_at')
+    .eq('church_id', state.church.id)
+    .order('created_at', { ascending: false })
+    .limit(300);
+  if (error) throw error;
+  return data;
+}
+
+function requireVisitorsTeam(next) {
+  if (!requireMemberFeature(next, 'visitantes')) return false;
+  if (isLeaderRole(myRole())) return true;
+  navigate('/');
+  return false;
+}
+
+async function viewVisitors(ctx) {
+  if (!requireVisitorsTeam('/visitantes')) return;
+  const filter = Object.keys(VISITOR_STATUS).includes(ctx.params.get('ver')) ? ctx.params.get('ver') : null;
+  await screenShow(ctx, 'visitantes', loadVisitors, (all) => {
+    const rows = filter ? all.filter((v) => v.status === filter) : all.filter((v) => !['membro', 'sem_interesse'].includes(v.status));
+    const count = (s) => all.filter((v) => v.status === s).length;
+    $view.innerHTML = `
+      <div class="page">
+        <h1>Visitantes</h1>
+        <div class="actions-row">
+          <a class="btn primary" href="#/visitantes/qr">QR Code para o culto</a>
+        </div>
+        <div class="chips filters">
+          <a class="chip ${filter ? '' : 'active'}" href="#/visitantes">Em andamento</a>
+          ${Object.entries(VISITOR_STATUS)
+            .map(([k, [label]]) => `<a class="chip ${filter === k ? 'active' : ''}" href="#/visitantes?ver=${k}">${label}${count(k) ? ` (${count(k)})` : ''}</a>`)
+            .join('')}
+        </div>
+        ${
+          rows.length
+            ? `<div class="list">${rows
+                .map((v) => {
+                  const [label, cls] = VISITOR_STATUS[v.status];
+                  return `
+              <a class="member-row" href="#/visitantes/${v.id}">
+                ${avatar(v.name, null)}
+                <span><strong>${esc(v.name)}</strong>
+                  <small>${esc(fmtDayMonth(v.created_at))}${v.first_time ? ' · primeira vez' : ''}${v.wants_contact ? ' · quer contato' : ''}</small></span>
+                <span class="tags"><span class="tag ${cls}">${label}</span></span>
+              </a>`;
+                })
+                .join('')}</div>`
+            : `<div class="empty"><p>${filter ? 'Ninguém nesta situação.' : 'Nenhum visitante em andamento. Mostre o QR Code no culto!'}</p></div>`
+        }
+        <p class="hint">Quem não virou membro é apagado sozinho 12 meses depois do cadastro.</p>
+      </div>`;
+  });
+}
+
+async function viewVisitor(ctx, id) {
+  if (!requireVisitorsTeam(`/visitantes/${id}`)) return;
+  await screenShow(ctx, 'visitantes', loadVisitors, (all) => drawVisitor(all.find((v) => v.id === id)));
+}
+
+function drawVisitor(v) {
+  if (!v) {
+    $view.innerHTML = `<div class="empty"><h2>Visitante não encontrado</h2><a class="btn" href="#/visitantes">Voltar</a></div>`;
+    return;
+  }
+  $view.innerHTML = `
+    <form id="visit" class="form page">
+      <a href="#/visitantes" class="back">← Visitantes</a>
+      <h1>${esc(v.name)}</h1>
+      <p class="hint">Cadastro em ${esc(new Date(v.created_at).toLocaleDateString('pt-BR'))}${v.first_time ? ' · primeira vez' : ' · já tinha vindo antes'}${v.source ? ` · ${esc(VISITOR_SOURCES[v.source])}` : ''}</p>
+      <p>${v.wants_contact ? '✅ Quer que alguém da igreja fale com ele.' : 'Não pediu contato.'}</p>
+      ${v.phone ? `<p class="meta">📱 <a href="tel:+${esc(v.phone)}">${esc(fmtPhone(v.phone))}</a></p>` : ''}
+      ${v.email ? `<p class="meta">✉️ <a href="mailto:${esc(v.email)}">${esc(v.email)}</a></p>` : ''}
+      ${v.message ? `<div class="card"><h2>Mensagem</h2><p class="pre">${esc(v.message)}</p></div>` : ''}
+      ${v.phone ? `<a class="btn primary" href="${esc(visitorWhatsapp(v))}" target="_blank" rel="noopener">Chamar no WhatsApp</a>` : ''}
+      <label>Situação
+        <select name="status">${Object.entries(VISITOR_STATUS)
+          .map(([k, [label]]) => `<option value="${k}" ${v.status === k ? 'selected' : ''} ${k === 'membro' && !v.member_id ? 'disabled' : ''}>${label}</option>`)
+          .join('')}</select>
+      </label>
+      <label>Anotações do acompanhamento<textarea name="notes" rows="4" maxlength="4000" placeholder="Ex.: liguei dia 10, vem no domingo">${esc(v.notes || '')}</textarea></label>
+      <button class="btn primary big">Salvar</button>
+      ${
+        v.member_id
+          ? `<a class="btn" href="#/membros/${v.member_id}">Ver o cadastro de membro</a>`
+          : '<button class="btn" type="button" id="to-member">Cadastrar como membro</button>'
+      }
+      <button class="btn danger-outline" type="button" id="delete">Apagar este visitante</button>
+    </form>`;
+  const form = document.getElementById('visit');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { data, error } = await sb
+      .from('visitors')
+      .update({ status: form.status.value, notes: form.notes.value.trim() || null, updated_at: new Date().toISOString() })
+      .eq('id', v.id)
+      .select('id');
+    btn.disabled = false;
+    if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
+    screenForget('visitantes');
+    toast('Salvo.');
+    navigate('/visitantes');
+  });
+  document.getElementById('to-member')?.addEventListener('click', async () => {
+    if (!confirm(`Cadastrar ${v.name} como membro da igreja? O nome, o WhatsApp e o e-mail vão para o cadastro de membros.`)) return;
+    const { data: memberId, error } = await sb.rpc('visitor_to_member', { p_visitor: v.id });
+    if (error) return toast(errorText(error), 'error');
+    screenForget('visitantes');
+    forgetMembers();
+    toast('Cadastrado como membro. Confira os dados na ficha.');
+    navigate(`/membros/${memberId}`);
+  });
+  document.getElementById('delete').onclick = async () => {
+    if (!confirm(`Apagar o cadastro de ${v.name}? Não dá para desfazer.`)) return;
+    const { data, error } = await sb.from('visitors').delete().eq('id', v.id).select('id');
+    if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
+    screenForget('visitantes');
+    toast('Visitante apagado.');
+    navigate('/visitantes');
+  };
+}
+
+// QR Code para projetar no telão ou imprimir, e a mensagem pronta do WhatsApp.
+async function viewVisitorQr() {
+  if (!requireVisitorsTeam('/visitantes/qr')) return;
+  const url = visitorUrl();
+  const c = state.church;
+  $view.innerHTML = `
+    <div class="page visitor-qr">
+      <a href="#/visitantes" class="back no-print">← Visitantes</a>
+      <h1>Visitou a ${esc(c.name)}?</h1>
+      <p class="center">Aponte a câmera do celular e deixe o seu contato.</p>
+      <div class="qr" id="visitor-qr"><p class="hint center">Gerando o QR Code…</p></div>
+      <div class="copy-row no-print"><code>${esc(url)}</code><button class="btn small" type="button" id="copy">Copiar</button></div>
+      <div class="actions-row no-print">
+        <button class="btn" id="print">${icon.print} Imprimir</button>
+        <a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Abrir o cadastro</a>
+      </div>
+      <form id="wa" class="form card no-print">
+              <h2>Mensagem pronta do WhatsApp</h2>
+              <label>Mensagem<textarea name="text" rows="4" maxlength="500">${esc(c.visitor_whatsapp_text || VISITOR_WHATSAPP_DEFAULT)}</textarea></label>
+              <p class="hint">Use {primeiro_nome}, {nome} e {igreja}. Ela já vem escrita ao tocar em "Chamar no WhatsApp".</p>
+              ${myRole() === 'admin' ? '<button class="btn primary">Salvar mensagem</button>' : '<p class="hint">Só o administrador muda o texto.</p>'}
+      </form>
+    </div>`;
+  qrSvg(url)
+    .then((svg) => {
+      const box = document.getElementById('visitor-qr');
+      if (box) box.innerHTML = svg;
+    })
+    .catch(() => {});
+  document.getElementById('print').onclick = () => window.print();
+  document.getElementById('copy').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Endereço copiado.');
+    } catch {
+      toast('Não deu para copiar. Selecione o endereço e copie.', 'error');
+    }
+  };
+  const wa = document.getElementById('wa');
+  wa?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = wa.text.value.trim() || null;
+    const { data, error } = await sb.from('churches').update({ visitor_whatsapp_text: text }).eq('id', c.id).select().single();
+    if (error) return toast(errorText(error), 'error');
+    state.church = data;
+    saveBootCache();
+    toast('Mensagem salva.');
+  });
+}
+
+// ---------------------------------------------------------------------
 // Células e pequenos grupos: participantes, encontros e presença
 // ---------------------------------------------------------------------
 const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
@@ -3476,6 +3760,7 @@ const NOTIF_GROUPS = {
   agenda: { label: 'Agenda', icon: 'calendar', kinds: ['evento'], on: () => featureOn('agenda') },
   oracao: { label: 'Oração', icon: 'heart', kinds: ['oracao'], on: () => featureOn('oracao') },
   datas: { label: 'Datas', icon: 'cake', kinds: ['aniversario', 'casamento', 'batismo', 'resumo_lideres'], on: () => datesOn() },
+  visitantes: { label: 'Visitantes', icon: 'user', kinds: ['visitante'], on: () => featureOn('visitantes') && isLeaderRole(myRole()) },
 };
 const notifGroup = (kind) => Object.keys(NOTIF_GROUPS).find((g) => NOTIF_GROUPS[g].kinds.includes(kind)) || 'sistema';
 const NOTIF_PAGE = 30;
