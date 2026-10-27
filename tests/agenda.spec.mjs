@@ -141,3 +141,23 @@ test('a líder marca o local do evento no mapa, e o membro vê o mapa e a rota',
   await expect(member.getByRole('link', { name: 'Ir com o Waze' })).toHaveAttribute('href', /ll=-15\.7942,-47\.8822&navigate=yes$/);
   await member.context().close();
 });
+
+test('Agenda, Avisos e o evento abrem na hora pelas abas, mesmo com o banco demorando', async ({ page }) => {
+  await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/');
+  // O Início já busca a Agenda, os Avisos e os detalhes dos eventos em segundo plano.
+  await expect(page.locator('#home-notices')).toContainText(`Aviso ${tag}`);
+  await page.waitForLoadState('networkidle');
+  // Daqui em diante, o banco leva 4 segundos para responder.
+  await page.route('**/rest/v1/**', async (route) => {
+    await new Promise((r) => setTimeout(r, 4000));
+    await route.continue().catch(() => {});
+  });
+  const fast = { timeout: 1000 };
+  await page.locator('#tabbar').getByRole('link', { name: 'Agenda' }).click();
+  await expect(page.locator('.event-card', { hasText: `Culto ${tag}` }).first()).toBeVisible(fast);
+  await page.locator('#tabbar').getByRole('link', { name: 'Avisos' }).click();
+  await expect(page.locator('.announcement', { hasText: `Aviso ${tag}` })).toBeVisible(fast);
+  await page.locator('#tabbar').getByRole('link', { name: 'Agenda' }).click();
+  await page.locator('.event-card', { hasText: `Culto ${tag}` }).first().click();
+  await expect(page.getByRole('heading', { name: `Culto ${tag}` })).toBeVisible(fast);
+});
