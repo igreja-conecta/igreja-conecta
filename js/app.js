@@ -6573,7 +6573,7 @@ function updateChatBadge() {
   link.hidden = !(state.church && chatOn());
   badge.hidden = !chatUnread;
   badge.textContent = chatUnread > 9 ? '9+' : String(chatUnread);
-  link.setAttribute('aria-label', chatUnread ? `Conversas: ${chatUnread} com mensagem nova` : 'Conversas');
+  link.setAttribute('aria-label', chatUnread ? `Conversas: ${chatUnread} não lidas` : 'Conversas');
 }
 
 // Número no ícone do chat. Uma resposta mais antiga nunca sobrescreve uma contagem mais nova.

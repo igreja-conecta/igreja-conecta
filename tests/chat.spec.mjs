@@ -52,7 +52,7 @@ test('o membro escreve para a liderança e a líder responde, em tempo real', as
   await leader.getByLabel('Mensagem').fill(`Bom dia! ${tag} resposta`);
   await leader.getByLabel('Mensagem').press('Shift+Enter');
   await leader.getByRole('button', { name: 'Enviar' }).click();
-  await expect(leader.locator('.msg.mine', { hasText: 'resposta' })).toBeVisible();
+  await expect(leader.locator('.msg.mine', { hasText: `${tag} resposta` })).toBeVisible();
   expect(await cspViolations(leader)).toEqual([]);
 
   // Chega na tela do membro sem recarregar (tempo real).

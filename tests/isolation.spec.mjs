@@ -510,8 +510,11 @@ test.describe('Os próprios dados: exportar, sair e excluir (006)', () => {
     expect(data.conta.email).toBe('membro-a@teste.igrejaconecta.invalid');
     expect(data.igrejas).toHaveLength(1);
     expect(data.igrejas[0]).toMatchObject({ igreja: 'Igreja Teste A', papel: 'membro', cadastro: { nome: 'Membro da A' } });
-    const text = JSON.stringify(data);
+    // As conversas do chat trazem o nome de quem conversou com a pessoa (são dela também); o resto, nada dos outros.
+    const { conversas_do_chat: chats, ...rest } = data;
+    const text = JSON.stringify(rest);
     for (const other of ['Fulano', 'Bissexto', 'Casada', 'Batizado', 'Admin da A', 'Teste B', '5561999990001']) expect(text, other).not.toContain(other);
+    for (const c of chats) expect(c.mensagens.every((m) => ['você', c.com].includes(m.de))).toBe(true);
     expect(data.igrejas[0].cadastro).toHaveProperty('casamento');
     expect(data.igrejas[0].cadastro).toHaveProperty('mostra_batismo_aos_membros');
   });
