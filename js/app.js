@@ -159,7 +159,8 @@ function renderTabbar(path) {
     ['/menu', icon.menu, 'Menu'],
   ];
   const section = tabs.find(([href]) => href !== '/' && path.startsWith(href));
-  const active = ['/', ''].includes(path) ? '/' : section ? section[0] : '/menu';
+  // A central de notificações abre pelo sininho do topo: nenhuma aba fica marcada.
+  const active = ['/', ''].includes(path) ? '/' : section ? section[0] : path === '/notificacoes' ? null : '/menu';
   bar.innerHTML = tabs
     .map(([href, ic, label]) => `<a href="#${href}" class="${href === active ? 'active' : ''}">${ic}${label}</a>`)
     .join('');
@@ -3022,88 +3023,186 @@ async function viewBirthdays(ctx) {
   document.getElementById('print').onclick = () => window.print();
 }
 
-const NOTIF_ICON = { aniversario: 'cake', casamento: 'cake', batismo: 'cake', resumo_lideres: 'cake', evento: 'calendar', aviso: 'megaphone', oracao: 'heart', sistema: 'bell' };
+// Grupos da central: cada um com ícone, cor (css .k-<grupo>) e os tipos que reúne.
+const NOTIF_GROUPS = {
+  avisos: { label: 'Avisos', icon: 'megaphone', kinds: ['aviso'], on: () => featureOn('avisos') },
+  agenda: { label: 'Agenda', icon: 'calendar', kinds: ['evento'], on: () => featureOn('agenda') },
+  oracao: { label: 'Oração', icon: 'heart', kinds: ['oracao'], on: () => featureOn('oracao') },
+  datas: { label: 'Datas', icon: 'cake', kinds: ['aniversario', 'casamento', 'batismo', 'resumo_lideres'], on: () => datesOn() },
+};
+const notifGroup = (kind) => Object.keys(NOTIF_GROUPS).find((g) => NOTIF_GROUPS[g].kinds.includes(kind)) || 'sistema';
+const NOTIF_PAGE = 30;
 
-function timeAgo(iso) {
-  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (min < 1) return 'agora';
-  if (min < 60) return `há ${min} min`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `há ${h} h`;
-  const d = Math.round(h / 24);
-  return d === 1 ? 'ontem' : d < 7 ? `há ${d} dias` : new Date(iso).toLocaleDateString('pt-BR');
+// Hora curta à direita: hoje, a hora; ontem; nesta semana, o dia; antes, a data.
+function notifTime(iso) {
+  const d = new Date(iso);
+  const days = Math.round((parseIso(isoLocal(new Date())) - parseIso(isoLocal(d))) / 864e5);
+  if (days === 0) return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (days === 1) return 'ontem';
+  if (days < 7) return d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
-// Central de notificações (desta igreja) e, embaixo, as notificações no celular.
+function notifDayGroup(iso) {
+  const days = Math.round((parseIso(isoLocal(new Date())) - parseIso(isoLocal(new Date(iso)))) / 864e5);
+  return days === 0 ? 'Hoje' : days === 1 ? 'Ontem' : days < 7 ? 'Esta semana' : 'Mais antigas';
+}
+
+function notifList(items) {
+  let html = '';
+  let day = null;
+  for (const n of items) {
+    const g = notifDayGroup(n.created_at);
+    if (g !== day) {
+      html += `${day ? '</div>' : ''}<h2 class="notif-day">${g}</h2><div class="notif-list">`;
+      day = g;
+    }
+    const group = notifGroup(n.kind);
+    html += `
+      <a class="notif-row ${n.unread ? 'unread' : ''}" href="${esc(n.url && n.url.startsWith('#/') ? n.url : '#/')}">
+        <span class="notif-icon k-${group}">${icon[NOTIF_GROUPS[group]?.icon] || icon.bell}</span>
+        <span class="notif-text">
+          <span class="notif-head"><strong>${esc(n.title)}</strong><time datetime="${esc(n.created_at)}">${esc(notifTime(n.created_at))}</time></span>
+          ${n.body ? `<small>${esc(n.body)}</small>` : ''}
+        </span>
+        ${n.unread ? '<span class="notif-dot" aria-label="Não lida"></span>' : ''}
+      </a>`;
+  }
+  return html + (day ? '</div>' : '');
+}
+
+// Central de notificações desta igreja: por dia, com filtro por tipo e, no topo ou no fim,
+// as notificações no celular.
 async function viewNotifications(ctx) {
   if (!requireLogin('/notificacoes')) return;
   if (!isActiveMember()) return navigate('/');
-  const { data: items, error } = await sb
-    .from('notifications')
-    .select('id, kind, title, body, url, read_at, created_at')
-    .eq('church_id', state.church.id)
-    .order('created_at', { ascending: false })
-    .limit(100);
+  const groups = Object.keys(NOTIF_GROUPS).filter((g) => NOTIF_GROUPS[g].on());
+  const filter = groups.includes(ctx.params.get('ver')) ? ctx.params.get('ver') : null;
+  const openedAt = new Date().toISOString();
+  const fetchPage = (from) => {
+    let q = sb
+      .from('notifications')
+      .select('id, kind, title, body, url, read_at, created_at')
+      .eq('church_id', state.church.id)
+      .order('created_at', { ascending: false })
+      .range(from, from + NOTIF_PAGE); // um a mais: diz se ainda há outra página
+    if (filter) q = q.in('kind', NOTIF_GROUPS[filter].kinds);
+    return q;
+  };
+  const [{ data, error }, active] = await Promise.all([fetchPage(0), pushActive()]);
   if (error) throw error;
-  const support = pushSupport();
-  const active = await pushActive();
-  const blocked = support === 'ok' && Notification.permission === 'denied';
   if (!ctx.alive()) return;
+  // Quem chegou sem ler continua destacado nesta visita, mesmo depois de marcado como lido.
+  const mark = (rows) => rows.map((n) => ({ ...n, unread: !n.read_at }));
+  let items = mark(data.slice(0, NOTIF_PAGE));
+  let more = data.length > NOTIF_PAGE;
+  const support = pushSupport();
+  const blocked = support === 'ok' && Notification.permission === 'denied';
+  const offer = support === 'ok' && !blocked && !active;
+
   $view.innerHTML = `
-    <div class="page">
-      <h1>Notificações</h1>
-      ${
-        items.length
-          ? `<div class="list">${items
-              .map(
-                (n) => `
-            <a class="notif-row ${n.read_at ? '' : 'unread'}" href="${esc(n.url && n.url.startsWith('#/') ? n.url : '#/')}">
-              <span class="notif-icon">${icon[NOTIF_ICON[n.kind]] || icon.bell}</span>
-              <span><strong>${esc(n.title)}</strong>${n.body ? `<small class="pre">${esc(n.body)}</small>` : ''}<small>${esc(timeAgo(n.created_at))}</small></span>
-            </a>`,
-              )
-              .join('')}</div>`
-          : `<div class="empty"><p>Nenhuma notificação ainda. Avisos, lembretes da agenda e a sua mensagem de aniversário aparecem aqui.</p></div>`
-      }
-      <div class="card">
-        <h2>No celular</h2>
-        <p>Receba avisos, lembretes da agenda e a mensagem de aniversário mesmo com o app fechado${isLeaderRole(myRole()) ? ', e o resumo dos aniversariantes para a liderança' : ''}.</p>
-        ${
-          support === 'ios-instalar'
-            ? `<div class="notice"><strong>No iPhone, instale o app primeiro.</strong><p>Toque em Compartilhar e depois em "Adicionar à Tela de Início". Abra o app pelo ícone e volte aqui.</p></div>`
-            : support !== 'ok'
-              ? `<p class="hint warn">Este navegador não recebe notificações. Tente pelo Chrome (Android) ou pelo app instalado (iPhone).</p>`
-              : blocked
-                ? `<p class="hint warn">As notificações estão bloqueadas para este site. Libere nas configurações do navegador e volte aqui.</p>`
-                : `<p><strong>${active ? 'Ativadas neste aparelho.' : 'Desativadas neste aparelho.'}</strong></p>
-                   <button class="btn ${active ? '' : 'primary'} big" id="toggle">${active ? 'Desativar neste aparelho' : 'Ativar neste aparelho'}</button>`
-        }
+    <div class="page notif-page">
+      <div class="notif-title">
+        <h1>Notificações</h1>
+        <button class="btn small" id="clear" hidden>Apagar as lidas</button>
       </div>
+      ${
+        offer
+          ? `<div class="notice push-invite">${icon.bell}
+              <span><strong>Receba no celular</strong><small>Avisos e lembretes da igreja, mesmo com o app fechado.</small></span>
+              <button class="btn primary small" id="push-on">Ativar</button>
+            </div>`
+          : support === 'ios-instalar'
+            ? `<div class="notice push-invite">${icon.bell}
+                <span><strong>Quer receber no iPhone?</strong><small>Instale o app: Compartilhar → "Adicionar à Tela de Início". Depois abra pelo ícone.</small></span>
+              </div>`
+            : ''
+      }
+      ${
+        groups.length > 1
+          ? `<div class="chips filters">
+              <a class="chip ${filter ? '' : 'active'}" href="#/notificacoes">Todas</a>
+              ${groups.map((g) => `<a class="chip ${filter === g ? 'active' : ''}" href="#/notificacoes?ver=${g}">${NOTIF_GROUPS[g].label}</a>`).join('')}
+            </div>`
+          : ''
+      }
+      <div id="notif-items"></div>
+      <button class="btn" id="more" hidden>Ver mais</button>
+      <p class="hint center notif-push">${
+        active
+          ? `${icon.bell} Ativadas neste aparelho · <button class="link-btn" id="push-off">Desativar</button>`
+          : blocked
+            ? 'As notificações estão bloqueadas para este site. Libere nas configurações do navegador para receber no celular.'
+            : support === 'ok' || support === 'ios-instalar'
+              ? ''
+              : 'Este navegador não recebe notificações no celular. Use o Chrome (Android) ou o app instalado (iPhone).'
+      }</p>
     </div>`;
-  // Abrir a central marca tudo como lido.
-  if (items.some((n) => !n.read_at)) {
+
+  const box = document.getElementById('notif-items');
+  const moreBtn = document.getElementById('more');
+  const clearBtn = document.getElementById('clear');
+  const draw = () => {
+    box.innerHTML = items.length
+      ? notifList(items)
+      : `<div class="empty notif-empty">${icon.bell}
+          <h2>Tudo em dia!</h2>
+          <p>${filter ? `Nenhuma notificação de ${NOTIF_GROUPS[filter].label.toLowerCase()}.` : 'Avisos, lembretes da agenda e as mensagens da igreja aparecem aqui.'}</p>
+        </div>`;
+    moreBtn.hidden = !more;
+    clearBtn.hidden = !items.some((n) => !n.unread);
+  };
+  draw();
+
+  // Abrir a central zera o sininho (as não lidas desta visita continuam destacadas).
+  if (items.some((n) => n.unread)) {
     sb.from('notifications')
-      .update({ read_at: new Date().toISOString() })
+      .update({ read_at: openedAt })
       .eq('church_id', state.church.id)
       .is('read_at', null)
       .then(() => refreshUnread())
       .catch(() => {});
   }
-  document.getElementById('toggle')?.addEventListener('click', async (e) => {
-    e.currentTarget.disabled = true;
+
+  moreBtn.onclick = async () => {
+    moreBtn.disabled = true;
+    const { data: next, error: err } = await fetchPage(items.length);
+    moreBtn.disabled = false;
+    if (err) return toast(errorText(err), 'error');
+    if (!ctx.alive()) return;
+    items = items.concat(mark(next.slice(0, NOTIF_PAGE)));
+    more = next.length > NOTIF_PAGE;
+    draw();
+  };
+
+  // Apaga as que já estavam lidas antes desta visita (as novas de agora ficam).
+  clearBtn.onclick = async () => {
+    if (!confirm('Apagar as notificações que você já tinha lido?')) return;
+    let q = sb.from('notifications').delete().eq('church_id', state.church.id).lt('read_at', openedAt);
+    if (filter) q = q.in('kind', NOTIF_GROUPS[filter].kinds);
+    const { error: err } = await q;
+    if (err) return toast(errorText(err), 'error');
+    toast('Notificações lidas apagadas.');
+    render();
+  };
+
+  const togglePush = async (btn, on) => {
+    btn.disabled = true;
     try {
-      if (active) {
-        await disablePush(sb);
-        toast('Notificações desativadas neste aparelho.');
-      } else {
+      if (on) {
         const res = await enablePush(sb, CONFIG.VAPID_PUBLIC_KEY);
         toast(res === 'ativo' ? 'Pronto! As notificações estão ativadas.' : 'Sem permissão para notificações.', res === 'ativo' ? '' : 'error');
+      } else {
+        await disablePush(sb);
+        toast('Notificações desativadas neste aparelho.');
       }
     } catch (err) {
       toast(errorText(err), 'error');
     }
     render();
-  });
+  };
+  document.getElementById('push-on')?.addEventListener('click', (e) => togglePush(e.currentTarget, true));
+  document.getElementById('push-off')?.addEventListener('click', (e) => togglePush(e.currentTarget, false));
 }
 
 // Convite discreto na página inicial para ativar as notificações (some por 30 dias ao fechar).
