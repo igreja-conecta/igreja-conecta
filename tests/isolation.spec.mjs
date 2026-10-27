@@ -1460,3 +1460,44 @@ test.describe('Carteirinha digital (018)', () => {
     }
   });
 });
+
+test.describe('Relatórios (019)', () => {
+  const report = (who, data = {}) => rpc(who, 'church_report', { p_church: church.a, p_from: '2026-01-01', p_to: '2026-03-31', ...data });
+  const tag = `Relatorio ${Date.now().toString(36)}`;
+
+  test.afterAll(async () => {
+    if (api) await api.delete(rest(`members?name=eq.${encodeURIComponent(tag)}`), { headers: as['adm-a'].headers });
+  });
+
+  test('só a liderança da própria igreja vê; período de até 400 dias', async () => {
+    for (const who of ['membro-a', 'adm-b', 'sem-igreja']) expect((await report(who)).ok(), who).toBe(false);
+    const ok = await report('lider-a');
+    expect(ok.ok(), await ok.text()).toBe(true);
+    const r = await ok.json();
+    for (const key of ['membros', 'visitantes', 'celulas', 'infantil', 'escalas', 'inscricoes', 'participacao']) expect(r, key).toHaveProperty(key);
+    expect((await report('lider-a', { p_from: '2024-01-01', p_to: '2026-01-01' })).ok()).toBe(false);
+    // Só totais: nenhum e-mail ou telefone no relatório.
+    expect(JSON.stringify(r)).not.toMatch(/@|5561999990001/);
+  });
+
+  test('os números conferem com o cadastro', async () => {
+    const made = await api.post(rest('members'), { headers: as['lider-a'].headers, data: { church_id: church.a, name: tag, member_since: '2001-05-10' } });
+    expect(made.ok(), await made.text()).toBe(true);
+    const r = await (await report('lider-a', { p_from: '2001-05-01', p_to: '2001-06-30' })).json();
+    expect(r.membros.novos).toBe(1);
+    expect(r.membros.novos_por_mes).toEqual([{ mes: '2001-05', total: 1 }, { mes: '2001-06', total: 0 }]);
+    expect(r.membros.ativos).toBeGreaterThanOrEqual(4); // as contas de teste e os cadastros sem conta
+  });
+
+  test('com os relatórios desligados, ninguém calcula', async () => {
+    const [b] = await get('adm-b', `churches?select=features&id=eq.${church.b}`);
+    const setFeatures = (features) => api.patch(rest(`churches?id=eq.${church.b}`), { headers: as['adm-b'].headers, data: { features } });
+    expect((await rpc('adm-b', 'church_report', { p_church: church.b, p_from: '2026-01-01', p_to: '2026-01-31' })).ok()).toBe(true);
+    expect((await setFeatures({ ...b.features, relatorios: false })).ok()).toBe(true);
+    try {
+      expect((await rpc('adm-b', 'church_report', { p_church: church.b, p_from: '2026-01-01', p_to: '2026-01-31' })).ok()).toBe(false);
+    } finally {
+      await setFeatures(b.features);
+    }
+  });
+});

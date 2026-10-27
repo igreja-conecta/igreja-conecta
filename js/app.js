@@ -224,6 +224,7 @@ function prefetchScreens() {
     if (regsOn()) screenFetch('inscricoes', loadRegistrations).catch(() => {});
     if (featureOn('infantil')) screenFetch('filhos', loadMyKids).catch(() => {});
     if (kidsTeam()) screenFetch('infantil', loadKids).catch(() => {});
+    if (featureOn('relatorios') && isLeaderRole(myRole())) screenFetch('relatorio:3', () => loadReport(reportPeriod('3'))).catch(() => {});
     const me = myMember();
     screenFetch('perfil', () => loadProfile(me.id))
       .then((m) => m.photo_path && signedPhotos([m.photo_path]))
@@ -325,6 +326,7 @@ const icon = {
   heart: '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>',
   pix: '<svg viewBox="0 0 24 24"><path d="M12 3.5 20.5 12 12 20.5 3.5 12z"/><path d="M8 12h8"/></svg>',
   clipboard: '<svg viewBox="0 0 24 24"><path d="M9 4.5H6.5a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1H15"/><rect x="9" y="3" width="6" height="3" rx="1"/><path d="M9 11h6M9 15h4"/></svg>',
+  chart: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16.5V11M12 16.5V6M17 16.5v-8"/></svg>',
   idcard: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16.5a3.4 3.4 0 0 1 6.4 0M14.5 10h4M14.5 13.5h3"/></svg>',
   child: '<svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="3"/><path d="M12 9v6M8 11.5l4-1 4 1M9.5 21l2.5-6 2.5 6"/></svg>',
   book: '<svg viewBox="0 0 24 24"><path d="M5 19.5V5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2 2 2 0 0 0 2 2h12v-4"/><path d="M12 6.5v6M9.5 8.8h5"/></svg>',
@@ -514,6 +516,7 @@ const churchRoutes = [
   [/^\/infantil\/etiqueta\/([0-9a-f-]{36})$/, viewKidLabel],
   [/^\/infantil\/retirada$/, viewKidCheckout],
   [/^\/infantil\/salas$/, viewKidRooms],
+  [/^\/relatorios$/, viewReports],
   [/^\/carteirinha$/, viewCard],
   [/^\/carteirinha\/verificar\/([0-9a-f-]{36})$/, viewCardVerify],
   [/^\/celulas$/, viewCells],
@@ -964,6 +967,7 @@ async function viewMenu() {
       <div class="list">
         <a class="menu-row" href="#/perfil">${icon.user}<span>Meu cadastro</span>${icon.chevron}</a>
         ${isLeaderRole(m.role) ? `<a class="menu-row" href="#/membros">${icon.users}<span>Membros</span>${icon.chevron}</a>` : ''}
+        ${featureOn('relatorios') && isLeaderRole(m.role) ? `<a class="menu-row" href="#/relatorios">${icon.chart}<span>Relatórios</span>${icon.chevron}</a>` : ''}
         ${admin ? `<a class="menu-row" href="#/config">${icon.gear}<span>Configurar a igreja</span>${icon.chevron}</a>` : ''}
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         ${datesOn() ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
@@ -1283,6 +1287,12 @@ function helpTopics() {
            <p>O administrador muda a mensagem do WhatsApp na tela do QR Code. Quem não virou membro é apagado sozinho 12 meses depois do cadastro.</p>`,
         ]]
       : []),
+    ...(features('relatorios')
+      ? [[
+          'Relatórios',
+          '<p>Em <a href="#/relatorios">Menu &gt; Relatórios</a>, escolha o período (3, 6 ou 12 meses, ou o ano) e veja os números da igreja: membros (novos por mês, faixa etária, quem usa o app), visitantes e quantos viraram membros, frequência das células, crianças no infantil, confirmações nas escalas, inscrições nos eventos e a participação no app. Cada parte tem <em>Baixar planilha</em>, que abre no Excel ou no Google Planilhas.</p><p>O relatório mostra só totais. <em>Lista de membros completa</em> baixa o cadastro de todos (nome, contato, nascimento, papel e situação): guarde a planilha com cuidado, porque tem dados pessoais.</p>',
+        ]]
+      : []),
     ...(features('escalas')
       ? [[
           'Organizar os ministérios',
@@ -1331,7 +1341,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -5826,6 +5836,289 @@ async function viewCardVerify(ctx, token) {
       }
       <p class="hint center">Conferido em ${esc(now)} pelo ${esc(CONFIG.APP_NAME)}.</p>
     </div>`;
+}
+
+// ---------------------------------------------------------------------
+// Relatórios da liderança: só totais, calculados no banco (church_report)
+// ---------------------------------------------------------------------
+const REPORT_PERIODS = [
+  ['3', 'Últimos 3 meses'],
+  ['6', 'Últimos 6 meses'],
+  ['12', 'Últimos 12 meses'],
+];
+const AGE_GROUPS = [
+  ['criancas', 'Crianças (0–11)'],
+  ['adolescentes', 'Adolescentes (12–17)'],
+  ['jovens', 'Jovens (18–29)'],
+  ['adultos', 'Adultos (30–59)'],
+  ['idosos', 'Idosos (60+)'],
+  ['sem_data', 'Sem data de nascimento'],
+];
+const MONTHS_SHORT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+// Período escolhido: "3", "6" ou "12" meses até hoje, ou um ano ("2026").
+function reportPeriod(key) {
+  const today = new Date();
+  if (/^\d{4}$/.test(key)) {
+    const y = Number(key);
+    const end = y === today.getFullYear() ? today : new Date(y, 11, 31);
+    return { key, from: `${y}-01-01`, to: isoLocal(end), label: `Ano de ${y}` };
+  }
+  const n = ['3', '6', '12'].includes(key) ? Number(key) : 3;
+  const from = new Date(today.getFullYear(), today.getMonth() - n, today.getDate() + 1);
+  return { key: String(n), from: isoLocal(from), to: isoLocal(today), label: REPORT_PERIODS.find(([k]) => k === String(n))[1] };
+}
+
+async function loadReport(p) {
+  const { data, error } = await sb.rpc('church_report', { p_church: state.church.id, p_from: p.from, p_to: p.to });
+  if (error) throw error;
+  return data;
+}
+
+async function viewReports(ctx) {
+  if (!requireMemberFeature('/relatorios', 'relatorios')) return;
+  if (!isLeaderRole(myRole())) return navigate('/');
+  const p = reportPeriod(ctx.params.get('periodo') || '3');
+  await screenShow(ctx, `relatorio:${p.key}`, () => loadReport(p), (r) => drawReport(p, r));
+}
+
+const monthLabel = (ym, withYear) => {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MONTHS_SHORT[m - 1]}${withYear ? `/${String(y).slice(2)}` : ''}`;
+};
+const pct = (part, whole) => (whole ? `${Math.round((100 * part) / whole)}%` : '—');
+const statTile = (label, value, note = '') =>
+  `<div class="stat-tile"><span class="stat-value">${esc(String(value ?? '—'))}</span><span class="stat-label">${esc(label)}</span>${note ? `<small>${esc(note)}</small>` : ''}</div>`;
+
+// Barras verticais (uma série, na cor da igreja): passar o dedo ou o mouse mostra o valor;
+// o maior valor fica escrito; a tabela embaixo traz todos.
+function barChart(title, rows) {
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  const top = rows.reduce((best, r, i) => (r.value > (rows[best]?.value ?? -1) ? i : best), 0);
+  return `
+    <figure class="bar-chart">
+      <figcaption>${esc(title)}</figcaption>
+      <div class="bars" role="img" aria-label="${esc(`${title}: ${rows.map((r) => `${r.label} ${r.value}`).join(', ')}`)}">
+        ${rows
+          .map(
+            (r, i) => `
+          <div class="bar-col" title="${esc(`${r.label}: ${r.value}`)}" tabindex="0">
+            <span class="bar-value ${i === top && r.value ? '' : 'hidden-value'}">${r.value}</span>
+            <span class="bar" style="height:${Math.max(r.value ? 4 : 0, Math.round((100 * r.value) / max))}%"></span>
+            <span class="bar-label">${esc(r.label)}</span>
+          </div>`,
+          )
+          .join('')}
+      </div>
+      <details><summary>Ver em tabela</summary>
+        <table class="help-table">${rows.map((r) => `<tr><th>${esc(r.label)}</th><td>${r.value}</td></tr>`).join('')}</table>
+      </details>
+    </figure>`;
+}
+
+// Barras horizontais com o número ao lado (categorias, ex.: faixa etária).
+function hBars(rows) {
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  return `<div class="hbars">${rows
+    .map(
+      (r) => `
+    <div class="hbar-row"><span class="hbar-label">${esc(r.label)}</span>
+      <span class="hbar-track"><span class="hbar" style="width:${Math.round((100 * r.value) / max)}%"></span></span>
+      <span class="hbar-value">${r.value}</span></div>`,
+    )
+    .join('')}</div>`;
+}
+
+const csvButton = (key) => `<button class="btn small no-print" data-csv="${key}">${icon.upload} Baixar planilha</button>`;
+const reportTable = (head, rows) =>
+  `<div class="table-wrap"><table class="preview-table"><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${rows
+    .map((r) => `<tr>${r.map((c) => `<td>${esc(c == null ? '—' : String(c))}</td>`).join('')}</tr>`)
+    .join('')}</table></div>`;
+
+function drawReport(p, r) {
+  const m = r.membros;
+  const years = new Set(m.novos_por_mes.map((x) => x.mes.slice(0, 4))).size > 1;
+  const months = (list) => list.map((x) => ({ label: monthLabel(x.mes, years), value: x.total }));
+  const thisYear = new Date().getFullYear();
+  const sections = {};
+
+  sections.membros = {
+    html: `
+      <div class="stat-grid">
+        ${statTile('Membros ativos', m.ativos)}
+        ${statTile('Usam o app', m.no_app, `${pct(m.no_app, m.ativos)} dos ativos`)}
+        ${statTile('Novos no período', m.novos)}
+        ${statTile('Inativos', m.inativos)}
+      </div>
+      ${barChart('Novos membros por mês', months(m.novos_por_mes))}
+      <h3>Faixa etária (ativos)</h3>
+      ${hBars(AGE_GROUPS.map(([k, label]) => ({ label, value: m.faixa_etaria[k] })))}
+      <h3>Papéis</h3>
+      ${hBars(Object.entries(ROLES).map(([k, label]) => ({ label, value: m.por_papel[k] || 0 })))}
+      ${barChart('Aniversariantes por mês (ativos)', m.aniversarios_por_mes.map((v, i) => ({ label: MONTHS_SHORT[i], value: v })))}`,
+    csv: [
+      ['Indicador', 'Valor'],
+      ['Membros ativos', m.ativos],
+      ['Usam o app', m.no_app],
+      ['Inativos', m.inativos],
+      ['Novos no período', m.novos],
+      ...m.novos_por_mes.map((x) => [`Novos em ${x.mes}`, x.total]),
+      ...AGE_GROUPS.map(([k, label]) => [label, m.faixa_etaria[k]]),
+      ...Object.entries(ROLES).map(([k, label]) => [`Papel: ${label}`, m.por_papel[k] || 0]),
+      ...m.aniversarios_por_mes.map((v, i) => [`Aniversariantes em ${MONTHS[i]}`, v]),
+    ],
+  };
+
+  if (r.visitantes) {
+    const v = r.visitantes;
+    sections.visitantes = {
+      title: 'Visitantes',
+      html: `
+        <div class="stat-grid">
+          ${statTile('Visitantes', v.total)}
+          ${statTile('Viraram membros', v.viraram_membros, `${pct(v.viraram_membros, v.total)} dos visitantes`)}
+          ${statTile('Primeira vez', v.primeira_vez)}
+          ${statTile('Já tinham vindo', v.ja_tinham_vindo)}
+        </div>
+        ${barChart('Visitantes por mês', months(v.por_mes))}
+        <h3>Como conheceram a igreja</h3>
+        ${hBars(Object.entries(v.como_conheceram).map(([k, n]) => ({ label: VISITOR_SOURCES[k] || 'Não informado', value: n })))}`,
+      csv: [
+        ['Indicador', 'Valor'],
+        ['Visitantes', v.total],
+        ['Viraram membros', v.viraram_membros],
+        ['Primeira vez', v.primeira_vez],
+        ['Já tinham vindo', v.ja_tinham_vindo],
+        ...v.por_mes.map((x) => [`Visitantes em ${x.mes}`, x.total]),
+        ...Object.entries(v.como_conheceram).map(([k, n]) => [`Conheceu: ${VISITOR_SOURCES[k] || 'Não informado'}`, n]),
+      ],
+    };
+  }
+
+  if (r.celulas) {
+    const c = r.celulas;
+    const head = ['Célula', 'Participantes', 'Encontros', 'Presenças', 'Frequência', 'Visitantes'];
+    const rows = c.por_celula.map((x) => [x.celula, x.participantes, x.encontros, x.presencas, x.frequencia == null ? null : `${x.frequencia}%`, x.visitantes]);
+    sections.celulas = {
+      title: 'Células',
+      html: `
+        <div class="stat-grid">
+          ${statTile('Células ativas', c.por_celula.length)}
+          ${statTile('Membros sem célula', c.membros_sem_celula)}
+        </div>
+        ${rows.length ? reportTable(head, rows) : '<p class="hint">Nenhuma célula ativa.</p>'}
+        <p class="hint">Frequência: presenças ÷ (encontros × participantes de hoje).</p>
+        ${barChart('Presenças nas células por mês', months(c.presencas_por_mes))}`,
+      csv: [head, ...rows],
+    };
+  }
+
+  if (r.infantil) {
+    const k = r.infantil;
+    sections.infantil = {
+      title: 'Ministério infantil',
+      html: `
+        <div class="stat-grid">
+          ${statTile('Entradas', k.entradas)}
+          ${statTile('Crianças diferentes', k.criancas_diferentes)}
+          ${statTile('Média por dia', k.media_por_dia ?? '—', `${k.dias} ${k.dias === 1 ? 'dia' : 'dias'} com check-in`)}
+          ${statTile('Maior dia', k.maior_dia?.total ?? '—', k.maior_dia ? fmtDate(k.maior_dia.dia) : '')}
+        </div>
+        ${k.por_dia.length ? barChart('Crianças por dia', k.por_dia.slice(-26).map((x) => ({ label: fmtDate(x.dia).slice(0, 5), value: x.total }))) : ''}
+        <h3>Por sala</h3>
+        ${Object.keys(k.por_sala).length ? hBars(Object.entries(k.por_sala).map(([label, value]) => ({ label, value }))) : '<p class="hint">Nenhuma entrada no período.</p>'}`,
+      csv: [['Dia', 'Crianças'], ...k.por_dia.map((x) => [fmtDate(x.dia), x.total]), [], ['Sala', 'Entradas'], ...Object.entries(k.por_sala)],
+    };
+  }
+
+  if (r.escalas) {
+    const head = ['Ministério', 'Escalas', 'Pessoas escaladas', 'Confirmadas', 'Pedidos de troca', 'Confirmação'];
+    const rows = r.escalas.map((x) => [x.ministerio, x.escalas, x.pessoas_escaladas, x.confirmadas, x.trocas, x.confirmacao == null ? null : `${x.confirmacao}%`]);
+    sections.escalas = {
+      title: 'Escalas',
+      html: rows.length ? reportTable(head, rows) : '<p class="hint">Nenhum ministério ativo.</p>',
+      csv: [head, ...rows],
+    };
+  }
+
+  if (r.inscricoes) {
+    const head = ['Evento', 'Data', 'Vagas', 'Confirmadas', 'Lista de espera'];
+    const rows = r.inscricoes.map((x) => [x.evento, new Date(x.inicio).toLocaleDateString('pt-BR'), x.vagas ?? 'sem limite', x.confirmadas, x.lista_de_espera]);
+    sections.inscricoes = {
+      title: 'Eventos com inscrição',
+      html: rows.length ? reportTable(head, rows) : '<p class="hint">Nenhum evento com inscrição no período.</p>',
+      csv: [head, ...rows],
+    };
+  }
+
+  const part = r.participacao;
+  const partRows = [
+    ['Pessoas em planos de leitura', part.planos_de_leitura],
+    ['"Amém" nos devocionais', part.amens],
+    ['Pedidos de oração enviados', part.pedidos_de_oracao],
+  ].filter(([, v]) => v != null);
+  if (partRows.length) {
+    sections.participacao = {
+      title: 'Participação no app',
+      html: `<div class="stat-grid">${partRows.map(([label, v]) => statTile(label, v)).join('')}</div>
+        <p class="hint">Só totais: ninguém aparece pelo nome, e o texto dos pedidos de oração não entra no relatório.</p>`,
+      csv: [['Indicador', 'Valor'], ...partRows],
+    };
+  }
+  sections.membros.title = 'Membros';
+
+  $view.innerHTML = `
+    <div class="page report">
+      <h1>Relatórios</h1>
+      <div class="chips filters no-print">
+        ${REPORT_PERIODS.map(([k, label]) => `<a class="chip ${p.key === k ? 'active' : ''}" href="#/relatorios?periodo=${k}">${label}</a>`).join('')}
+        ${[thisYear, thisYear - 1].map((y) => `<a class="chip ${p.key === String(y) ? 'active' : ''}" href="#/relatorios?periodo=${y}">${y}</a>`).join('')}
+      </div>
+      <p class="hint">${esc(p.label)}: ${esc(fmtDate(p.from))} a ${esc(fmtDate(p.to))}.</p>
+      <div class="actions-row no-print">
+        <button class="btn" id="members-csv">${icon.users} Lista de membros completa</button>
+        <button class="btn" id="print">${icon.print} Imprimir</button>
+      </div>
+      ${Object.entries(sections)
+        .map(
+          ([key, s]) => `
+        <section class="card report-section">
+          <div class="report-head"><h2>${esc(s.title)}</h2>${csvButton(key)}</div>
+          ${s.html}
+        </section>`,
+        )
+        .join('')}
+    </div>`;
+
+  const cell = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+  const toCsv = (rows) => rows.map((l) => l.map(cell).join(';')).join('\r\n');
+  $view.querySelectorAll('[data-csv]').forEach((b) => {
+    b.onclick = () => downloadFile(`relatorio-${b.dataset.csv}-${p.from}-a-${p.to}.csv`, toCsv(sections[b.dataset.csv].csv), 'text/csv;charset=utf-8');
+  });
+  document.getElementById('print').onclick = () => window.print();
+  const membersBtn = document.getElementById('members-csv');
+  membersBtn.onclick = async () => {
+    membersBtn.disabled = true;
+    // Dados pessoais: buscados na hora e nunca guardados no aparelho.
+    const { data, error } = await sb.from('members').select(MEMBER_COLUMNS).eq('church_id', state.church.id).order('name');
+    membersBtn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    const rows = [
+      ['Nome', 'E-mail', 'Telefone', 'Nascimento', 'Papel', 'Situação', 'Membro desde', 'Usa o app'],
+      ...data.map((x) => [
+        x.name,
+        x.email,
+        x.phone ? fmtPhone(x.phone) : '',
+        x.birth_date ? fmtDate(x.birth_date) : '',
+        ROLES[x.role],
+        x.status === 'ativo' ? 'Ativo' : 'Inativo',
+        x.member_since ? fmtDate(x.member_since) : '',
+        x.user_id && x.consent_at ? 'Sim' : 'Não',
+      ]),
+    ];
+    downloadFile(`membros-${slugify(state.church.name)}-${isoLocal(new Date())}.csv`, toCsv(rows), 'text/csv;charset=utf-8');
+    toast('Planilha baixada.');
+  };
 }
 
 // ---------------------------------------------------------------------

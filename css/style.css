@@ -554,3 +554,34 @@ a.notice { display: block; color: inherit; text-decoration: none; }
 .verify-icon { font-size: 3rem; margin: 4px 0; }
 .verify-result h1 { margin: 4px 0 8px; }
 .verify-church { font-weight: 700; color: var(--muted); }
+
+/* Relatórios */
+.report-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.report-head h2 { margin: 0; }
+.report-section h3 { font-size: 1rem; margin: 18px 0 8px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 12px 0; }
+.stat-tile { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); }
+.stat-value { font-size: 1.6rem; font-weight: 800; line-height: 1.1; }
+.stat-label { font-size: .85rem; color: var(--muted); }
+.stat-tile small { color: var(--muted); font-size: .75rem; }
+.bar-chart { margin: 16px 0 8px; }
+.bar-chart figcaption { font-weight: 700; margin-bottom: 8px; }
+.bars { display: flex; align-items: flex-end; gap: 2px; height: 150px; border-bottom: 1px solid var(--line); }
+.bar-col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; outline: none; }
+.bar { width: 70%; max-width: 28px; background: var(--brand); border-radius: 4px 4px 0 0; }
+.bar-col:hover .bar, .bar-col:focus .bar { opacity: .75; }
+.bar-value { font-size: .75rem; color: var(--ink); font-weight: 700; margin-bottom: 2px; }
+.bar-col:hover .hidden-value, .bar-col:focus .hidden-value { visibility: visible; }
+.hidden-value { visibility: hidden; }
+.bar-label { position: absolute; bottom: -20px; font-size: .7rem; color: var(--muted); white-space: nowrap; }
+.bar-chart details { margin-top: 26px; font-size: .85rem; }
+.hbars { display: grid; gap: 6px; }
+.hbar-row { display: grid; grid-template-columns: minmax(90px, 40%) 1fr auto; align-items: center; gap: 8px; font-size: .9rem; }
+.hbar-label { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-track { height: 10px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.hbar { display: block; height: 100%; background: var(--brand); border-radius: 999px; }
+.hbar-value { font-weight: 700; min-width: 2ch; text-align: right; }
+@media print {
+  .report-section { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
+  .bar, .hbar { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
