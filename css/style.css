@@ -482,3 +482,10 @@ select:disabled, input:disabled { opacity: .65; }
 .passages { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 2px; }
 .reading-plan .late { color: color-mix(in srgb, #e67700 85%, var(--ink)); font-weight: 600; margin: 8px 0; }
 details.card > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+
+/* Campo de horário: duas listas (hora e minutos) em vez da janela de horas do celular */
+.time-field { display: flex; flex-direction: column; gap: 6px; }
+.field-label { font-weight: 600; font-size: .95rem; }
+.time-pick { display: flex; align-items: center; gap: 6px; }
+.time-pick select { width: auto; min-width: 5.2em; }
+.time-pick span { font-weight: 700; }

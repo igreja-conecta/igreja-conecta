@@ -2497,6 +2497,41 @@ function drawEvent(ctx, ev) {
 
 const timeValue = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 
+// Campo de horário com duas listas (hora e minutos), no lugar do campo de hora do navegador: a janela de
+// horas do Android corta o botão "Definir" com letra grande, e as listas se ajustam a qualquer tela.
+// O valor ("19:30" ou "") fica num campo escondido com o mesmo nome, para o formulário ler igual.
+const pad2 = (n) => String(n).padStart(2, '0');
+function timeField(name, label, value = '', { required = false } = {}) {
+  const [h, m] = value ? value.slice(0, 5).split(':') : ['', ''];
+  const minutes = Array.from({ length: 12 }, (_, i) => pad2(i * 5));
+  if (m && !minutes.includes(m)) minutes.push(m), minutes.sort();
+  return `
+    <div class="time-field" role="group" aria-labelledby="time-${name}">
+      <span class="field-label" id="time-${name}">${esc(label)}</span>
+      <div class="time-pick">
+        <select data-time="${name}" data-part="h" aria-label="${esc(label)}: hora" ${required ? 'required' : ''}>
+          <option value="">--</option>
+          ${Array.from({ length: 24 }, (_, i) => pad2(i)).map((x) => `<option value="${x}" ${x === h ? 'selected' : ''}>${x}</option>`).join('')}
+        </select>
+        <span aria-hidden="true">:</span>
+        <select data-time="${name}" data-part="m" aria-label="${esc(label)}: minutos">
+          ${minutes.map((x) => `<option value="${x}" ${x === (m || '00') ? 'selected' : ''}>${x}</option>`).join('')}
+        </select>
+      </div>
+      <input type="hidden" name="${name}" value="${h ? `${h}:${m || '00'}` : ''}">
+    </div>`;
+}
+function bindTimeFields(form) {
+  form.querySelectorAll('select[data-time]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const name = sel.dataset.time;
+      const h = form.querySelector(`select[data-time="${name}"][data-part="h"]`).value;
+      const m = form.querySelector(`select[data-time="${name}"][data-part="m"]`).value;
+      form[name].value = h ? `${h}:${m}` : '';
+    });
+  });
+}
+
 async function viewEventForm(ctx, id) {
   if (!requireMemberFeature(id ? `/agenda/${id}/editar` : '/agenda/novo', 'agenda')) return;
   if (!isLeaderRole(myRole())) return navigate('/agenda');
@@ -2526,8 +2561,8 @@ async function viewEventForm(ctx, id) {
       <label>Título<input name="title" required minlength="3" maxlength="120" value="${esc(ev.title)}" placeholder="Culto de domingo"></label>
       <label>Data<input name="date" type="date" required value="${s ? isoLocal(s) : ''}"></label>
       <div class="colors">
-        <label>Começa<input name="start" type="time" required value="${s ? timeValue(s) : ''}"></label>
-        <label>Termina (opcional)<input name="end" type="time" value="${e ? timeValue(e) : ''}"></label>
+        ${timeField('start', 'Começa', s ? timeValue(s) : '', { required: true })}
+        ${timeField('end', 'Termina (opcional)', e ? timeValue(e) : '')}
       </div>
       <label>Local (opcional)<input name="location" maxlength="200" value="${esc(ev.location || '')}" placeholder="Templo principal"></label>
       ${pinField(ev)}
@@ -2542,6 +2577,7 @@ async function viewEventForm(ctx, id) {
     </form>`;
 
   const form = document.getElementById('event');
+  bindTimeFields(form);
   bindPinField(form, { address: () => form.location.value.trim(), near: churchPin() });
   form.repeat_weekly.addEventListener('change', () => (document.getElementById('until-box').hidden = !form.repeat_weekly.checked));
   form.addEventListener('submit', async (evt) => {
@@ -4010,7 +4046,7 @@ async function viewCellForm(ctx, id) {
         <label>Dia da semana
           <select name="weekday"><option value="">—</option>${WEEKDAYS.map((d, i) => `<option value="${i}" ${c.weekday === i ? 'selected' : ''}>${d}</option>`).join('')}</select>
         </label>
-        <label>Horário<input name="meets_at" type="time" value="${esc(c.meets_at ? c.meets_at.slice(0, 5) : '')}"></label>
+        ${timeField('meets_at', 'Horário', c.meets_at || '')}
       </div>
       <label>Local (opcional)<input name="location" maxlength="200" value="${esc(c.location || '')}" placeholder="Rua das Flores, 10 · ou: on-line"></label>
       ${pinField(c)}
@@ -4022,6 +4058,7 @@ async function viewCellForm(ctx, id) {
       ${id ? '<button class="btn danger-outline" type="button" id="delete">Excluir célula</button>' : ''}
     </form>`;
   const form = document.getElementById('cell');
+  bindTimeFields(form);
   bindPinField(form, { address: () => form.location.value.trim(), near: churchPin() });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();

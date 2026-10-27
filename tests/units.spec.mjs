@@ -295,3 +295,10 @@ test('toda tela nova abre na hora: usa o guardado ou está na lista das que não
   }
   for (const name of Object.keys(SEM_GUARDADO)) expect(views, `${name} não é mais uma tela`).toContain(name);
 });
+
+test('horários usam as listas de hora e minutos, não a janela de horas do celular', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  // No Android, a janela do <input type="time"> corta o botão "Definir" com letra grande.
+  expect(app).not.toMatch(/type="(time|datetime-local)"/);
+});

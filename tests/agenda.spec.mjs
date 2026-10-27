@@ -39,8 +39,8 @@ test('a líder cria um evento semanal e o membro vê na agenda, com "adicionar �
   await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/agenda/novo');
   await page.getByLabel('Título').fill(`Culto ${tag}`);
   await page.getByLabel('Data').fill(tomorrow());
-  await page.getByLabel('Começa').fill('19:00');
-  await page.getByLabel('Termina (opcional)').fill('21:00');
+  await page.getByLabel('Começa: hora').selectOption('19');
+  await page.getByLabel('Termina (opcional): hora').selectOption('21');
   await page.getByLabel('Local (opcional)').fill('Templo principal');
   await page.getByLabel('Repetir toda semana').check();
   await page.getByRole('button', { name: 'Criar evento' }).click();
@@ -125,7 +125,7 @@ test('a líder marca o local do evento no mapa, e o membro vê o mapa e a rota',
   await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/agenda/novo');
   await page.getByLabel('Título').fill(`Mapa ${tag}`);
   await page.getByLabel('Data').fill(tomorrow());
-  await page.getByLabel('Começa').fill('19:00');
+  await page.getByLabel('Começa: hora').selectOption('19');
   await page.getByLabel('Local (opcional)').fill('Praça dos Três Poderes');
   await expect(page.getByText('Sem alfinete no mapa')).toBeVisible();
   await page.getByRole('button', { name: 'Marcar no mapa' }).click();
