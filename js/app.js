@@ -628,7 +628,6 @@ async function viewChurchHome() {
       ${head}
       <div id="home-notices"></div>
       <div id="home-events"></div>
-      <div id="week-birthdays"></div>
       ${
         shortcuts.length
           ? `<div class="shortcuts">${shortcuts
@@ -640,6 +639,7 @@ async function viewChurchHome() {
               .join('')}</div>`
           : ''
       }
+      <div id="week-birthdays"></div>
       <div id="push-invite"></div>
       ${aboutCard(c)}
     </div>`;
