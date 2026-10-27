@@ -39,7 +39,8 @@ Deno.serve(async (req) => {
       headers: { apikey: anon, 'Content-Type': 'application/json' },
       body: JSON.stringify({ p_secret: secret, ...args }),
     });
-    if (!res.ok) throw new Error(`${fn}: ${res.status}`);
+    // O motivo vem do banco (código e mensagem do erro); não traz senha nem endereço de aparelho.
+    if (!res.ok) throw new Error(`${fn}: ${res.status} ${(await res.text()).slice(0, 300)}`);
     return res.status === 204 ? null : res.json();
   };
 
@@ -51,7 +52,13 @@ Deno.serve(async (req) => {
   }
   if (!UUID.test(body.hook_message_id ?? '')) return reply(400, { error: 'Mensagem inválida.' });
 
-  const targets: Target[] = await rpc('message_push_targets', { p_message: body.hook_message_id });
+  let targets: Target[];
+  try {
+    targets = await rpc('message_push_targets', { p_message: body.hook_message_id });
+  } catch (err) {
+    console.error((err as Error).message);
+    return reply(500, { error: 'Não foi possível buscar os aparelhos.' });
+  }
   let sent = 0;
   let gone = 0;
   let failed = 0;
