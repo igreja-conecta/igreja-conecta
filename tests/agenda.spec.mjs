@@ -81,6 +81,32 @@ test('o membro abre a central de notificações pelo sininho', async ({ page }) 
   await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/');
   await page.getByRole('link', { name: 'Notificações' }).first().click();
   await expect(page.getByRole('heading', { name: 'Notificações', level: 1 })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'No celular' })).toBeVisible();
   await expect(page).toHaveURL(/\/i\/teste-a\/#\/notificacoes$/);
+  // Nenhuma aba de baixo fica marcada: a central abre pelo sininho.
+  await expect(page.locator('#tabbar a.active')).toHaveCount(0);
+  await page.getByRole('link', { name: 'Avisos', exact: true }).first().click();
+  await expect(page).toHaveURL(/#\/notificacoes\?ver=avisos$/);
+  await expect(page.locator('.chip.active')).toHaveText('Avisos');
+});
+
+test('a central mostra as notificações por dia, com destaque nas não lidas', async ({ page }) => {
+  const now = Date.now();
+  const rows = [
+    { id: 1, kind: 'oracao', title: 'Seu pedido de oração está no mural', body: 'A igreja já pode orar com você.', url: '#/oracao/meus', read_at: null, created_at: new Date(now - 5 * 60e3).toISOString() },
+    { id: 2, kind: 'evento', title: 'Culto de domingo', body: 'Amanhã às 19h', url: '#/agenda', read_at: new Date(now).toISOString(), created_at: new Date(now - 30 * 3600e3).toISOString() },
+    { id: 3, kind: 'aviso', title: 'Retiro de jovens', body: 'Inscrições abertas', url: '#/avisos', read_at: new Date(now).toISOString(), created_at: new Date(now - 20 * 864e5).toISOString() },
+  ];
+  // Lista fixa (a central de verdade muda com os outros testes); "marcar como lida" não grava.
+  await page.route('**/rest/v1/notifications?*', (route) =>
+    route.request().method() === 'GET' && !route.request().headers()['prefer']?.includes('count')
+      ? route.fulfill({ json: rows })
+      : route.fulfill({ status: 204 }),
+  );
+  await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/notificacoes');
+  await expect(page.locator('.notif-day')).toHaveText(['Hoje', 'Ontem', 'Mais antigas']);
+  await expect(page.locator('.notif-row.unread')).toHaveCount(1);
+  await expect(page.locator('.notif-row.unread')).toContainText('Seu pedido de oração está no mural');
+  await expect(page.locator('.notif-row').nth(1).locator('.notif-icon')).toHaveClass(/k-agenda/);
+  await expect(page.getByRole('button', { name: 'Apagar as lidas' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ver mais' })).toBeHidden();
 });
