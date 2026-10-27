@@ -503,3 +503,9 @@ a.notice { display: block; color: inherit; text-decoration: none; }
 .slot-pick { display: grid; gap: 4px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .slot-pick .check { margin: 0; }
 .slot-pick .check .tag { grid-column: 2; justify-self: start; }
+
+/* Inscrição em eventos */
+.event-card span > .tag { display: block; width: max-content; margin-top: 4px; }
+#reg-box h2 { margin-top: 0; }
+#reg-box .btn { margin-top: 8px; }
+.reg-status { font-weight: 600; }

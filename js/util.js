@@ -84,7 +84,7 @@ export const FEATURES = [
   { key: 'pix', label: 'Dízimos e ofertas por Pix', phase: 2 },
   { key: 'visitantes', label: 'Cadastro de visitantes', phase: 2 },
   { key: 'celulas', label: 'Células e pequenos grupos', phase: 3 },
-  { key: 'inscricoes', label: 'Inscrições em eventos', phase: 3, soon: true },
+  { key: 'inscricoes', label: 'Inscrições em eventos', phase: 3 },
   { key: 'infantil', label: 'Check-in do ministério infantil', phase: 3, soon: true },
   { key: 'carteirinha', label: 'Carteirinha digital', phase: 3, soon: true },
   { key: 'relatorios', label: 'Relatórios', phase: 3, soon: true },

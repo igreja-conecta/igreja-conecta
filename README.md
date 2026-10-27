@@ -60,6 +60,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `013_visitantes.sql` | Cadastro de visitantes pelo QR Code (sem login, com limite de envios e autorização), aviso para a liderança, acompanhamento, "cadastrar como membro" e limpeza em 12 meses |
 | `014_devocional.sql` | Devocional do dia (agendado, com Amém e aviso às 7h), planos de leitura da Bíblia com o progresso de cada um, tradução da Bíblia da igreja |
 | `015_escalas.sql` | Ministérios e escalas: equipe e líder (qualquer pessoa do cadastro), escalas com função, confirmar ou pedir troca, aviso ao ser escalado e lembrete na véspera; o ministério de Acolhimento recebe os avisos de visitantes |
+| `016_inscricoes.sql` | Inscrição em eventos: vagas, prazo, lista de espera que anda sozinha, cancelar, lista de inscritos e planilha para a liderança, e-mail de confirmação dentro do limite diário |
 
 ## Contas de teste
 
@@ -88,11 +89,11 @@ Segredos do GitHub (**Settings > Secrets and variables > Actions**):
 
 Para criar a senha de app: na conta Google do Gmail, ative a **Verificação em duas etapas** e abra https://myaccount.google.com/apppasswords. Depois de gravar os dois itens, teste em **Actions > Mensagens de aniversário > Run workflow**, marcando "Só mandar um e-mail de teste": chega um e-mail no próprio Gmail e nada vai para os membros. Os e-mails saem com o nome da igreja e o endereço do Gmail.
 
-O e-mail respeita o limite de 100 por dia para todas as igrejas juntas (o Gmail aceita uns 500). O que passar fica para o dia seguinte (até 2 dias de atraso), e o administrador da plataforma recebe um aviso no celular.
+O e-mail respeita o limite de 100 por dia para todas as igrejas juntas, somando os aniversários e as confirmações de inscrição em eventos (o Gmail aceita uns 500). O que passar fica para o dia seguinte (até 2 dias de atraso), e o administrador da plataforma recebe um aviso no celular.
 
-## Lembretes da agenda e avisos
+## Lembretes da agenda, avisos e inscrições
 
-O GitHub Actions (`.github/workflows/lembretes.yml`) roda a cada 10 minutos e chama `scripts/enviar-lembretes.mjs`: manda o lembrete de cada evento no prazo escolhido (1 h, 2 h, 3 h ou 1 dia antes) e a notificação dos avisos publicados com "Mandar notificação". As notificações também ficam na central do app. Usa os mesmos segredos `ENVIO_SECRET` e `VAPID_PRIVATE_KEY`.
+O GitHub Actions (`.github/workflows/lembretes.yml`) roda a cada 10 minutos e chama `scripts/enviar-lembretes.mjs`: manda o lembrete de cada evento no prazo escolhido (1 h, 2 h, 3 h ou 1 dia antes) e a notificação dos avisos publicados com "Mandar notificação". As notificações também ficam na central do app. Também manda o e-mail de confirmação das inscrições em eventos, pelo mesmo Gmail dos aniversários. Usa os mesmos segredos `ENVIO_SECRET`, `VAPID_PRIVATE_KEY` e `GMAIL_APP_PASSWORD` (e a variável `GMAIL_USER`).
 
 ### Relógio do Supabase
 

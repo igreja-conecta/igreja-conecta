@@ -193,3 +193,22 @@ test.describe('Banco: visitante sem login (ministérios e escalas)', () => {
     for (const fn of ['ministry_members_guard', 'ministry_members_left']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (inscrição em eventos)', () => {
+  test('não lê nem grava inscrições; não chama as funções', async ({ request }) => {
+    const res = await request.get(rest('event_registrations?select=*'), { headers });
+    if (res.ok()) expect(await res.json()).toEqual([]);
+    expect((await request.post(rest('event_registrations'), { headers, data: { event_id: UUID, member_id: UUID, status: 'confirmada' } })).ok()).toBe(false);
+    const calls = {
+      event_registration_summary: { p_church: UUID },
+      event_register: { p_event: UUID },
+      event_unregister: { p_event: UUID },
+      event_registrants: { p_event: UUID },
+      event_registration_remove: { p_registration: UUID },
+      event_promote: { p_event: UUID },
+    };
+    for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
+    expect((await rpc(request, 'claim_registration_emails', { p_secret: 'errada' })).ok()).toBe(false);
+    for (const fn of ['event_registrations_left', 'events_registration_changed']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
+  });
+});
