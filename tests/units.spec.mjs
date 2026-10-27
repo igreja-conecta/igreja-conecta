@@ -248,3 +248,50 @@ test('links da Bíblia (YouVersion) e referência do versículo', async () => {
   expect(passageLabel({ book: 'OBA', from: 1, to: 1 })).toBe('Obadias');
   expect(passageLabel({ book: 'GEN', from: 50, to: 50 })).toBe('Gênesis 50');
 });
+
+// Telas que abrem na hora (.claude/skills/tela-instantanea): cada tela do app da igreja que busca
+// dados no banco desenha primeiro com o que está guardado. As que não usam o guardado ficam
+// nesta lista, com o motivo, e não podem esperar o banco antes de aparecer.
+const SEM_GUARDADO = {
+  viewChurchHome: 'os cartões do Início usam homeCard, cada um com o seu guardado',
+  viewLogin: 'só o formulário de entrar',
+  viewMenu: 'só links',
+  viewChurchPrivacy: 'textos da igreja já carregados',
+  viewMyData: 'o banco só é chamado ao tocar nos botões',
+  viewHelp: 'só textos',
+  viewOffer: 'chave Pix da igreja já carregada',
+  viewPrayerForm: 'formulário em branco',
+  viewVisitorForm: 'formulário público em branco',
+  viewVisitorQr: 'QR Code montado no aparelho',
+  viewReadingForm: 'formulário com os planos prontos do js/biblia.js',
+};
+const CACHE = /\b(screenShow|screenShowWithPhotos|editItem|formFresh|screenCached)\(|membersCache\.get\(/;
+
+test('toda tela nova abre na hora: usa o guardado ou está na lista das que não buscam nada antes de aparecer', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  const start = app.indexOf('const churchRoutes = [');
+  const routes = app.slice(start, app.indexOf('];', start));
+  const views = [...new Set([...routes.matchAll(/, (view\w+)\]/g)].map((m) => m[1]))];
+  expect(views.length).toBeGreaterThan(30);
+  const bodyOf = (name) => {
+    const from = app.search(new RegExp(`\\n(async )?function ${name}\\(`));
+    expect(from, name).toBeGreaterThan(0);
+    const rest = app.slice(from + 1);
+    const end = rest.search(/\n(async )?function |\nconst |\nlet /);
+    return rest.slice(0, end);
+  };
+  for (const name of views) {
+    const body = bodyOf(name);
+    if (CACHE.test(body)) {
+      expect(SEM_GUARDADO[name], `${name} usa o guardado: tire da lista SEM_GUARDADO`).toBeUndefined();
+      continue;
+    }
+    expect(SEM_GUARDADO[name], `${name} não usa o guardado (screenShow, editItem…): veja .claude/skills/tela-instantanea`).toBeTruthy();
+    // Nada de esperar o banco antes de desenhar.
+    const firstDraw = body.indexOf('$view.innerHTML');
+    const beforeDraw = firstDraw < 0 ? body : body.slice(0, firstDraw);
+    expect(beforeDraw, `${name} espera o banco antes de aparecer`).not.toMatch(/await (sb\.|load|fetch|screenFetch)/);
+  }
+  for (const name of Object.keys(SEM_GUARDADO)) expect(views, `${name} não é mais uma tela`).toContain(name);
+});
