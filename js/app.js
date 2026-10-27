@@ -59,6 +59,84 @@ const messageLinks = () =>
 const offerReady = () => featureOn('pix') && !!state.church?.pix_key;
 
 // ---------------------------------------------------------------------
+// Telas que abrem na hora: guarda (na memória e no aparelho) o que veio do banco da última
+// vez, desenha com isso e confere com o banco em seguida. Vale só para a conta e a igreja
+// atuais, e é apagado ao sair da conta. As permissões continuam no banco.
+// ---------------------------------------------------------------------
+const SCREEN_PREFIX = 'tela:';
+const screenMem = new Map();
+const screenLoading = new Map();
+const screenKey = (name) => `${SCREEN_PREFIX}${state.user?.id}:${state.church?.id}:${name}`;
+
+function screenCached(name) {
+  const key = screenKey(name);
+  if (screenMem.has(key)) return screenMem.get(key);
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || 'null');
+    if (saved) screenMem.set(key, saved);
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
+// Busca no banco (uma busca por vez para cada tela) e guarda.
+function screenFetch(name, fetcher) {
+  const key = screenKey(name);
+  if (!screenLoading.has(key)) {
+    const p = fetcher()
+      .then((data) => {
+        screenMem.set(key, data);
+        try {
+          localStorage.setItem(key, JSON.stringify(data));
+        } catch {}
+        return data;
+      })
+      .finally(() => screenLoading.delete(key));
+    screenLoading.set(key, p);
+  }
+  return screenLoading.get(key);
+}
+
+// Desenha na hora com o guardado e de novo se o banco trouxer algo diferente.
+// Sem internet, fica com o guardado; sem nada guardado, o erro aparece como sempre.
+async function screenShow(ctx, name, fetcher, draw) {
+  const cached = screenCached(name);
+  if (cached) draw(cached);
+  let data;
+  try {
+    data = await screenFetch(name, fetcher);
+  } catch (err) {
+    if (cached) return;
+    throw err;
+  }
+  if (ctx.alive() && JSON.stringify(data) !== JSON.stringify(cached)) draw(data);
+}
+
+// Depois de criar, editar ou apagar: a próxima abertura espera o banco.
+function screenForget(name) {
+  const key = screenKey(name);
+  screenMem.delete(key);
+  screenLoading.delete(key);
+  try {
+    localStorage.removeItem(key);
+  } catch {}
+}
+
+// No Início, já busca em segundo plano as telas mais usadas.
+function prefetchScreens() {
+  if (!isActiveMember()) return;
+  const run = () => {
+    if (featureOn('agenda')) {
+      screenFetch('agenda', loadAgenda).catch(() => {});
+      screenFetch('eventos', loadEventDetails).catch(() => {});
+    }
+    if (featureOn('avisos')) screenFetch('avisos', loadAnnouncements).catch(() => {});
+  };
+  'requestIdleCallback' in window ? requestIdleCallback(run, { timeout: 1500 }) : setTimeout(run, 300);
+}
+
+// ---------------------------------------------------------------------
 // Utilidades da tela
 // ---------------------------------------------------------------------
 let toastTimer;
@@ -655,41 +733,43 @@ async function viewChurchHome() {
       ${aboutCard(c)}
     </div>`;
   const slot = (id) => document.getElementById(id);
-  Promise.allSettled([
-    featureOn('avisos') && homeNoticesCard(slot('home-notices')),
-    featureOn('agenda') && homeEventsCard(slot('home-events')),
-    datesOn() && weekBirthdaysCard(slot('week-birthdays')),
-  ]).then(() => setupCarousel(slot('home-carousel')));
+  const box = slot('home-carousel');
+  const changed = () => setupCarousel(box);
+  if (featureOn('avisos')) homeNoticesCard(slot('home-notices'), changed).catch(() => {});
+  if (featureOn('agenda')) homeEventsCard(slot('home-events'), changed).catch(() => {});
+  if (datesOn()) weekBirthdaysCard(slot('week-birthdays'), changed).catch(() => {});
   pushInvite(document.getElementById('push-invite')).catch(() => {});
   maybeSuggestInstall(c);
   prefetchMembers();
+  prefetchScreens();
 }
 
 // Carrossel do Início: só os cartões com conteúdo; desliza para o lado e as bolinhas
-// mostram (e levam a) cada cartão. Não passa sozinho.
+// mostram (e levam a) cada cartão. Não passa sozinho. Pode ser chamado de novo quando um
+// cartão muda (primeiro com o guardado no aparelho, depois com o que veio do banco).
 function setupCarousel(box) {
   if (!box?.isConnected) return;
   const track = box.querySelector('.carousel-track');
-  track.querySelectorAll('.slide').forEach((s) => !s.children.length && s.remove());
-  const slides = [...track.children];
-  if (!slides.length) return;
-  box.hidden = false;
+  const all = [...track.querySelectorAll('.slide')];
+  all.forEach((sl) => (sl.hidden = !sl.children.length));
+  const slides = all.filter((sl) => !sl.hidden);
+  box.hidden = !slides.length;
   const dots = box.querySelector('.carousel-dots');
-  if (slides.length < 2) return dots.remove();
-  const titleOf = (s) => s.querySelector('h2')?.textContent.trim() || 'Cartão';
+  dots.hidden = slides.length < 2;
+  if (slides.length < 2) return;
+  const titleOf = (sl) => sl.querySelector('h2')?.textContent.trim() || 'Cartão';
+  const step = () => slides[1].offsetLeft - slides[0].offsetLeft;
+  const current = () => Math.min(slides.length - 1, Math.round(track.scrollLeft / step()));
+  const at = current();
   dots.innerHTML = slides
-    .map((s, i) => `<button type="button" aria-label="${esc(titleOf(s))}" ${i ? '' : 'aria-current="true"'}></button>`)
+    .map((sl, i) => `<button type="button" aria-label="${esc(titleOf(sl))}" ${i === at ? 'aria-current="true"' : ''}></button>`)
     .join('');
   const buttons = [...dots.children];
-  buttons.forEach((b, i) => (b.onclick = () => track.scrollTo({ left: slides[i].offsetLeft - slides[0].offsetLeft, behavior: 'smooth' })));
-  track.addEventListener(
-    'scroll',
-    () => {
-      const i = Math.min(slides.length - 1, Math.round(track.scrollLeft / (slides[1].offsetLeft - slides[0].offsetLeft)));
-      buttons.forEach((b, j) => (j === i ? b.setAttribute('aria-current', 'true') : b.removeAttribute('aria-current')));
-    },
-    { passive: true },
-  );
+  buttons.forEach((b, i) => (b.onclick = () => track.scrollTo({ left: i * step(), behavior: 'smooth' })));
+  track.onscroll = () => {
+    const i = current();
+    buttons.forEach((b, j) => (j === i ? b.setAttribute('aria-current', 'true') : b.removeAttribute('aria-current')));
+  };
 }
 
 async function viewMenu() {
@@ -1998,12 +2078,35 @@ function requireMemberFeature(next, key) {
   return false;
 }
 
-async function homeEventsCard(el) {
+// Cartões do Início: usam os mesmos dados guardados da Agenda e dos Avisos (assim as duas
+// telas também abrem na hora). Desenham com o guardado e de novo com o que vier do banco.
+async function homeCard(el, name, fetcher, html, changed) {
   if (!isActiveMember()) return;
-  const now = new Date();
-  const rows = (await fetchEvents(now, addDays(now, 8))).slice(0, 3);
-  if (!rows.length || !el.isConnected) return;
-  el.innerHTML = `
+  let last = null;
+  const draw = (data) => {
+    const out = html(data);
+    if (!el.isConnected || out === last) return;
+    last = out;
+    el.innerHTML = out;
+    changed();
+  };
+  const cached = screenCached(name);
+  if (cached) draw(cached);
+  draw(await screenFetch(name, fetcher));
+}
+
+function homeEventsCard(el, changed) {
+  return homeCard(el, 'agenda', loadAgenda, (all) => {
+    const now = Date.now();
+    const until = addDays(new Date(), 8).getTime();
+    const rows = all
+      .filter((ev) => {
+        const start = new Date(ev.starts_at).getTime();
+        return start < until && new Date(ev.ends_at || start + 2 * 3600e3).getTime() > now;
+      })
+      .slice(0, 3);
+    if (!rows.length) return '';
+    return `
     <section class="card">
       <h2>${icon.calendar} Próximos eventos</h2>
       <div class="list">${rows
@@ -2016,23 +2119,18 @@ async function homeEventsCard(el) {
         .join('')}</div>
       <a href="#/agenda">Ver a agenda</a>
     </section>`;
+  }, changed);
 }
 
-async function homeNoticesCard(el) {
-  if (!isActiveMember()) return;
-  const { data } = await sb
-    .from('announcements')
-    .select('id, title, body, pinned, created_at')
-    .eq('church_id', state.church.id)
-    .or(`visible_until.is.null,visible_until.gte.${isoLocal(new Date())}`)
-    .order('pinned', { ascending: false })
-    .order('created_at', { ascending: false })
-    .limit(2);
-  if (!data?.length || !el.isConnected) return;
-  el.innerHTML = `
+function homeNoticesCard(el, changed) {
+  return homeCard(el, 'avisos', loadAnnouncements, (all) => {
+    const today = isoLocal(new Date());
+    const rows = all.filter((a) => !a.visible_until || a.visible_until >= today).slice(0, 2);
+    if (!rows.length) return '';
+    return `
     <section class="card">
       <h2>${icon.megaphone} Avisos</h2>
-      ${data
+      ${rows
         .map(
           (a) => `
         <article class="notice-mini">
@@ -2043,14 +2141,25 @@ async function homeNoticesCard(el) {
         .join('')}
       <a href="#/avisos">Ver todos os avisos</a>
     </section>`;
+  }, changed);
 }
+
+const agendaStart = () => {
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  return from;
+};
+const loadAgenda = () => fetchEvents(agendaStart(), addDays(agendaStart(), 90));
 
 async function viewAgenda(ctx) {
   if (!requireMemberFeature('/agenda', 'agenda')) return;
-  const from = new Date();
-  from.setHours(0, 0, 0, 0);
-  const rows = await fetchEvents(from, addDays(from, 90));
-  if (!ctx.alive()) return;
+  await screenShow(ctx, 'agenda', loadAgenda, (all) => drawAgenda(all));
+}
+
+function drawAgenda(all) {
+  // O guardado pode ser de outro dia: tira o que já terminou.
+  const now = Date.now();
+  const rows = all.filter((ev) => new Date(ev.ends_at || new Date(ev.starts_at).getTime() + 2 * 3600e3).getTime() > now);
   const byDay = new Map();
   for (const ev of rows) {
     const day = isoLocal(new Date(ev.starts_at));
@@ -2088,11 +2197,42 @@ function downloadIcs(name, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// Detalhes dos eventos que ainda vão acontecer (os semanais, sempre): guardados juntos, para
+// a tela do evento abrir na hora a partir da agenda.
+async function loadEventDetails() {
+  const since = new Date(Date.now() - 2 * 864e5).toISOString();
+  const { data, error } = await sb
+    .from('events')
+    .select('*')
+    .eq('church_id', state.church.id)
+    .or(`repeat_weekly.eq.true,starts_at.gte.${since}`)
+    .order('starts_at')
+    .limit(300);
+  if (error) throw error;
+  return data;
+}
+
 async function viewEvent(ctx, id) {
   if (!requireMemberFeature(`/agenda/${id}`, 'agenda')) return;
-  const { data: ev, error } = await sb.from('events').select('*').eq('id', id).maybeSingle();
-  if (error) throw error;
-  if (!ctx.alive()) return;
+  const cached = screenCached('eventos')?.find((e) => e.id === id) ?? null;
+  if (cached) drawEvent(ctx, cached);
+  let ev;
+  try {
+    ev = (await screenFetch('eventos', loadEventDetails)).find((e) => e.id === id) ?? null;
+    if (!ev) {
+      // Evento antigo (ex.: aberto por uma notificação): busca só ele.
+      const { data, error } = await sb.from('events').select('*').eq('id', id).maybeSingle();
+      if (error) throw error;
+      ev = data;
+    }
+  } catch (err) {
+    if (cached) return;
+    throw err;
+  }
+  if (ctx.alive() && JSON.stringify(ev) !== JSON.stringify(cached)) drawEvent(ctx, ev);
+}
+
+function drawEvent(ctx, ev) {
   if (!ev) {
     $view.innerHTML = `<div class="empty"><h2>Evento não encontrado</h2><a class="btn" href="#/agenda">Voltar à agenda</a></div>`;
     return;
@@ -2139,6 +2279,8 @@ async function viewEvent(ctx, id) {
     if (!confirm(ev.repeat_weekly ? `Excluir "${ev.title}" e todas as repetições?` : `Excluir "${ev.title}"?`)) return;
     const { data, error: err } = await sb.from('events').delete().eq('id', ev.id).select('id');
     if (err || !data.length) return toast(err ? errorText(err) : 'Você não tem permissão para excluir.', 'error');
+    screenForget('agenda');
+    screenForget('eventos');
     toast('Evento excluído.');
     navigate('/agenda');
   });
@@ -2211,14 +2353,15 @@ async function viewEventForm(ctx, id) {
       : await sb.from('events').insert({ ...row, church_id: state.church.id }).select('id').single();
     btn.disabled = false;
     if (error) return toast(errorText(error), 'error');
+    screenForget('agenda');
+    screenForget('eventos');
     toast(id ? 'Evento salvo.' : 'Evento criado.');
     navigate(`/agenda/${data.id}`);
   });
 }
 
-async function viewAnnouncements(ctx) {
-  if (!requireMemberFeature('/avisos', 'avisos')) return;
-  const { data: rows, error } = await sb
+async function loadAnnouncements() {
+  const { data, error } = await sb
     .from('announcements')
     .select('id, title, body, pinned, visible_until, push, created_at')
     .eq('church_id', state.church.id)
@@ -2226,9 +2369,19 @@ async function viewAnnouncements(ctx) {
     .order('created_at', { ascending: false })
     .limit(100);
   if (error) throw error;
-  if (!ctx.alive()) return;
+  return data;
+}
+
+async function viewAnnouncements(ctx) {
+  if (!requireMemberFeature('/avisos', 'avisos')) return;
+  await screenShow(ctx, 'avisos', loadAnnouncements, drawAnnouncements);
+}
+
+function drawAnnouncements(all) {
   const leader = isLeaderRole(myRole());
   const today = isoLocal(new Date());
+  // O guardado pode ser de outro dia: para os membros, some o que venceu.
+  const rows = leader ? all : all.filter((a) => !a.visible_until || a.visible_until >= today);
   $view.innerHTML = `
     <div class="page">
       <h1>Avisos</h1>
@@ -2259,6 +2412,7 @@ async function viewAnnouncements(ctx) {
       if (!confirm('Excluir este aviso?')) return;
       const { data, error: err } = await sb.from('announcements').delete().eq('id', b.dataset.delete).select('id');
       if (err || !data.length) return toast(err ? errorText(err) : 'Você não tem permissão para excluir.', 'error');
+      screenForget('avisos');
       toast('Aviso excluído.');
       render();
     };
@@ -2309,6 +2463,7 @@ async function viewAnnouncementForm(ctx, id) {
       : await sb.from('announcements').insert({ ...row, church_id: state.church.id, push: form.push.checked });
     btn.disabled = false;
     if (error) return toast(errorText(error), 'error');
+    screenForget('avisos');
     toast(id ? 'Aviso salvo.' : 'Aviso publicado.');
     navigate('/avisos');
   });
@@ -2986,15 +3141,16 @@ async function fetchBirthdays(from, to) {
   return data;
 }
 
-async function weekBirthdaysCard(el) {
-  if (!isActiveMember()) return;
+function weekBirthdaysCard(el, changed) {
   const today = new Date();
   const todayIso = isoLocal(today);
-  const rows = await fetchBirthdays(todayIso, isoLocal(addDays(today, 6)));
-  if (!rows.length || !el.isConnected) return;
-  const minis = await signedPhotos(rows.filter((r) => r.photo_path).map((r) => miniOf(r.photo_path)));
-  const anyToday = rows.some((r) => r.on_date === todayIso);
-  el.innerHTML = `
+  // Guarda junto o dia: o guardado de outro dia não vale.
+  const load = async () => ({ day: todayIso, rows: await fetchBirthdays(todayIso, isoLocal(addDays(today, 6))) });
+  const html = (data, minis = {}) => {
+    const rows = data.day === todayIso ? data.rows : [];
+    if (!rows.length) return '';
+    const anyToday = rows.some((r) => r.on_date === todayIso);
+    return `
     <section class="card birthday-card">
       <h2>${icon.cake} ${anyToday ? 'Aniversariantes de hoje e da semana' : 'Aniversariantes da semana'}</h2>
       <ul class="bday-list">
@@ -3011,6 +3167,19 @@ async function weekBirthdaysCard(el) {
       </ul>
       <a href="#/aniversariantes">Ver os aniversariantes do mês</a>
     </section>`;
+  };
+  // As fotos chegam depois (links temporários): primeiro com as iniciais, depois com as fotos.
+  return homeCard(el, 'semana', load, html, changed).then(async () => {
+    const data = screenCached('semana');
+    const rows = data?.day === todayIso ? data.rows : [];
+    if (!rows.some((r) => r.photo_path)) return;
+    const minis = await signedPhotos(rows.filter((r) => r.photo_path).map((r) => miniOf(r.photo_path))).catch(() => ({}));
+    const out = html(data, minis);
+    if (el.isConnected && out) {
+      el.innerHTML = out;
+      changed();
+    }
+  });
 }
 
 async function viewBirthdays(ctx) {
@@ -3496,7 +3665,9 @@ function saveBootCache() {
 function clearBootCache() {
   try {
     localStorage.removeItem(BOOT_KEY);
+    for (const k of Object.keys(localStorage)) if (k.startsWith(SCREEN_PREFIX)) localStorage.removeItem(k);
   } catch {}
+  screenMem.clear();
 }
 
 // Desenha a tela com o que ficou guardado. Devolve o retrato usado, ou null se não deu.
@@ -3568,6 +3739,7 @@ async function boot() {
   }
 
   saveBootCache();
+  prefetchScreens(); // quem abriu direto em outra tela também ganha a Agenda e os Avisos prontos
   if (!quick) {
     window.addEventListener('hashchange', render);
     render();
