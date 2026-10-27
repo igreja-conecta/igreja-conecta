@@ -1191,3 +1191,87 @@ test.describe('Ministérios e escalas (015)', () => {
     expect(await get('membro-a', `members?select=visitor_team&user_id=eq.${as['membro-a'].id}`)).toEqual([{ visitor_team: false }]);
   });
 });
+
+test.describe('Inscrição em eventos (016)', () => {
+  const title = `Retiro ${Date.now().toString(36)}`;
+  const starts = new Date(Date.now() + 30 * 864e5).toISOString();
+  let id;
+  const summary = async (who) => (await (await rpc(who, 'event_registration_summary', { p_church: church.a })).json()).find((r) => r.event_id === id);
+  const register = (who) => rpc(who, 'event_register', { p_event: id });
+  const setEvent = (data) => api.patch(rest(`events?id=eq.${id}`), { headers: returning(as['lider-a'].headers), data });
+  const notes = (who, t) => get(who, `notifications?select=title,body&title=eq.${encodeURIComponent(t)}`);
+
+  test.afterAll(async () => {
+    if (api) await api.delete(rest(`events?title=like.${encodeURIComponent(title)}*`), { headers: as['lider-a'].headers });
+  });
+
+  test('a liderança abre inscrições só em evento que não se repete', async () => {
+    const make = (data) => api.post(rest('events'), { headers: returning(as['lider-a'].headers), data: { church_id: church.a, starts_at: starts, ...data } });
+    expect((await make({ title: `${title} semanal`, repeat_weekly: true, registration: true })).ok()).toBe(false);
+    const made = await make({ title, registration: true, capacity: 1 });
+    expect(made.ok(), await made.text()).toBe(true);
+    id = (await made.json())[0].id;
+    const changed = await api.patch(rest(`events?id=eq.${id}`), { headers: returning(as['membro-a'].headers), data: { capacity: 99 } });
+    expect(await changed.text()).not.toContain(id);
+  });
+
+  test('vaga garantida pelo banco: o primeiro confirma, os outros vão para a fila; a outra igreja não entra', async () => {
+    expect(await (await register('membro-a')).json()).toBe('confirmada');
+    expect(await (await register('membro-a')).json()).toBe('confirmada'); // de novo: nada muda
+    expect(await (await register('lider-a')).json()).toBe('espera');
+    expect(await (await register('adm-a')).json()).toBe('espera');
+    for (const who of ['adm-b', 'sem-igreja']) {
+      expect((await register(who)).ok(), who).toBe(false);
+      expect(await summary(who), who).toBeUndefined();
+    }
+    const direct = await api.post(rest('event_registrations'), { headers: as['lider-a'].headers, data: { event_id: id, member_id: '00000000-0000-0000-0000-000000000000', status: 'confirmada' } });
+    expect(direct.ok()).toBe(false);
+
+    expect(await summary('membro-a')).toMatchObject({ capacity: 1, confirmed: 1, waiting: 2, my_status: 'confirmada', my_position: null, open: true });
+    expect(await summary('adm-a')).toMatchObject({ my_status: 'espera', my_position: 2 });
+    expect(await notes('membro-a', `Inscrição confirmada: ${title}`)).toHaveLength(1);
+    expect((await notes('lider-a', `Lista de espera: ${title}`))[0].body).toContain('número 1');
+  });
+
+  test('só a liderança vê a lista de inscritos; cada um lê só a própria inscrição', async () => {
+    const names = async (who) => (await (await rpc(who, 'event_registrants', { p_event: id })).json()).map((r) => `${r.name}:${r.status}`);
+    expect(await names('lider-a')).toEqual(['Membro da A:confirmada', 'Líder da A:espera', 'Admin da A:espera']);
+    for (const who of ['membro-a', 'adm-b']) expect(await names(who), who).toEqual([]);
+    expect(await get('membro-a', `event_registrations?select=status&event_id=eq.${id}`)).toEqual([{ status: 'confirmada' }]);
+    expect(await get('lider-a', `event_registrations?select=id&event_id=eq.${id}`)).toHaveLength(3);
+    expect(await get('adm-b', `event_registrations?select=id&event_id=eq.${id}`)).toEqual([]);
+    const data = await (await rpc('membro-a', 'export_my_data')).json();
+    expect(data.inscricoes_em_eventos.find((r) => r.evento === title)).toMatchObject({ situacao: 'confirmada' });
+  });
+
+  test('a fila anda sozinha: alguém cancela, a liderança aumenta as vagas ou tira alguém', async () => {
+    const out = await rpc('membro-a', 'event_unregister', { p_event: id });
+    expect(out.ok(), await out.text()).toBe(true);
+    expect(await summary('lider-a')).toMatchObject({ my_status: 'confirmada', confirmed: 1, waiting: 1 });
+    expect(await summary('adm-a')).toMatchObject({ my_status: 'espera', my_position: 1 });
+    expect(await notes('lider-a', `Abriu uma vaga: ${title}`)).toHaveLength(1);
+
+    expect((await setEvent({ capacity: 3 })).ok()).toBe(true);
+    expect(await summary('adm-a')).toMatchObject({ my_status: 'confirmada' });
+
+    const [adm] = (await (await rpc('lider-a', 'event_registrants', { p_event: id })).json()).filter((r) => r.name === 'Admin da A');
+    for (const who of ['membro-a', 'adm-b']) expect((await rpc(who, 'event_registration_remove', { p_registration: adm.id })).ok(), who).toBe(false);
+    const removed = await rpc('lider-a', 'event_registration_remove', { p_registration: adm.id });
+    expect(removed.ok(), await removed.text()).toBe(true);
+    expect((await summary('adm-a')).my_status).toBeNull();
+    expect(await notes('adm-a', `Inscrição cancelada: ${title}`)).toHaveLength(1);
+  });
+
+  test('sem lista de espera, esgotou; depois do prazo, encerrou; o e-mail pede a senha', async () => {
+    expect((await setEvent({ capacity: 1, waitlist: false })).ok()).toBe(true);
+    const full = await register('membro-a');
+    expect(full.ok()).toBe(false);
+    expect(await full.text()).toContain('As vagas acabaram');
+    expect((await setEvent({ capacity: null, registration_until: new Date(Date.now() - 3600e3).toISOString() })).ok()).toBe(true);
+    const closed = await register('membro-a');
+    expect(closed.ok()).toBe(false);
+    expect(await closed.text()).toContain('encerradas');
+    expect((await summary('membro-a')).open).toBe(false);
+    expect((await rpc('adm-a', 'claim_registration_emails', { p_secret: 'errada' })).ok()).toBe(false);
+  });
+});

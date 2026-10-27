@@ -1,12 +1,11 @@
 // Envia as mensagens do dia (aniversário, casamento e batismo, por push e e-mail) e o resumo para a liderança.
 // Roda no GitHub Actions (.github/workflows/aniversarios.yml) às 7h de Brasília. Precisa de:
 //   ENVIO_SECRET e VAPID_PRIVATE_KEY (segredos do GitHub) e SITE_URL.
-// E-mail sai por um Gmail (variável GMAIL_USER + segredo GMAIL_APP_PASSWORD) ou, com domínio
-// próprio, pelo Resend (segredo RESEND_API_KEY + variável EMAIL_FROM). Sem nenhum dos dois, só push.
+// E-mail: Gmail ou Resend (scripts/email.mjs). Sem nenhum dos dois, só push.
 // Com EMAIL_TEST=1, só manda um e-mail de teste para o próprio Gmail e para.
 import { readFileSync } from 'node:fs';
 import webpush from 'web-push';
-import nodemailer from 'nodemailer';
+import { emailOn, gmailOn, gmailUser, deliverEmail, closeEmail } from './email.mjs';
 import { renderMessage, joinNames, firstName, yearsText, esc } from '../js/util.js';
 
 const config = readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
@@ -15,40 +14,15 @@ const SUPABASE_URL = pick('SUPABASE_URL');
 const ANON_KEY = pick('SUPABASE_ANON_KEY');
 const VAPID_PUBLIC_KEY = pick('VAPID_PUBLIC_KEY');
 
-const { ENVIO_SECRET, VAPID_PRIVATE_KEY, RESEND_API_KEY, EMAIL_FROM, GMAIL_USER, EMAIL_TEST } = process.env;
-// A senha de app do Google aparece em grupos de 4 letras; os espaços não fazem parte dela.
-const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+const { ENVIO_SECRET, VAPID_PRIVATE_KEY, EMAIL_TEST } = process.env;
 const SITE_URL = (process.env.SITE_URL || 'https://igreja-conecta.github.io/igreja-conecta').replace(/\/$/, '');
 if (!ENVIO_SECRET || !VAPID_PRIVATE_KEY) throw new Error('Faltam os segredos ENVIO_SECRET e VAPID_PRIVATE_KEY.');
-const gmailOn = !!(GMAIL_USER && GMAIL_APP_PASSWORD);
-const emailOn = gmailOn || !!(RESEND_API_KEY && EMAIL_FROM);
-const gmail = gmailOn
-  ? nodemailer.createTransport({ service: 'gmail', auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD } })
-  : null;
-
-// Gmail ou Resend. Devolve null se deu certo, ou o motivo da falha.
-async function deliverEmail({ fromName, to, subject, html, text }) {
-  if (gmail) {
-    try {
-      await gmail.sendMail({ from: { name: fromName, address: GMAIL_USER }, to, subject, html, text });
-      return null;
-    } catch (err) {
-      return `Gmail: ${err.responseCode ?? ''} ${err.message}`.slice(0, 200);
-    }
-  }
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: `${fromName} <${EMAIL_FROM}>`, to: [to], subject, html, text }),
-  });
-  return res.ok ? null : `Resend ${res.status}: ${(await res.text()).slice(0, 200)}`;
-}
 
 if (EMAIL_TEST === '1') {
   if (!gmailOn) throw new Error('Para o teste, crie a variável GMAIL_USER e o segredo GMAIL_APP_PASSWORD.');
   const fail = await deliverEmail({
     fromName: 'Igreja Conecta',
-    to: GMAIL_USER,
+    to: gmailUser,
     subject: 'Teste do Igreja Conecta',
     html: '<p>Se você recebeu este e-mail, o envio de aniversários por e-mail está funcionando.</p>',
     text: 'Se você recebeu este e-mail, o envio de aniversários por e-mail está funcionando.',
@@ -172,7 +146,7 @@ if (emailOn) {
 } else {
   console.log('E-mail desligado (faltam GMAIL_USER e GMAIL_APP_PASSWORD): só push.');
 }
-gmail?.close();
+closeEmail();
 
 // ---------------------------------------------------------------------
 // 4. Resumo para a liderança

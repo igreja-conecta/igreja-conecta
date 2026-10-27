@@ -1,10 +1,13 @@
 // Lembretes dos eventos da agenda, notificações dos avisos novos e os avisos da central que
 // também vão por push (pedidos de oração, visitantes, devocional e leitura do dia, escalas).
+// Também manda o e-mail de confirmação das inscrições em eventos (scripts/email.mjs).
 // Roda no GitHub Actions a cada 10 minutos (.github/workflows/lembretes.yml). Precisa de:
 //   ENVIO_SECRET e VAPID_PRIVATE_KEY (segredos do GitHub) e SITE_URL.
 // As notificações da central do app são gravadas pelo próprio banco ao separar os envios.
 import { readFileSync } from 'node:fs';
 import webpush from 'web-push';
+import { emailOn, deliverEmail, closeEmail } from './email.mjs';
+import { esc, firstName } from '../js/util.js';
 
 const config = readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
 const pick = (key) => config.match(new RegExp(`${key}:\\s*'([^']+)'`))?.[1];
@@ -111,11 +114,52 @@ await Promise.all(
   ),
 );
 
+// E-mail de confirmação das inscrições em eventos (dentro do limite diário de e-mails)
+const fullWhen = (r) => {
+  const opts = { timeZone: 'America/Sao_Paulo' };
+  const day = new Date(r.starts_at).toLocaleDateString('pt-BR', { ...opts, weekday: 'long', day: 'numeric', month: 'long' });
+  return `${day}, às ${hour(r.starts_at)}${r.ends_at ? ` até ${hour(r.ends_at)}` : ''}`;
+};
+function registrationHtml(r, link) {
+  return `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#f5f6fa;font-family:Arial,sans-serif;color:#1b1e27">
+  <div style="max-width:560px;margin:0 auto;padding:24px 16px">
+    <div style="background:#fff;border-radius:14px;border:1px solid #e2e4ec;padding:24px">
+      <p style="font-size:14px;color:#5f6475;margin:0 0 8px">Inscrição confirmada ✅</p>
+      <h1 style="font-size:22px;margin:0 0 12px">${esc(r.title)}</h1>
+      <p style="font-size:16px;line-height:1.5;margin:0 0 6px">📅 ${esc(fullWhen(r))}</p>
+      ${r.location ? `<p style="font-size:16px;line-height:1.5;margin:0 0 6px">📍 ${esc(r.location)}</p>` : ''}
+      <p style="font-size:16px;line-height:1.5;margin:16px 0 0">Olá, ${esc(firstName(r.name))}! Sua vaga está garantida. Se não puder ir, cancele pelo app para a vaga passar para outra pessoa.</p>
+      <p style="margin:20px 0 0"><a href="${esc(link)}" style="display:inline-block;background:#3b5bdb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:10px">Ver o evento no app</a></p>
+    </div>
+    <p style="font-size:12px;color:#5f6475;text-align:center;margin-top:16px">Você recebe este e-mail porque se inscreveu pelo app da ${esc(r.church_name)}.</p>
+  </div></body></html>`;
+}
+let emails = 0;
+if (emailOn) {
+  for (const r of await rpc('claim_registration_emails')) {
+    const link = churchUrl(r.church_slug, `#/agenda/${r.event_id}`);
+    const fail = await deliverEmail({
+      fromName: r.church_name,
+      to: r.email,
+      subject: `Inscrição confirmada: ${r.title}`,
+      html: registrationHtml(r, link),
+      text: `Inscrição confirmada: ${r.title}\n${fullWhen(r)}${r.location ? `\n${r.location}` : ''}\n\nVer o evento: ${link}\n\n${r.church_name}`,
+    });
+    if (!fail) emails++;
+    else {
+      stats.failed++;
+      // Sem o endereço da pessoa: o registro do GitHub é público.
+      console.error(`Falha no e-mail de inscrição (${fail.replaceAll(r.email, '<destinatário>')})`);
+    }
+  }
+  closeEmail();
+}
+
 // Só números: nada de nome ou endereço de aparelho no registro público do GitHub.
 const count = (rows, key) => new Set(rows.map((r) => r[key])).size;
 console.log(
   `Lembretes: ${count(reminders, 'event_id')} evento(s); avisos: ${count(notices, 'announcement_id')}; ` +
     `central: ${count(central, 'notification_id')} (devocional e leitura: ${daily}; escalas: ${escalas}); ` +
-    `${stats.push} push, ${stats.gone} aparelho(s) removido(s), ${stats.failed} falha(s).`,
+    `${stats.push} push, ${stats.gone} aparelho(s) removido(s), ${emails} e-mail(s) de inscrição, ${stats.failed} falha(s).`,
 );
 if (stats.failed && !stats.push) process.exit(1);

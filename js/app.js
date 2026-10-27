@@ -70,7 +70,7 @@ const SCREEN_PREFIX = 'tela:';
 const screenMem = new Map();
 const screenLoading = new Map();
 // Telas com dados sensíveis de outras pessoas: guardadas só na memória, nunca gravadas no aparelho.
-const PRIVATE_SCREENS = /^(moderar:|visitantes$)/;
+const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:)/;
 const screenKey = (name) => `${SCREEN_PREFIX}${state.user?.id}:${state.church?.id}:${name}`;
 
 function screenCached(name) {
@@ -221,6 +221,7 @@ function prefetchScreens() {
       screenFetch('eventos', loadEventDetails).catch(() => {});
     }
     if (featureOn('avisos')) screenFetch('avisos', loadAnnouncements).catch(() => {});
+    if (regsOn()) screenFetch('inscricoes', loadRegistrations).catch(() => {});
     const me = myMember();
     screenFetch('perfil', () => loadProfile(me.id))
       .then((m) => m.photo_path && signedPhotos([m.photo_path]))
@@ -472,6 +473,7 @@ const churchRoutes = [
   [/^\/agenda\/novo$/, viewEventForm],
   [/^\/agenda\/([0-9a-f-]{36})$/, viewEvent],
   [/^\/agenda\/([0-9a-f-]{36})\/editar$/, viewEventForm],
+  [/^\/agenda\/([0-9a-f-]{36})\/inscritos$/, viewRegistrants],
   [/^\/avisos$/, viewAnnouncements],
   [/^\/avisos\/novo$/, viewAnnouncementForm],
   [/^\/avisos\/([0-9a-f-]{36})\/editar$/, viewAnnouncementForm],
@@ -987,7 +989,7 @@ async function viewMyData() {
 
       <section class="card">
         <h2>${icon.upload} Baixar meus dados</h2>
-        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
+        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, as suas inscrições em eventos, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
         <button class="btn" id="export">Baixar arquivo</button>
         <p class="hint">Para corrigir algum dado, use "Meu cadastro" ou fale com a secretaria da igreja.</p>
       </section>
@@ -1111,7 +1113,11 @@ function helpTopics() {
       ? [[
           'Agenda',
           `<p>A aba <a href="#/agenda">Agenda</a> mostra os cultos e eventos dos próximos 3 meses. Toque num evento para ver os detalhes, o mapa do local e a rota pelo Google Maps ou pelo Waze.</p>
-           <p><strong>Adicionar à agenda</strong> baixa um arquivo: abra-o para salvar na agenda do celular. Cultos que se repetem entram na agenda toda semana. Se preferir, use o botão <em>Google Agenda</em>.</p>`,
+           <p><strong>Adicionar à agenda</strong> baixa um arquivo: abra-o para salvar na agenda do celular. Cultos que se repetem entram na agenda toda semana. Se preferir, use o botão <em>Google Agenda</em>.</p>${
+             features('inscricoes')
+               ? `<p><strong>Inscrições:</strong> nos eventos com inscrição (retiros, cursos), toque em <em>Quero me inscrever</em>. A confirmação chega no app e por e-mail. Se as vagas acabaram, você pode entrar na <strong>lista de espera</strong>: quando alguém cancelar, a vaga é sua automaticamente e você recebe um aviso. Se não puder ir, cancele pelo app para liberar a vaga. Ninguém vê quem mais se inscreveu.</p>`
+               : ''
+           }`,
         ]]
       : []),
     ...(features('avisos')
@@ -1217,6 +1223,7 @@ function helpTopics() {
           'Criar eventos e cultos',
           `<p>Na <a href="#/agenda">Agenda</a>, toque em <em>Novo evento</em>. Para os cultos fixos, marque <strong>Repetir toda semana</strong> (e, se quiser, até quando).</p>
            <p>Em <strong>Marcar no mapa</strong>, busque o endereço ou toque no ponto exato: quem abrir o evento vê o mapa e tem os botões de rota pelo Google Maps e pelo Waze. O mesmo vale para o local das células e o endereço da igreja.</p>
+           ${features('inscricoes') ? '<p>Num evento que não se repete, marque <strong>Abrir inscrições</strong> e, se quiser, o número de vagas, o prazo e a lista de espera. Na página do evento, <em>Ver inscritos</em> mostra os confirmados e a fila, com telefone e e-mail, e baixa a planilha. Se você tirar alguém, a pessoa recebe um aviso e o primeiro da fila entra no lugar.</p>' : ''}
            <p>Escolha o <strong>lembrete</strong>: os membros com notificação ativada recebem 1 hora, 2 horas, 3 horas ou 1 dia antes. Editar ou excluir um evento que se repete vale para todas as semanas.</p>`,
         ]]
       : []),
@@ -1283,7 +1290,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -2305,7 +2312,7 @@ function eventCard(ev) {
       <span class="event-time">${esc(fmtHour(new Date(ev.starts_at)))}</span>
       <span><strong>${esc(ev.title)}</strong>
         ${ev.location ? `<small>${icon.pin}${esc(ev.location)}</small>` : ''}
-        ${ev.repeat_weekly ? '<small>Toda semana</small>' : ''}</span>
+        ${ev.repeat_weekly ? '<small>Toda semana</small>' : ''}${regTag(ev.event_id)}</span>
       ${icon.chevron}
     </a>`;
 }
@@ -2356,7 +2363,7 @@ function homeEventsCard(el, changed) {
         .map(
           (ev) => `
         <a class="event-card" href="#/agenda/${ev.event_id}?em=${encodeURIComponent(ev.starts_at)}">
-          <span><strong>${esc(ev.title)}</strong><small>${esc(fmtEventWhen(ev))}</small></span>${icon.chevron}
+          <span><strong>${esc(ev.title)}</strong><small>${esc(fmtEventWhen(ev))}</small>${regTag(ev.event_id)}</span>${icon.chevron}
         </a>`,
         )
         .join('')}</div>
@@ -2498,6 +2505,7 @@ function drawEvent(ctx, ev) {
       ${placeBlock({ lat: ev.lat, lng: ev.lng, address: ev.location })}
       ${ev.repeat_weekly ? `<p class="hint">Repete toda semana${ev.repeat_until ? ` até ${esc(fmtDate(ev.repeat_until))}` : ''}.</p>` : ''}
       ${ev.description ? `<div class="card"><p class="pre">${esc(ev.description)}</p></div>` : ''}
+      ${ev.registration && regsOn() ? '<section class="card" id="reg-box"></section>' : ''}
       ${ev.remind_minutes ? `<p class="hint">${icon.bell} Lembrete por notificação ${esc(remind.toLowerCase())}.</p>` : ''}
       <div class="actions-row">
         <button class="btn primary" id="ics">${icon.calendar} Adicionar à agenda</button>
@@ -2518,6 +2526,7 @@ function drawEvent(ctx, ev) {
     downloadIcs(`evento-${isoLocal(new Date(ev.starts_at))}.ics`, icsForEvent(ev, calOpts));
     toast('Abra o arquivo baixado para salvar na agenda do celular.');
   };
+  if (ev.registration && regsOn()) mountRegistration(ctx, ev);
   document.getElementById('delete')?.addEventListener('click', async () => {
     if (!confirm(ev.repeat_weekly ? `Excluir "${ev.title}" e todas as repetições?` : `Excluir "${ev.title}"?`)) return;
     const { data, error: err } = await sb.from('events').delete().eq('id', ev.id).select('id');
@@ -2526,6 +2535,170 @@ function drawEvent(ctx, ev) {
     screenForget('eventos');
     toast('Evento excluído.');
     navigate('/agenda');
+  });
+}
+
+// ---------------------------------------------------------------------
+// Inscrição em eventos: vagas, lista de espera e a lista de inscritos da liderança
+// ---------------------------------------------------------------------
+const regsOn = () => featureOn('agenda') && featureOn('inscricoes');
+
+async function loadRegistrations() {
+  const { data, error } = await sb.rpc('event_registration_summary', { p_church: state.church.id });
+  if (error) throw error;
+  return data;
+}
+
+// Etiqueta da situação da pessoa nos cartões da Agenda e do Início (do que já está guardado).
+function regTag(eventId) {
+  if (!regsOn()) return '';
+  const row = (screenCached('inscricoes') || []).find((r) => r.event_id === eventId);
+  if (row?.my_status === 'confirmada') return '<span class="tag ok">Inscrito</span>';
+  if (row?.my_status === 'espera') return '<span class="tag wait">Na lista de espera</span>';
+  return '';
+}
+
+// Quadro de inscrição da página do evento: desenha com o guardado e de novo com o banco.
+function mountRegistration(ctx, ev) {
+  const box = document.getElementById('reg-box');
+  if (!box) return;
+  const draw = (list) => {
+    if (ctx.alive() && box.isConnected) drawRegistration(ctx, box, ev, (list || []).find((r) => r.event_id === ev.id));
+  };
+  const cached = screenCached('inscricoes');
+  draw(cached);
+  screenFetch('inscricoes', loadRegistrations)
+    .then((fresh) => JSON.stringify(fresh) !== JSON.stringify(cached) && draw(fresh))
+    .catch(() => {});
+}
+
+function drawRegistration(ctx, box, ev, row) {
+  const leader = isLeaderRole(myRole());
+  if (!row) {
+    box.innerHTML = `<h2>${icon.users} Inscrições</h2><p class="hint">Carregando as inscrições…</p>`;
+    return;
+  }
+  const started = new Date(ev.starts_at) <= new Date();
+  const left = row.capacity == null ? null : Math.max(row.capacity - row.confirmed, 0);
+  const vagas =
+    left == null ? 'Sem limite de vagas.' : left ? `${left === 1 ? 'Resta 1 vaga' : `Restam ${left} vagas`} de ${row.capacity}.` : `Vagas esgotadas (${row.capacity}).`;
+  const until = row.registration_until
+    ? `Inscrições até ${new Date(row.registration_until).toLocaleString('pt-BR', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}.`
+    : '';
+  let mine;
+  if (row.my_status === 'confirmada') {
+    mine = `<p class="reg-status ok">✅ Você está inscrito.</p>
+      ${started ? '' : '<button class="btn danger-outline" data-reg="out">Cancelar minha inscrição</button>'}`;
+  } else if (row.my_status === 'espera') {
+    mine = `<p class="reg-status wait">⏳ Você está na lista de espera: posição ${row.my_position}. Se abrir uma vaga, ela é sua e você recebe um aviso.</p>
+      ${started ? '' : '<button class="btn danger-outline" data-reg="out">Sair da lista de espera</button>'}`;
+  } else if (!row.open) {
+    mine = '<p class="hint">As inscrições estão encerradas.</p>';
+  } else if (left === 0 && !row.waitlist) {
+    mine = '<button class="btn primary big" disabled>Vagas esgotadas</button>';
+  } else {
+    mine = `<button class="btn primary big" data-reg="in">${left === 0 ? 'Entrar na lista de espera' : 'Quero me inscrever'}</button>`;
+  }
+  box.innerHTML = `
+    <h2>${icon.users} Inscrições</h2>
+    <p>${esc(vagas)} ${esc(until)}${row.waiting ? ` ${row.waiting} na lista de espera.` : ''}</p>
+    ${mine}
+    ${leader ? `<a class="btn" href="#/agenda/${ev.id}/inscritos">Ver inscritos (${row.confirmed}${row.waiting ? ` + ${row.waiting} na espera` : ''})</a>` : ''}`;
+
+  box.querySelector('[data-reg]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const joining = btn.dataset.reg === 'in';
+    if (!joining && !confirm(row.my_status === 'confirmada' ? 'Cancelar a sua inscrição? A vaga passa para a próxima pessoa da fila.' : 'Sair da lista de espera?')) return;
+    btn.disabled = true;
+    const { data: status, error } = joining
+      ? await sb.rpc('event_register', { p_event: ev.id })
+      : await sb.rpc('event_unregister', { p_event: ev.id });
+    if (error) {
+      btn.disabled = false;
+      return toast(errorText(error), 'error');
+    }
+    screenForget(`inscritos:${ev.id}`);
+    toast(
+      !joining
+        ? 'Inscrição cancelada.'
+        : status === 'confirmada'
+          ? 'Inscrição confirmada! Você recebe a confirmação no app e por e-mail.'
+          : 'Você entrou na lista de espera.',
+    );
+    try {
+      const fresh = await loadRegistrations();
+      screenUpdate('inscricoes', fresh);
+      if (ctx.alive() && box.isConnected) drawRegistration(ctx, box, ev, fresh.find((r) => r.event_id === ev.id));
+    } catch {
+      screenForget('inscricoes');
+      render();
+    }
+  });
+}
+
+async function loadRegistrants(id) {
+  const [evRes, listRes] = await Promise.all([
+    sb.from('events').select('id, title, starts_at, ends_at, capacity').eq('id', id).maybeSingle(),
+    sb.rpc('event_registrants', { p_event: id }),
+  ]);
+  if (evRes.error) throw evRes.error;
+  if (listRes.error) throw listRes.error;
+  return { ev: evRes.data, list: listRes.data };
+}
+
+async function viewRegistrants(ctx, id) {
+  if (!requireMemberFeature(`/agenda/${id}/inscritos`, 'inscricoes')) return;
+  if (!isLeaderRole(myRole())) return navigate(`/agenda/${id}`);
+  await screenShow(ctx, `inscritos:${id}`, () => loadRegistrants(id), (d) => drawRegistrants(id, d));
+}
+
+function drawRegistrants(id, { ev, list }) {
+  if (!ev) {
+    $view.innerHTML = `<div class="empty"><h2>Evento não encontrado</h2><a class="btn" href="#/agenda">Voltar à agenda</a></div>`;
+    return;
+  }
+  const confirmed = list.filter((r) => r.status === 'confirmada');
+  const waiting = list.filter((r) => r.status === 'espera');
+  const when = (iso) => new Date(iso).toLocaleString('pt-BR', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const row = (r, i) => `
+    <div class="member-row" data-reg-id="${r.id}">
+      <span class="avatar">${r.status === 'espera' ? i + 1 : icon.user}</span>
+      <span><strong>${esc(r.name)}</strong>
+        <small>${[r.phone ? `<a href="tel:+${esc(r.phone)}">${esc(fmtPhone(r.phone))}</a>` : '', r.email ? esc(r.email) : '', `inscrição em ${esc(when(r.created_at))}`].filter(Boolean).join(' · ')}</small></span>
+      <span class="tags"><button class="btn small danger-outline" data-remove aria-label="Tirar ${esc(r.name)} da lista">Tirar</button></span>
+    </div>`;
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/agenda/${id}" class="back">← ${esc(ev.title)}</a>
+      <h1>Inscritos</h1>
+      <p class="hint">${esc(ev.title)} · ${esc(fmtEventWhen(ev))}</p>
+      <div class="actions-row"><button class="btn" id="csv" ${list.length ? '' : 'disabled'}>${icon.upload} Baixar planilha</button></div>
+      <h2>Confirmados (${confirmed.length}${ev.capacity ? ` de ${ev.capacity}` : ''})</h2>
+      <div class="list">${confirmed.map(row).join('') || '<div class="empty"><p>Ninguém inscrito ainda.</p></div>'}</div>
+      ${waiting.length ? `<h2>Lista de espera (${waiting.length})</h2><div class="list">${waiting.map(row).join('')}</div>` : ''}
+      <p class="hint">Quem cancela ou é tirado libera a vaga: o primeiro da lista de espera entra sozinho e recebe um aviso.</p>
+    </div>`;
+
+  document.getElementById('csv').onclick = () => {
+    const cell = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+    const lines = [
+      ['Situação', 'Posição na espera', 'Nome', 'Telefone', 'E-mail', 'Inscrição em'],
+      ...confirmed.map((r) => ['Confirmada', '', r.name, r.phone ? fmtPhone(r.phone) : '', r.email, when(r.created_at)]),
+      ...waiting.map((r, i) => ['Lista de espera', i + 1, r.name, r.phone ? fmtPhone(r.phone) : '', r.email, when(r.created_at)]),
+    ];
+    downloadFile(`inscritos-${slugify(ev.title)}.csv`, lines.map((l) => l.map(cell).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
+  };
+  $view.querySelectorAll('[data-reg-id]').forEach((el) => {
+    el.querySelector('[data-remove]').onclick = async () => {
+      const name = el.querySelector('strong').textContent;
+      if (!confirm(`Tirar ${name} da lista? A pessoa recebe um aviso, e a vaga passa para a lista de espera.`)) return;
+      const { error } = await sb.rpc('event_registration_remove', { p_registration: el.dataset.regId });
+      if (error) return toast(errorText(error), 'error');
+      screenForget(`inscritos:${id}`);
+      screenForget('inscricoes');
+      toast(`${name} saiu da lista.`);
+      render();
+    };
   });
 }
 
@@ -2569,7 +2742,7 @@ function bindTimeFields(form) {
 async function viewEventForm(ctx, id) {
   if (!requireMemberFeature(id ? `/agenda/${id}/editar` : '/agenda/novo', 'agenda')) return;
   if (!isLeaderRole(myRole())) return navigate('/agenda');
-  let ev = { title: '', description: '', location: '', starts_at: null, ends_at: null, repeat_weekly: false, repeat_until: null, remind_minutes: 120 };
+  let ev = { title: '', description: '', location: '', starts_at: null, ends_at: null, repeat_weekly: false, repeat_until: null, remind_minutes: 120, registration: false, capacity: null, registration_until: null, waitlist: true };
   if (id) {
     const data = await editItem(
       ctx,
@@ -2587,6 +2760,7 @@ async function viewEventForm(ctx, id) {
   if (!ctx.alive()) return;
   const s = ev.starts_at ? new Date(ev.starts_at) : null;
   const e = ev.ends_at ? new Date(ev.ends_at) : null;
+  const ru = ev.registration_until ? new Date(ev.registration_until) : null;
 
   $view.innerHTML = `
     <form id="event" class="form page">
@@ -2607,13 +2781,37 @@ async function viewEventForm(ctx, id) {
         <select name="remind_minutes">${REMIND_OPTIONS.map(([m, label]) => `<option value="${m}" ${ev.remind_minutes === m ? 'selected' : ''}>${label}</option>`).join('')}</select>
       </label>
       ${id && ev.repeat_weekly ? '<p class="hint">As mudanças valem para todas as repetições.</p>' : ''}
+      ${
+        regsOn()
+          ? `<fieldset id="reg-fields" ${ev.repeat_weekly ? 'hidden' : ''}>
+              <legend>Inscrições</legend>
+              <label class="check"><input type="checkbox" name="registration" ${ev.registration ? 'checked' : ''}> Abrir inscrições
+                <small class="hint">Para retiros, cursos e conferências. Os membros se inscrevem pelo app.</small></label>
+              <div id="reg-options" ${ev.registration ? '' : 'hidden'}>
+                <label>Vagas (em branco: sem limite)<input name="capacity" type="number" min="1" max="5000" inputmode="numeric" value="${ev.capacity ?? ''}"></label>
+                <div class="colors">
+                  <label>Inscrições até (opcional)<input name="reg_date" type="date" value="${ru ? isoLocal(ru) : ''}"></label>
+                  ${timeField('reg_time', 'Hora', ru ? timeValue(ru) : '')}
+                </div>
+                <label class="check"><input type="checkbox" name="waitlist" ${ev.waitlist ? 'checked' : ''}> Lista de espera quando as vagas acabarem
+                  <small class="hint">Se alguém cancelar, o primeiro da fila entra sozinho.</small></label>
+              </div>
+            </fieldset>`
+          : ''
+      }
       <button class="btn primary big">${id ? 'Salvar' : 'Criar evento'}</button>
     </form>`;
 
   const form = document.getElementById('event');
   bindTimeFields(form);
   bindPinField(form, { address: () => form.location.value.trim(), near: churchPin() });
-  form.repeat_weekly.addEventListener('change', () => (document.getElementById('until-box').hidden = !form.repeat_weekly.checked));
+  form.repeat_weekly.addEventListener('change', () => {
+    document.getElementById('until-box').hidden = !form.repeat_weekly.checked;
+    // Inscrição só em evento que não se repete.
+    const regBox = document.getElementById('reg-fields');
+    if (regBox) regBox.hidden = form.repeat_weekly.checked;
+  });
+  form.registration?.addEventListener('change', () => (document.getElementById('reg-options').hidden = !form.registration.checked));
   form.addEventListener('submit', async (evt) => {
     evt.preventDefault();
     const start = new Date(`${form.date.value}T${form.start.value}`);
@@ -2633,6 +2831,17 @@ async function viewEventForm(ctx, id) {
       repeat_until: until,
       remind_minutes: Number(form.remind_minutes.value),
     };
+    if (form.registration) {
+      const on = form.registration.checked && !weekly;
+      const until = on && form.reg_date.value ? new Date(`${form.reg_date.value}T${form.reg_time.value || '23:59'}`) : null;
+      if (until && until > start) return toast('O prazo das inscrições precisa ser antes do início do evento.', 'error');
+      Object.assign(row, {
+        registration: on,
+        capacity: on && form.capacity.value ? Number(form.capacity.value) : null,
+        registration_until: until ? until.toISOString() : null,
+        waitlist: form.waitlist.checked,
+      });
+    }
     const btn = form.querySelector('button.primary');
     btn.disabled = true;
     const { data, error } = id
@@ -2642,6 +2851,7 @@ async function viewEventForm(ctx, id) {
     if (error) return toast(errorText(error), 'error');
     screenForget('agenda');
     screenForget('eventos');
+    screenForget('inscricoes');
     toast(id ? 'Evento salvo.' : 'Evento criado.');
     navigate(`/agenda/${data.id}`);
   });
@@ -4996,7 +5206,7 @@ function drawBirthdays(rows, minis, y, m) {
 // Grupos da central: cada um com ícone, cor (css .k-<grupo>) e os tipos que reúne.
 const NOTIF_GROUPS = {
   avisos: { label: 'Avisos', icon: 'megaphone', kinds: ['aviso'], on: () => featureOn('avisos') },
-  agenda: { label: 'Agenda', icon: 'calendar', kinds: ['evento'], on: () => featureOn('agenda') },
+  agenda: { label: 'Agenda', icon: 'calendar', kinds: ['evento', 'inscricao'], on: () => featureOn('agenda') },
   oracao: { label: 'Oração', icon: 'heart', kinds: ['oracao'], on: () => featureOn('oracao') },
   escalas: { label: 'Escalas', icon: 'clipboard', kinds: ['escala'], on: () => featureOn('escalas') },
   devocional: { label: 'Devocional', icon: 'book', kinds: ['devocional', 'leitura'], on: () => featureOn('devocional') },
