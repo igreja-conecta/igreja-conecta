@@ -12,7 +12,8 @@ export default defineConfig({
     locale: 'pt-BR',
     timezoneId: 'America/Sao_Paulo',
     serviceWorkers: 'block', // cada teste começa sem cache do app
-    trace: 'retain-on-failure',
+    // No GitHub (repositório público) não grava o rastro técnico: ele guardaria os tokens das contas de teste.
+    trace: process.env.CI ? 'off' : 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   // Servidor local que imita o GitHub Pages (inclusive o 404.html).

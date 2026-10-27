@@ -700,8 +700,11 @@ async function viewPlatform(ctx) {
 // ---------------------------------------------------------------------
 // Página da igreja
 // ---------------------------------------------------------------------
+// Só links https:// viram botão (um "javascript:" gravado direto no banco não roda; o banco também barra).
+const safeLink = (v) => typeof v === 'string' && /^https:\/\/[^\s"<>'`]+$/i.test(v);
+
 function socialLinks(c) {
-  const links = SOCIAL.filter(([k]) => c.social?.[k]).map(
+  const links = SOCIAL.filter(([k]) => safeLink(c.social?.[k])).map(
     ([k, label]) => `<a class="chip" href="${esc(c.social[k])}" target="_blank" rel="noopener">${icon.link}${label}</a>`,
   );
   return links.length ? `<div class="chips">${links.join('')}</div>` : '';

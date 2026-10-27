@@ -9,10 +9,9 @@ on:
     # Confere se o nome ou o ícone de alguma igreja (pastas i/<igreja>/) mudou; só publica se mudou.
     - cron: '*/10 * * * *'
 
+# Cada etapa recebe só o que precisa: testes e conferência só leem; publicar escreve no Pages.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
   # Mudança de código: testa no Android, no iPhone, as regras do banco e as funções do app.
@@ -36,7 +35,7 @@ jobs:
         with:
           name: relatorio-dos-testes
           path: playwright-report
-          retention-days: 14
+          retention-days: 3
 
   # Agendado: compara as igrejas do site com as do banco (rápido, sem testes: o código não mudou).
   check:
@@ -67,6 +66,10 @@ jobs:
     concurrency:
       group: pages
       cancel-in-progress: true
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -56,6 +56,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `009_oracao.sql` | Pedidos de oração: só para os pastores (administrador e líderes) ou para o mural da igreja com aprovação, anônimo opcional, "Estou orando", avisos na central e por push |
 | `010_celulas.sql` | Células e pequenos grupos: participantes, líder e auxiliar (qualquer pessoa do cadastro), encontros com lista de presença e visitantes, frequência e membros sem célula |
 | `011_mapa.sql` | Local exato no mapa (alfinete) no endereço da igreja, nos eventos e nas células; o app mostra o mapa (OpenStreetMap) e a rota no Google Maps e no Waze |
+| `012_seguranca.sql` | Reforços do scan de segurança: links das redes sociais, logo e imagens só com https://; notificações só para os serviços de push conhecidos; funções de gatilho fechadas |
 
 ## Contas de teste
 

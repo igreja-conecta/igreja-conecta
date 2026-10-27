@@ -112,3 +112,24 @@ test.describe('Banco: visitante sem login (aniversários)', () => {
     }
   });
 });
+
+test.describe('Banco: visitante sem login (oração, células e mapa)', () => {
+  test('não lê nem grava pedidos de oração, células, encontros e presenças', async ({ request }) => {
+    for (const table of ['prayer_requests', 'prayer_praying', 'cells', 'cell_members', 'cell_meetings', 'cell_attendance']) {
+      const res = await request.get(rest(`${table}?select=*`), { headers });
+      if (res.ok()) expect(await res.json(), table).toEqual([]);
+    }
+    const prayer = await request.post(rest('prayer_requests'), { headers, data: { church_id: UUID, body: 'Teste anônimo', audience: 'igreja' } });
+    expect(prayer.ok()).toBe(false);
+    const cell = await request.post(rest('cells'), { headers, data: { church_id: UUID, name: 'Célula intrusa' } });
+    expect(cell.ok()).toBe(false);
+    expect(await (await rpc(request, 'prayer_wall', { p_church: UUID })).text()).not.toMatch(/"body"/);
+    expect((await rpc(request, 'prayer_toggle', { p_request: UUID })).ok()).toBe(false);
+    expect((await rpc(request, 'save_cell_meeting', { p_cell: UUID, p_date: '2027-01-01', p_topic: null, p_notes: null, p_visitors: 0, p_present: [] })).ok()).toBe(false);
+    expect((await rpc(request, 'claim_notification_push', { p_secret: 'errada' })).ok()).toBe(false);
+    // Funções de gatilho não são chamadas de fora.
+    for (const fn of ['create_default_templates', 'cell_members_guard', 'prayer_notify']) {
+      expect((await rpc(request, fn)).ok(), fn).toBe(false);
+    }
+  });
+});

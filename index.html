@@ -2,6 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
+  <!-- De onde o app pode carregar código, estilos, imagens e dados. Se um texto vindo do banco
+       tentasse virar código, o navegador não rodaria (o app já trata os textos com esc()). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob: https://lmukzyonnggwwwjrfywy.supabase.co https://tile.openstreetmap.org; connect-src 'self' https://lmukzyonnggwwwjrfywy.supabase.co wss://lmukzyonnggwwwjrfywy.supabase.co https://nominatim.openstreetmap.org https://cdn.jsdelivr.net; font-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <!-- igreja -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Igreja Conecta</title>
