@@ -6,6 +6,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
+  globalSetup: './tests/global-setup.mjs',
   use: {
     baseURL: 'http://localhost:4173/',
     locale: 'pt-BR',
