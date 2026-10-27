@@ -144,6 +144,47 @@ async function screenShowWithPhotos(ctx, name, fetcher, photosOf, draw) {
   if (ctx.alive()) draw(data, minis);
 }
 
+// Formulários: abrem na hora com o guardado (cached) e conferem com o banco em segundo plano.
+// Se o banco trouxer outra versão antes de a pessoa mexer no formulário, guarda (remember) e
+// abre a tela de novo com ela; depois que a pessoa começou a mexer, não troca nada.
+function formFresh(ctx, cached, fetcher, remember) {
+  let touched = false;
+  $view.addEventListener('input', () => (touched = true), { once: true });
+  fetcher()
+    .then((fresh) => {
+      if (!ctx.alive() || touched || JSON.stringify(fresh) === JSON.stringify(cached)) return;
+      remember(fresh);
+      render();
+    })
+    .catch(() => {});
+}
+
+// Item para editar: o que já está guardado de uma lista (abre na hora, conferindo com o banco
+// em segundo plano) ou, se não houver, o banco.
+async function editItem(ctx, cachedItem, fetcher, remember) {
+  if (!cachedItem) return fetcher();
+  formFresh(ctx, cachedItem, fetcher, remember);
+  return cachedItem;
+}
+
+// Foto grande do formulário: aparece na hora a que já está guardada (ou a miniatura); a de
+// tamanho cheio entra quando o link chegar, se a pessoa não tiver escolhido outra.
+function photoNow(path) {
+  if (!path) return null;
+  const known = knownPhotos([path, miniOf(path)]);
+  return known[path] || known[miniOf(path)] || null;
+}
+function photoLater(ctx, form, name, path) {
+  if (!path || knownPhotos([path])[path]) return;
+  signedPhotos([path])
+    .then((links) => {
+      const box = document.getElementById('photo-preview');
+      if (!ctx.alive() || !box || !links[path] || form.photo?.files?.length || form.dataset.photoRemoved) return;
+      box.innerHTML = avatar(name, links[path], 'big');
+    })
+    .catch(() => {});
+}
+
 // Depois de criar, editar ou apagar: a próxima abertura espera o banco.
 function screenForget(name) {
   const key = screenKey(name);
@@ -163,6 +204,10 @@ function prefetchScreens() {
       screenFetch('eventos', loadEventDetails).catch(() => {});
     }
     if (featureOn('avisos')) screenFetch('avisos', loadAnnouncements).catch(() => {});
+    const me = myMember();
+    screenFetch('perfil', () => loadProfile(me.id))
+      .then((m) => m.photo_path && signedPhotos([m.photo_path]))
+      .catch(() => {});
     if (featureOn('oracao')) screenFetch('mural', loadPrayerWall).catch(() => {});
     screenFetch('notificacoes:todas', async () => {
       const { data, error } = await sb
@@ -1241,14 +1286,21 @@ function specialDatesPatch(form, withConsent = false) {
 // ---------------------------------------------------------------------
 // Meu cadastro: o membro edita os próprios dados e as autorizações
 // ---------------------------------------------------------------------
+async function loadProfile(id) {
+  const { data, error } = await sb.from('members').select('*').eq('id', id).single();
+  if (error) throw error;
+  return data;
+}
+
 async function viewProfile(ctx) {
   if (!requireLogin('/perfil')) return;
   const me = myMember();
   if (!me?.consent_at) return navigate('/');
-  const { data: m, error } = await sb.from('members').select('*').eq('id', me.id).single();
-  if (error) throw error;
-  const photoUrl = m.photo_path ? (await signedPhotos([m.photo_path]))[m.photo_path] : null;
+  const cached = screenCached('perfil');
+  const m = cached && cached.id === me.id ? cached : await screenFetch('perfil', () => loadProfile(me.id));
   if (!ctx.alive()) return;
+  if (m === cached) formFresh(ctx, cached, () => screenFetch('perfil', () => loadProfile(me.id)), () => {});
+  const photoUrl = photoNow(m.photo_path);
   $view.innerHTML = `
     <form id="profile" class="form page">
       <h1>Meu cadastro</h1>
@@ -1274,6 +1326,7 @@ async function viewProfile(ctx) {
       <p class="hint">Para trocar o e-mail, fale com a secretaria da igreja.</p>
     </form>`;
   const form = document.getElementById('profile');
+  photoLater(ctx, form, m.name, m.photo_path);
   const photo = bindPhotoField(form, m.name);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1299,6 +1352,7 @@ async function viewProfile(ctx) {
       const { error: err } = await sb.from('members').update(patch).eq('id', m.id);
       if (err) throw err;
       forgetMembers();
+      screenForget('perfil');
       m.photo_path = patch.photo_path === undefined ? m.photo_path : patch.photo_path;
       photo.reset();
       toast('Cadastro salvo.');
@@ -1447,6 +1501,7 @@ function bindPhotoField(form, name) {
   removeBtn.onclick = () => {
     state.file = null;
     state.removed = true;
+    form.dataset.photoRemoved = '1';
     form.photo.value = '';
     preview.innerHTML = avatar(name, null, 'big');
     removeBtn.hidden = true;
@@ -1560,14 +1615,22 @@ async function viewMemberForm(ctx, id) {
   let m = { name: '', email: '', phone: '', birth_date: '', role: 'membro', status: 'ativo' };
   let photoUrl = null;
   if (!isNew) {
-    const { data, error } = await sb.from('members').select(MEMBER_COLUMNS).eq('id', id).maybeSingle();
-    if (error) throw error;
+    const data = await editItem(
+      ctx,
+      membersCache.get(state.church.id)?.find((x) => x.id === id),
+      async () => {
+        const { data: row, error } = await sb.from('members').select(MEMBER_COLUMNS).eq('id', id).maybeSingle();
+        if (error) throw error;
+        return row;
+      },
+      () => forgetMembers(),
+    );
     if (!data) {
       $view.innerHTML = `<div class="empty"><h2>Cadastro não encontrado</h2><a class="btn" href="#/membros">Voltar aos membros</a></div>`;
       return;
     }
     m = data;
-    if (m.photo_path) photoUrl = (await signedPhotos([m.photo_path]))[m.photo_path];
+    photoUrl = photoNow(m.photo_path);
   }
   if (!ctx.alive()) return;
 
@@ -1618,6 +1681,7 @@ async function viewMemberForm(ctx, id) {
     </form>`;
 
   const form = document.getElementById('member');
+  if (!isNew) photoLater(ctx, form, m.name, m.photo_path);
   const photo = bindPhotoField(form, m.name);
 
   form.addEventListener('submit', async (e) => {
@@ -1825,9 +1889,20 @@ async function viewSettings(ctx) {
     $view.innerHTML = `<div class="empty"><h2>Só para o administrador</h2><p>Peça ao administrador da igreja para mudar a configuração.</p><a class="btn" href="#/">Voltar</a></div>`;
     return;
   }
-  const { data: c, error } = await sb.from('churches').select('*').eq('id', state.church.id).single();
-  if (error) throw error;
-  if (!ctx.alive()) return;
+  const c = state.church;
+  formFresh(
+    ctx,
+    c,
+    async () => {
+      const { data, error } = await sb.from('churches').select('*').eq('id', c.id).single();
+      if (error) throw error;
+      return data;
+    },
+    (fresh) => {
+      state.church = fresh;
+      saveBootCache();
+    },
+  );
   const social = c.social || {};
 
   $view.innerHTML = `
@@ -2341,8 +2416,16 @@ async function viewEventForm(ctx, id) {
   if (!isLeaderRole(myRole())) return navigate('/agenda');
   let ev = { title: '', description: '', location: '', starts_at: null, ends_at: null, repeat_weekly: false, repeat_until: null, remind_minutes: 120 };
   if (id) {
-    const { data, error } = await sb.from('events').select('*').eq('id', id).maybeSingle();
-    if (error) throw error;
+    const data = await editItem(
+      ctx,
+      screenCached('eventos')?.find((e) => e.id === id),
+      async () => {
+        const { data: row, error } = await sb.from('events').select('*').eq('id', id).maybeSingle();
+        if (error) throw error;
+        return row;
+      },
+      () => screenForget('eventos'),
+    );
     if (!data) return navigate('/agenda');
     ev = data;
   }
@@ -2472,8 +2555,20 @@ async function viewAnnouncementForm(ctx, id) {
   if (!isLeaderRole(myRole())) return navigate('/avisos');
   let a = { title: '', body: '', pinned: false, visible_until: null };
   if (id) {
-    const { data, error } = await sb.from('announcements').select('*').eq('id', id).maybeSingle();
-    if (error) throw error;
+    const data = await editItem(
+      ctx,
+      screenCached('avisos')?.find((x) => x.id === id),
+      async () => {
+        const { data: row, error } = await sb
+          .from('announcements')
+          .select('id, title, body, pinned, visible_until, push, created_at')
+          .eq('id', id)
+          .maybeSingle();
+        if (error) throw error;
+        return row;
+      },
+      () => screenForget('avisos'),
+    );
     if (!data) return navigate('/avisos');
     a = data;
   }
@@ -2916,8 +3011,16 @@ async function viewCellForm(ctx, id) {
   if (!isLeaderRole(myRole())) return navigate('/celulas');
   let c = { name: '', weekday: null, meets_at: null, location: '', description: '', active: true };
   if (id) {
-    const { data, error } = await sb.from('cells').select('*').eq('id', id).maybeSingle();
-    if (error) throw error;
+    const data = await editItem(
+      ctx,
+      screenCached(`celula:${id}`)?.c,
+      async () => {
+        const { data: row, error } = await sb.from('cells').select('*').eq('id', id).maybeSingle();
+        if (error) throw error;
+        return row;
+      },
+      () => forgetCell(id),
+    );
     if (!data) return navigate('/celulas');
     c = data;
   }
@@ -3142,19 +3245,29 @@ function drawCell(id, { c, roster, manage, meetings }, photos) {
 async function viewCellMeeting(ctx, id) {
   if (!requireMemberFeature(`/celulas/${id}/encontro`, 'celulas')) return;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(ctx.params.get('data') || '') ? ctx.params.get('data') : isoLocal(new Date());
-  const [cellRes, rosterRes, meetRes] = await Promise.all([
-    sb.from('cells').select('id, name').eq('id', id).maybeSingle(),
-    sb.rpc('cell_roster', { p_cell: id }),
-    sb.from('cell_meetings').select('id, topic, notes, visitors, cell_attendance(member_id)').eq('cell_id', id).eq('meeting_date', date).maybeSingle(),
-  ]);
-  if (cellRes.error) throw cellRes.error;
-  if (rosterRes.error) throw rosterRes.error;
-  if (meetRes.error) throw meetRes.error;
+  const load = async () => {
+    const [cellRes, rosterRes, meetRes] = await Promise.all([
+      sb.from('cells').select('id, name').eq('id', id).maybeSingle(),
+      sb.rpc('cell_roster', { p_cell: id }),
+      sb.from('cell_meetings').select('id, topic, notes, visitors, cell_attendance(member_id)').eq('cell_id', id).eq('meeting_date', date).maybeSingle(),
+    ]);
+    if (cellRes.error) throw cellRes.error;
+    if (rosterRes.error) throw rosterRes.error;
+    if (meetRes.error) throw meetRes.error;
+    return { name: cellRes.data?.name ?? null, roster: rosterRes.data, meeting: meetRes.data };
+  };
+  // Encontro novo: abre na hora com a célula guardada (participantes); um encontro já
+  // registrado (para corrigir) espera o banco, por causa da lista de presença.
+  const saved = screenCached(`celula:${id}`);
+  const fresh =
+    saved?.c && saved.manage && !saved.meetings.some((e) => e.meeting_date === date)
+      ? { name: saved.c.name, roster: saved.roster, meeting: null }
+      : null;
+  const { name, roster, meeting } = await editItem(ctx, fresh, load, () => forgetCell(id));
   if (!ctx.alive()) return;
-  if (!cellRes.data) return navigate('/celulas');
-  const meeting = meetRes.data;
+  if (!name) return navigate('/celulas');
   const present = new Set((meeting?.cell_attendance || []).map((a) => a.member_id));
-  const roster = rosterRes.data;
+  const cellRes = { data: { name } };
   $view.innerHTML = `
     <form id="meeting" class="form page">
       <a href="#/celulas/${id}" class="back">← ${esc(cellRes.data.name)}</a>
@@ -3628,8 +3741,13 @@ async function viewMessageSettings(ctx, kind) {
     $view.innerHTML = `<div class="empty"><h2>${esc(info.menu)}</h2><p>Ligue a funcionalidade em Configurar a igreja.</p><a class="btn" href="#/config">Configurar a igreja</a></div>`;
     return;
   }
-  const { data, error } = await sb.from('message_templates').select('*').eq('church_id', state.church.id).in('kind', [kind, 'resumo_lideres']);
-  if (error) throw error;
+  const loadTemplates = async () => {
+    const { data: rows, error } = await sb.from('message_templates').select('*').eq('church_id', state.church.id).in('kind', [kind, 'resumo_lideres']);
+    if (error) throw error;
+    return rows;
+  };
+  const cachedTemplates = screenCached(`modelo:${kind}`);
+  const data = await editItem(ctx, cachedTemplates, () => screenFetch(`modelo:${kind}`, loadTemplates), () => {});
   if (!ctx.alive()) return;
   const t = data.find((r) => r.kind === kind);
   const summary = data.find((r) => r.kind === 'resumo_lideres');
@@ -3761,6 +3879,7 @@ async function viewMessageSettings(ctx, kind) {
       // A imagem antiga não é mais usada.
       const oldPath = (imageFile || removeImage) && t.image_url?.split('/object/public/igrejas/')[1];
       if (oldPath) await bucket.remove([decodeURIComponent(oldPath)]);
+      for (const k of Object.keys(MESSAGE_KINDS)) screenForget(`modelo:${k}`);
       toast('Mensagem salva.');
       render();
     } catch (err) {
