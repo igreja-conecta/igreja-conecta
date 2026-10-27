@@ -58,6 +58,8 @@ const messageLinks = () =>
     .join('');
 // Tela de ofertas: funcionalidade ligada e chave Pix preenchida.
 const offerReady = () => featureOn('pix') && !!state.church?.pix_key;
+// Tela Visitantes: a liderança e a equipe do ministério que recebe os avisos (ex.: Acolhimento).
+const visitorTeam = () => featureOn('visitantes') && (isLeaderRole(myRole()) || (isActiveMember() && !!myMember().visitor_team));
 
 // ---------------------------------------------------------------------
 // Telas que abrem na hora: guarda (na memória e no aparelho) o que veio do banco da última
@@ -235,6 +237,12 @@ function prefetchScreens() {
       return data;
     }).catch(() => {});
     if (featureOn('celulas')) screenFetch('celulas', loadCells).catch(() => {});
+    if (featureOn('escalas')) {
+      // E os ministérios de que a pessoa participa (a escala completa abre na hora).
+      screenFetch('escalas', loadSchedules)
+        .then((d) => d.ministries.filter((mi) => mi.my_role).forEach((mi) => screenFetch(`ministerio:${mi.id}`, () => loadMinistry(mi.id)).catch(() => {})))
+        .catch(() => {});
+    }
     if (featureOn('devocional')) {
       screenFetch('devocionais', loadDevotionals).catch(() => {});
       screenFetch('leitura', loadReading).catch(() => {});
@@ -281,6 +289,7 @@ function errorText(err) {
   if (/provider is not enabled/i.test(msg)) return 'O login com Google ainda não está ligado. Use o link pelo e-mail.';
   if (/duplicate key.*slug/i.test(msg)) return 'Já existe uma igreja com esse endereço.';
   if (/duplicate key.*email/i.test(msg)) return 'Esse e-mail já está no cadastro desta igreja.';
+  if (/ministries_visitors_idx/i.test(msg)) return 'Outro ministério já recebe os avisos de visitantes. Desmarque nele primeiro.';
   if (/row-level security|permission denied/i.test(msg)) return 'Você não tem permissão para isso.';
   if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return 'Sem conexão. Confira sua internet e tente de novo.';
   return msg;
@@ -311,6 +320,7 @@ const icon = {
   print: '<svg viewBox="0 0 24 24"><path d="M7 9V3.5h10V9M7 17H4.5V9h15v8H17"/><path d="M7 14h10v6.5H7z"/></svg>',
   heart: '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>',
   pix: '<svg viewBox="0 0 24 24"><path d="M12 3.5 20.5 12 12 20.5 3.5 12z"/><path d="M8 12h8"/></svg>',
+  clipboard: '<svg viewBox="0 0 24 24"><path d="M9 4.5H6.5a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1H15"/><rect x="9" y="3" width="6" height="3" rx="1"/><path d="M9 11h6M9 15h4"/></svg>',
   book: '<svg viewBox="0 0 24 24"><path d="M5 19.5V5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2 2 2 0 0 0 2 2h12v-4"/><path d="M12 6.5v6M9.5 8.8h5"/></svg>',
 };
 
@@ -403,7 +413,7 @@ async function loadMemberships() {
   const [mem, pa] = await Promise.all([
     sb
       .from('members')
-      .select('id, role, consent_at, name, church:churches(id, slug, name, logo_url, primary_color)')
+      .select('id, role, consent_at, name, visitor_team, church:churches(id, slug, name, logo_url, primary_color)')
       .eq('user_id', state.user.id)
       .eq('status', 'ativo'),
     sb.rpc('is_platform_admin'),
@@ -481,6 +491,12 @@ const churchRoutes = [
   [/^\/leitura$/, viewReading],
   [/^\/leitura\/novo$/, viewReadingForm],
   [/^\/leitura\/([0-9a-f-]{36})$/, viewReadingPlan],
+  [/^\/escalas$/, viewSchedules],
+  [/^\/ministerios\/novo$/, viewMinistryForm],
+  [/^\/ministerios\/([0-9a-f-]{36})$/, viewMinistry],
+  [/^\/ministerios\/([0-9a-f-]{36})\/editar$/, viewMinistryForm],
+  [/^\/ministerios\/([0-9a-f-]{36})\/escala$/, viewScheduleForm],
+  [/^\/ministerios\/([0-9a-f-]{36})\/escala\/([0-9a-f-]{36})$/, viewScheduleForm],
   [/^\/celulas$/, viewCells],
   [/^\/celulas\/nova$/, viewCellForm],
   [/^\/celulas\/([0-9a-f-]{36})$/, viewCell],
@@ -834,10 +850,11 @@ async function viewChurchHome() {
     ['aniversarios', icon.cake, 'Aniversariantes', '#/aniversariantes'],
     ['oracao', icon.heart, 'Oração', '#/oracao'],
     ['celulas', icon.users, isLeaderRole(m.role) ? 'Células' : 'Célula', '#/celulas'],
+    ['escalas', icon.clipboard, 'Escalas', '#/escalas'],
     ['visitantes', icon.user, 'Visitantes', '#/visitantes'],
     ['pix', icon.pix, 'Ofertar', '#/ofertar'],
   ].filter(([k]) =>
-    k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : k === 'visitantes' ? featureOn(k) && isLeaderRole(m.role) : featureOn(k),
+    k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : k === 'visitantes' ? visitorTeam() : featureOn(k),
   );
   $view.innerHTML = `
     <div class="page">
@@ -855,6 +872,7 @@ async function viewChurchHome() {
       }
       <div class="carousel" id="home-carousel" hidden>
         <div class="carousel-track">
+          <div class="slide" id="home-schedules"></div>
           <div class="slide" id="home-devotional"></div>
           <div class="slide" id="home-reading"></div>
           <div class="slide" id="home-notices"></div>
@@ -873,6 +891,7 @@ async function viewChurchHome() {
     homeDevotionalCard(slot('home-devotional'), changed).catch(() => {});
     homeReadingCard(slot('home-reading'), changed).catch(() => {});
   }
+  if (featureOn('escalas')) homeSchedulesCard(slot('home-schedules'), changed).catch(() => {});
   if (featureOn('avisos')) homeNoticesCard(slot('home-notices'), changed).catch(() => {});
   if (featureOn('agenda')) homeEventsCard(slot('home-events'), changed).catch(() => {});
   if (datesOn()) weekBirthdaysCard(slot('week-birthdays'), changed).catch(() => {});
@@ -925,7 +944,8 @@ async function viewMenu() {
         ${admin ? `<a class="menu-row" href="#/config">${icon.gear}<span>Configurar a igreja</span>${icon.chevron}</a>` : ''}
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         ${datesOn() ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
-        ${featureOn('visitantes') && isLeaderRole(m.role) ? `<a class="menu-row" href="#/visitantes">${icon.user}<span>Visitantes</span>${icon.chevron}</a>` : ''}
+        ${visitorTeam() ? `<a class="menu-row" href="#/visitantes">${icon.user}<span>Visitantes</span>${icon.chevron}</a>` : ''}
+        ${featureOn('escalas') ? `<a class="menu-row" href="#/escalas">${icon.clipboard}<span>Ministérios e escalas</span>${icon.chevron}</a>` : ''}
         ${featureOn('celulas') ? `<a class="menu-row" href="#/celulas">${icon.users}<span>${isLeaderRole(m.role) ? 'Células' : 'Minha célula'}</span>${icon.chevron}</a>` : ''}
         ${featureOn('devocional') ? `<a class="menu-row" href="#/devocional">${icon.book}<span>Devocional</span>${icon.chevron}</a><a class="menu-row" href="#/leitura">${icon.book}<span>Plano de leitura</span>${icon.chevron}</a>` : ''}
         ${featureOn('oracao') ? `<a class="menu-row" href="#/oracao">${icon.heart}<span>Pedidos de oração</span>${icon.chevron}</a>` : ''}
@@ -967,7 +987,7 @@ async function viewMyData() {
 
       <section class="card">
         <h2>${icon.upload} Baixar meus dados</h2>
-        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
+        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
         <button class="btn" id="export">Baixar arquivo</button>
         <p class="hint">Para corrigir algum dado, use "Meu cadastro" ou fale com a secretaria da igreja.</p>
       </section>
@@ -1111,6 +1131,13 @@ function helpTopics() {
            <p><strong>Se você lidera a célula</strong> (líder ou auxiliar), toque em <em>Registrar encontro</em> depois de cada encontro: marque quem veio, quantos visitantes vieram e, se quiser, o tema. A lista mostra quem faltou nos últimos encontros, para você procurar. Você também coloca e tira participantes, buscando pelo nome no cadastro da igreja. A presença só é vista por você e pela liderança da igreja.</p>`,
         ]]
       : []),
+    ...(features('escalas')
+      ? [[
+          'Ministérios e escalas',
+          `<p>Em <a href="#/escalas">Menu &gt; Ministérios e escalas</a> ficam as suas escalas. Toque em <em>Confirmo</em> para avisar que vai servir, ou em <em>Pedir troca</em> se não puder (o líder do ministério recebe o pedido e escolhe outra pessoa). Você recebe um aviso quando é escalado e um lembrete na véspera.</p>
+           <p>Em cada ministério de que você participa, você vê a equipe e as próximas escalas. <strong>Se você lidera o ministério</strong>, toque em <em>Nova escala</em>: escolha a data e o horário, marque quem serve e escreva a função de cada um (ex.: Vocal, Teclado, Recepção). Você também coloca e tira pessoas da equipe.</p>`,
+        ]]
+      : []),
     ...(features('devocional')
       ? [[
           'Devocional e plano de leitura',
@@ -1204,8 +1231,15 @@ function helpTopics() {
       ? [[
           'Visitantes',
           `<p>Em <a href="#/visitantes">Menu &gt; Visitantes</a>, toque em <em>QR Code para o culto</em> e projete no telão ou imprima. O visitante aponta a câmera, preenche um cadastro rápido (sem precisar de conta) e autoriza a igreja a guardar os dados.</p>
-           <p>A cada visitante, a liderança recebe uma notificação. Abra o cadastro para <strong>chamar no WhatsApp</strong> (a mensagem já vem escrita), mudar a situação (<em>Novo, Contatado, Acompanhando, Virou membro, Sem interesse</em>) e anotar o acompanhamento. <em>Cadastrar como membro</em> leva os dados para o cadastro de membros.</p>
+           <p>A cada visitante, a liderança (ou a equipe do ministério de Acolhimento, se houver) recebe uma notificação. Abra o cadastro para <strong>chamar no WhatsApp</strong> (a mensagem já vem escrita), mudar a situação (<em>Novo, Contatado, Acompanhando, Virou membro, Sem interesse</em>) e anotar o acompanhamento. <em>Cadastrar como membro</em> leva os dados para o cadastro de membros.</p>
            <p>O administrador muda a mensagem do WhatsApp na tela do QR Code. Quem não virou membro é apagado sozinho 12 meses depois do cadastro.</p>`,
+        ]]
+      : []),
+    ...(features('escalas')
+      ? [[
+          'Organizar os ministérios',
+          `<p>Em <a href="#/escalas">Menu &gt; Ministérios e escalas</a>, toque em <em>Novo ministério</em> (há sugestões prontas: Louvor, Acolhimento, Infantil e Mídia). Depois, abra o ministério, coloque a equipe buscando pelo nome e escolha quem é <strong>Líder</strong>: qualquer pessoa do cadastro pode liderar um ministério e montar as escalas dele.</p>
+           <p>Os pedidos de troca aparecem no alto da tela de escalas.${features('visitantes') ? ' Marque <strong>Recebe os avisos de visitantes</strong> no ministério de Acolhimento: a equipe dele passa a receber o aviso de cada visitante e a ver os cadastros para o acompanhamento. Sem esse ministério, o aviso vai para a liderança.' : ''}</p>`,
         ]]
       : []),
     ...(features('celulas')
@@ -1249,7 +1283,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -3127,7 +3161,7 @@ async function loadVisitors() {
 
 function requireVisitorsTeam(next) {
   if (!requireMemberFeature(next, 'visitantes')) return false;
-  if (isLeaderRole(myRole())) return true;
+  if (visitorTeam()) return true;
   navigate('/');
   return false;
 }
@@ -3199,11 +3233,13 @@ function drawVisitor(v) {
       <label>Anotações do acompanhamento<textarea name="notes" rows="4" maxlength="4000" placeholder="Ex.: liguei dia 10, vem no domingo">${esc(v.notes || '')}</textarea></label>
       <button class="btn primary big">Salvar</button>
       ${
-        v.member_id
-          ? `<a class="btn" href="#/membros/${v.member_id}">Ver o cadastro de membro</a>`
-          : '<button class="btn" type="button" id="to-member">Cadastrar como membro</button>'
+        !isLeaderRole(myRole())
+          ? '<p class="hint">Cadastrar como membro e apagar o cadastro: com a liderança da igreja.</p>'
+          : v.member_id
+            ? `<a class="btn" href="#/membros/${v.member_id}">Ver o cadastro de membro</a>`
+            : '<button class="btn" type="button" id="to-member">Cadastrar como membro</button>'
       }
-      <button class="btn danger-outline" type="button" id="delete">Apagar este visitante</button>
+      ${isLeaderRole(myRole()) ? '<button class="btn danger-outline" type="button" id="delete">Apagar este visitante</button>' : ''}
     </form>`;
   const form = document.getElementById('visit');
   form.addEventListener('submit', async (e) => {
@@ -3230,14 +3266,14 @@ function drawVisitor(v) {
     toast('Cadastrado como membro. Confira os dados na ficha.');
     navigate(`/membros/${memberId}`);
   });
-  document.getElementById('delete').onclick = async () => {
+  document.getElementById('delete')?.addEventListener('click', async () => {
     if (!confirm(`Apagar o cadastro de ${v.name}? Não dá para desfazer.`)) return;
     const { data, error } = await sb.from('visitors').delete().eq('id', v.id).select('id');
     if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
     screenForget('visitantes');
     toast('Visitante apagado.');
     navigate('/visitantes');
-  };
+  });
 }
 
 // QR Code para projetar no telão ou imprimir, e a mensagem pronta do WhatsApp.
@@ -4339,6 +4375,483 @@ async function viewCellMeeting(ctx, id) {
 }
 
 // ---------------------------------------------------------------------
+// Ministérios e escalas: a liderança cria os ministérios, o líder monta as escalas e o
+// voluntário confirma ou pede troca
+// ---------------------------------------------------------------------
+const MINISTRY_ROLES = { lider: 'Líder', membro: 'Equipe' };
+const SLOT_STATUS = { pendente: ['Falta confirmar', 'wait'], confirmado: ['Confirmado', 'ok'], troca: ['Pediu troca', 'warn'] };
+const MINISTRY_SUGGESTIONS = [
+  ['Louvor', 'Música e ministração nos cultos.'],
+  ['Acolhimento', 'Recebe quem chega e acompanha os visitantes.'],
+  ['Infantil', 'Cuida das crianças durante os cultos.'],
+  ['Mídia', 'Som, projeção, transmissão e redes sociais.'],
+];
+// "domingo, 8/11 às 19h"
+const scheduleWhen = (s) =>
+  `${parseIso(s.service_date).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'numeric' })}${s.service_time ? ` às ${fmtTime(s.service_time)}` : ''}`;
+
+async function loadSchedules() {
+  const [mine, ministries] = await Promise.all([
+    sb.rpc('my_schedules', { p_church: state.church.id }),
+    sb.rpc('ministry_overview', { p_church: state.church.id }),
+  ]);
+  if (mine.error) throw mine.error;
+  if (ministries.error) throw ministries.error;
+  return { mine: mine.data, ministries: ministries.data };
+}
+
+async function loadMinistry(id) {
+  const [miRes, rosterRes, schedRes, manageRes] = await Promise.all([
+    sb.from('ministries').select('id, name, description, receives_visitors, active').eq('id', id).maybeSingle(),
+    sb.rpc('ministry_roster', { p_ministry: id }),
+    sb.rpc('ministry_schedules', { p_ministry: id }),
+    sb.rpc('can_manage_ministry', { p_ministry: id }),
+  ]);
+  for (const r of [miRes, rosterRes, schedRes, manageRes]) if (r.error) throw r.error;
+  return { mi: miRes.data, roster: rosterRes.data, schedules: schedRes.data, manage: !!manageRes.data };
+}
+
+const forgetMinistry = (id) => {
+  screenForget('escalas');
+  if (id) screenForget(`ministerio:${id}`);
+};
+
+// A escala de hoje ainda aparece; as que já passaram, não (o guardado pode ser de ontem).
+const upcoming = (rows) => rows.filter((s) => s.service_date >= isoLocal(new Date()));
+
+function homeSchedulesCard(el, changed) {
+  return homeCard(el, 'escalas', loadSchedules, (data) => {
+    const rows = upcoming(data.mine).slice(0, 3);
+    if (!rows.length) return '';
+    return `
+    <section class="card">
+      <h2>${icon.clipboard} Sua próxima escala</h2>
+      <div class="list">${rows
+        .map(
+          (s) => `
+        <a class="event-card" href="#/escalas">
+          <span><strong>${esc(s.ministry_name)}${s.task ? ` · ${esc(s.task)}` : ''}</strong>
+            <small>${esc(scheduleWhen(s))}${s.title ? ` · ${esc(s.title)}` : ''} · ${SLOT_STATUS[s.status][0]}</small></span>${icon.chevron}
+        </a>`,
+        )
+        .join('')}</div>
+    </section>`;
+  }, changed);
+}
+
+async function viewSchedules(ctx) {
+  if (!requireMemberFeature('/escalas', 'escalas')) return;
+  await screenShow(ctx, 'escalas', loadSchedules, drawSchedules);
+}
+
+function drawSchedules(data) {
+  const leader = isLeaderRole(myRole());
+  const mine = upcoming(data.mine);
+  const swaps = data.ministries.filter((mi) => mi.swaps);
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Escalas</h1>
+      ${swaps
+        .map((mi) => `<a class="notice" href="#/ministerios/${mi.id}"><strong>${mi.swaps} ${mi.swaps === 1 ? 'pedido' : 'pedidos'} de troca em ${esc(mi.name)}.</strong> Toque para escolher quem entra no lugar.</a>`)
+        .join('')}
+      <h2>Minhas escalas</h2>
+      ${
+        mine.length
+          ? `<div class="list">${mine
+              .map((s) => {
+                const [label, cls] = SLOT_STATUS[s.status];
+                return `
+          <div class="card schedule-mine" data-slot="${s.slot_id}">
+            <p><strong>${esc(s.ministry_name)}${s.task ? ` · ${esc(s.task)}` : ''}</strong> <span class="tag ${cls}">${label}</span></p>
+            <p class="meta">${icon.clock}${esc(scheduleWhen(s))}${s.title ? ` · ${esc(s.title)}` : ''}</p>
+            ${s.status === 'troca' && s.swap_reason ? `<p class="hint">Motivo: ${esc(s.swap_reason)}</p>` : ''}
+            <div class="actions-row">
+              ${s.status !== 'confirmado' ? '<button class="btn primary small" data-confirm>Confirmo</button>' : ''}
+              ${s.status !== 'troca' ? '<button class="btn small" data-swap>Pedir troca</button>' : ''}
+              <a class="btn small" href="#/ministerios/${s.ministry_id}">Ver a escala</a>
+            </div>
+          </div>`;
+              })
+              .join('')}</div>`
+          : '<div class="empty"><p>Você não está em nenhuma escala nos próximos dias.</p></div>'
+      }
+      <h2>Ministérios</h2>
+      ${leader ? `<div class="actions-row"><a class="btn primary" href="#/ministerios/novo">${icon.plus} Novo ministério</a></div>` : ''}
+      ${
+        data.ministries.length
+          ? `<div class="list">${data.ministries
+              .map(
+                (mi) => `
+          <a class="member-row ${mi.active ? '' : 'inactive'}" href="#/ministerios/${mi.id}">
+            <span class="avatar">${icon.clipboard}</span>
+            <span><strong>${esc(mi.name)}</strong>
+              <small>${esc(
+                mi.team == null
+                  ? mi.description || ''
+                  : [mi.leaders ? `Líder: ${mi.leaders}` : 'Sem líder', `${mi.team} ${mi.team === 1 ? 'pessoa' : 'pessoas'}`, mi.next_date ? `próxima escala ${fmtDate(mi.next_date).slice(0, 5)}` : '']
+                      .filter(Boolean)
+                      .join(' · '),
+              )}</small></span>
+            <span class="tags">
+              ${mi.my_role ? `<span class="tag role">${mi.my_role === 'lider' ? 'Você lidera' : 'Você participa'}</span>` : ''}
+              ${mi.receives_visitors ? '<span class="tag">Visitantes</span>' : ''}
+              ${!mi.active ? '<span class="tag">Desativado</span>' : ''}
+            </span>
+          </a>`,
+              )
+              .join('')}</div>`
+          : `<div class="empty"><p>${leader ? 'Nenhum ministério ainda. Crie o primeiro.' : 'Nenhum ministério ainda.'}</p></div>`
+      }
+      ${leader ? '' : '<p class="hint">Quer servir num ministério? Fale com o líder dele ou com a liderança da igreja.</p>'}
+    </div>`;
+
+  $view.querySelectorAll('[data-slot]').forEach((card) => {
+    const s = data.mine.find((x) => x.slot_id === card.dataset.slot);
+    const answer = async (confirmed, reason, btn) => {
+      btn.disabled = true;
+      const { data: status, error } = await sb.rpc('schedule_answer', { p_slot: s.slot_id, p_confirm: confirmed, p_reason: reason });
+      if (error) {
+        btn.disabled = false;
+        return toast(errorText(error), 'error');
+      }
+      Object.assign(s, { status, swap_reason: confirmed ? null : reason || null });
+      screenUpdate('escalas', data);
+      screenForget(`ministerio:${s.ministry_id}`);
+      toast(confirmed ? 'Presença confirmada. Obrigado por servir!' : 'Pedido de troca enviado ao líder do ministério.');
+      drawSchedules(data);
+    };
+    card.querySelector('[data-confirm]')?.addEventListener('click', (e) => answer(true, null, e.currentTarget));
+    card.querySelector('[data-swap]')?.addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      const reason = prompt('Pedir troca: o líder do ministério recebe o pedido. Quer dizer o motivo? (opcional)');
+      if (reason === null) return;
+      answer(false, reason.trim().slice(0, 200), btn);
+    });
+  });
+}
+
+async function viewMinistryForm(ctx, id) {
+  if (!requireMemberFeature(id ? `/ministerios/${id}/editar` : '/ministerios/novo', 'escalas')) return;
+  if (!isLeaderRole(myRole())) return navigate('/escalas');
+  let mi = { name: '', description: '', receives_visitors: false, active: true };
+  if (id) {
+    const data = await editItem(
+      ctx,
+      screenCached(`ministerio:${id}`)?.mi,
+      async () => {
+        const { data: row, error } = await sb.from('ministries').select('id, name, description, receives_visitors, active').eq('id', id).maybeSingle();
+        if (error) throw error;
+        return row;
+      },
+      () => forgetMinistry(id),
+    );
+    if (!data) return navigate('/escalas');
+    mi = data;
+  }
+  if (!ctx.alive()) return;
+  const taken = new Set((screenCached('escalas')?.ministries || []).map((x) => fold(x.name)));
+  const suggestions = id ? [] : MINISTRY_SUGGESTIONS.filter(([name]) => !taken.has(fold(name)));
+  $view.innerHTML = `
+    <form id="ministry" class="form page">
+      <a href="${id ? `#/ministerios/${id}` : '#/escalas'}" class="back">← ${id ? esc(mi.name) : 'Escalas'}</a>
+      <h1>${id ? 'Editar ministério' : 'Novo ministério'}</h1>
+      ${
+        suggestions.length
+          ? `<div class="chips">${suggestions.map(([name]) => `<button type="button" class="chip" data-suggest="${esc(name)}">${esc(name)}</button>`).join('')}</div>`
+          : ''
+      }
+      <label>Nome<input name="name" required minlength="2" maxlength="60" value="${esc(mi.name)}" placeholder="Louvor"></label>
+      <label>Descrição (opcional)<textarea name="description" rows="3" maxlength="500">${esc(mi.description || '')}</textarea></label>
+      ${
+        featureOn('visitantes')
+          ? `<label class="check"><input type="checkbox" name="receives_visitors" ${mi.receives_visitors ? 'checked' : ''}> Recebe os avisos de visitantes
+              <small class="hint">A equipe deste ministério recebe o aviso de cada visitante e vê os cadastros para fazer o acompanhamento, mesmo quem não é da liderança. Só um ministério por igreja. Sem ele, o aviso vai para a liderança.</small></label>`
+          : ''
+      }
+      ${id ? `<label class="check"><input type="checkbox" name="active" ${mi.active ? 'checked' : ''}> Ministério ativo
+        <small class="hint">Desmarque para guardar o ministério sem que ele apareça para os membros.</small></label>` : ''}
+      ${id ? '' : '<p class="hint">Depois de criar, abra o ministério para escolher o líder e a equipe.</p>'}
+      <button class="btn primary big">${id ? 'Salvar' : 'Criar ministério'}</button>
+      ${id ? '<button class="btn danger-outline" type="button" id="delete">Excluir ministério</button>' : ''}
+    </form>`;
+  const form = document.getElementById('ministry');
+  form.querySelectorAll('[data-suggest]').forEach((b) => {
+    b.onclick = () => {
+      const [name, about] = MINISTRY_SUGGESTIONS.find(([n]) => n === b.dataset.suggest);
+      form.name.value = name;
+      form.description.value = about;
+      if (form.receives_visitors) form.receives_visitors.checked = name === 'Acolhimento';
+    };
+  });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const row = {
+      name: form.name.value.trim(),
+      description: form.description.value.trim() || null,
+      ...(form.receives_visitors ? { receives_visitors: form.receives_visitors.checked } : {}),
+    };
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { data, error } = id
+      ? await sb.from('ministries').update({ ...row, active: form.active.checked, updated_at: new Date().toISOString() }).eq('id', id).select('id').single()
+      : await sb.from('ministries').insert({ ...row, church_id: state.church.id }).select('id').single();
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    forgetMinistry(id || data.id);
+    if (row.receives_visitors !== mi.receives_visitors) screenForget('visitantes');
+    toast(id ? 'Ministério salvo.' : 'Ministério criado. Agora escolha o líder e a equipe.');
+    navigate(`/ministerios/${data.id}`);
+  });
+  document.getElementById('delete')?.addEventListener('click', async () => {
+    if (!confirm(`Excluir o ministério "${mi.name}"? A equipe e todas as escalas dele também são apagadas. Para guardar o histórico, prefira desmarcar "Ministério ativo".`)) return;
+    const { data, error } = await sb.from('ministries').delete().eq('id', id).select('id');
+    if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para excluir.', 'error');
+    forgetMinistry(id);
+    toast('Ministério excluído.');
+    navigate('/escalas');
+  });
+}
+
+async function viewMinistry(ctx, id) {
+  if (!requireMemberFeature(`/ministerios/${id}`, 'escalas')) return;
+  await screenShowWithPhotos(
+    ctx,
+    `ministerio:${id}`,
+    () => loadMinistry(id),
+    (d) => d.roster.map((p) => p.photo_path),
+    (d, photos) => drawMinistry(id, d, photos),
+  );
+}
+
+function drawMinistry(id, { mi, roster, schedules, manage }, photos) {
+  if (!mi) {
+    $view.innerHTML = `<div class="empty"><h2>Ministério não encontrado</h2><a class="btn" href="#/escalas">Voltar</a></div>`;
+    return;
+  }
+  const leader = isLeaderRole(myRole());
+  const team = manage || roster.some((p) => p.is_me);
+  const today = isoLocal(new Date());
+  const next = schedules.filter((s) => s.service_date >= today);
+  const past = schedules.filter((s) => s.service_date < today).reverse();
+  const scheduleCard = (s) => `
+    <div class="card schedule">
+      <p><strong>${esc(scheduleWhen(s))}</strong>${s.title ? ` · ${esc(s.title)}` : ''}</p>
+      ${s.notes ? `<p class="hint pre">${esc(s.notes)}</p>` : ''}
+      <ul class="slots">${
+        s.slots
+          .map((p) => {
+            const [label, cls] = SLOT_STATUS[p.status];
+            return `<li><span>${esc(p.name)}${p.is_me ? ' (você)' : ''}${p.task ? ` <small class="hint">· ${esc(p.task)}</small>` : ''}
+              ${p.swap_reason ? `<small class="hint">Motivo: ${esc(p.swap_reason)}</small>` : ''}
+              ${manage && !p.has_account ? '<small class="hint">Sem o app: avise pessoalmente</small>' : ''}</span>
+              <span class="tag ${cls}">${label}</span></li>`;
+          })
+          .join('') || '<li class="hint">Ninguém escalado ainda.</li>'
+      }</ul>
+      ${manage && s.service_date >= today ? `<a class="btn small" href="#/ministerios/${id}/escala/${s.id}">Editar escala</a>` : ''}
+    </div>`;
+
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/escalas" class="back">← Escalas</a>
+      <h1>${esc(mi.name)}</h1>
+      ${!mi.active ? '<p class="notice">Este ministério está desativado.</p>' : ''}
+      ${mi.description ? `<p>${esc(mi.description)}</p>` : ''}
+      ${mi.receives_visitors && featureOn('visitantes') ? '<p class="hint">Esta equipe recebe os avisos de visitantes e faz o acompanhamento em Menu &gt; Visitantes.</p>' : ''}
+      ${
+        manage || leader
+          ? `<div class="actions-row">
+              ${manage ? `<a class="btn primary" href="#/ministerios/${id}/escala">${icon.plus} Nova escala</a>` : ''}
+              ${leader ? `<a class="btn" href="#/ministerios/${id}/editar">Editar ministério</a>` : ''}
+            </div>`
+          : ''
+      }
+      ${
+        !team
+          ? '<p class="hint">Quer servir aqui? Fale com a liderança da igreja.</p>'
+          : `<h2>Próximas escalas</h2>
+             ${next.length ? next.map(scheduleCard).join('') : '<div class="empty"><p>Nenhuma escala marcada.</p></div>'}
+             <h2>Equipe (${roster.length})</h2>
+             <div class="list">${
+               roster
+                 .map(
+                   (p) => `
+               <div class="member-row" data-member="${p.member_id}">
+                 ${avatar(p.name, p.photo_path && photos[miniOf(p.photo_path)])}
+                 <span><strong>${esc(p.name)}${p.is_me ? ' (você)' : ''}</strong>
+                   ${p.phone ? `<small><a href="tel:+${esc(p.phone)}">${esc(fmtPhone(p.phone))}</a></small>` : ''}</span>
+                 <span class="tags">
+                   ${
+                     leader
+                       ? `<select data-role aria-label="Papel de ${esc(p.name)} no ministério">${Object.entries(MINISTRY_ROLES)
+                           .map(([k, label]) => `<option value="${k}" ${p.role === k ? 'selected' : ''}>${label}</option>`)
+                           .join('')}</select>`
+                       : p.role === 'lider'
+                         ? '<span class="tag role">Líder</span>'
+                         : ''
+                   }
+                   ${manage && (leader || p.role === 'membro') ? `<button class="btn small danger-outline" data-remove aria-label="Tirar ${esc(p.name)} da equipe">Tirar</button>` : ''}
+                 </span>
+               </div>`,
+                 )
+                 .join('') || '<div class="empty"><p>Ninguém na equipe ainda.</p></div>'
+             }</div>
+             ${
+               manage
+                 ? `<form id="add-member" class="form card">
+                     <label>Colocar na equipe<input name="q" type="search" placeholder="Digite o nome de alguém do cadastro" autocomplete="off"></label>
+                     <div id="candidates" class="list"></div>
+                     <p class="hint">Quem ainda não está no cadastro precisa ser cadastrado pela secretaria.</p>
+                   </form>`
+                 : ''
+             }
+             ${past.length ? `<details class="card"><summary>Escalas anteriores (${past.length})</summary>${past.map(scheduleCard).join('')}</details>` : ''}`
+      }
+    </div>`;
+
+  $view.querySelectorAll('[data-member]').forEach((row) => {
+    const memberId = row.dataset.member;
+    row.querySelector('[data-role]')?.addEventListener('change', async (e) => {
+      const { data, error } = await sb.from('ministry_members').update({ role: e.target.value }).eq('ministry_id', id).eq('member_id', memberId).select('role');
+      if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
+      forgetMinistry(id);
+      toast('Papel no ministério salvo.');
+    });
+    row.querySelector('[data-remove]')?.addEventListener('click', async () => {
+      const name = row.querySelector('strong').textContent;
+      if (!confirm(`Tirar ${name} da equipe? A pessoa também sai das próximas escalas deste ministério.`)) return;
+      const { data, error } = await sb.from('ministry_members').delete().eq('ministry_id', id).eq('member_id', memberId).select('member_id');
+      if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
+      forgetMinistry(id);
+      toast('Tirado da equipe.');
+      render();
+    });
+  });
+
+  const addForm = document.getElementById('add-member');
+  if (addForm) {
+    const box = document.getElementById('candidates');
+    let timer;
+    addForm.addEventListener('submit', (e) => e.preventDefault());
+    addForm.q.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const term = addForm.q.value.trim();
+        if (term.length < 2) return (box.innerHTML = '');
+        const { data } = await sb.rpc('ministry_candidates', { p_ministry: id, p_search: term });
+        if (addForm.q.value.trim() !== term) return;
+        box.innerHTML = data?.length
+          ? data.map((m) => `<button type="button" class="menu-row" data-add="${m.member_id}">${icon.plus}<span>${esc(m.name)}</span></button>`).join('')
+          : '<p class="hint">Ninguém encontrado (ou já está na equipe).</p>';
+        box.querySelectorAll('[data-add]').forEach((b) => {
+          b.onclick = async () => {
+            b.disabled = true;
+            const { error } = await sb.from('ministry_members').insert({ ministry_id: id, member_id: b.dataset.add });
+            if (error) {
+              b.disabled = false;
+              return toast(errorText(error), 'error');
+            }
+            forgetMinistry(id);
+            toast(`${b.textContent.trim()} entrou na equipe.`);
+            render();
+          };
+        });
+      }, 250);
+    });
+  }
+}
+
+// Montar ou corrigir uma escala: data, horário e quem serve (da equipe), com a função de cada um.
+async function viewScheduleForm(ctx, id, scheduleId) {
+  if (!requireMemberFeature(`/ministerios/${id}/escala${scheduleId ? `/${scheduleId}` : ''}`, 'escalas')) return;
+  const saved = screenCached(`ministerio:${id}`);
+  const d = await editItem(ctx, saved?.mi ? saved : null, () => loadMinistry(id), () => forgetMinistry(id));
+  if (!ctx.alive()) return;
+  if (!d.mi || !d.manage) return navigate(`/ministerios/${id}`);
+  const s = scheduleId ? d.schedules.find((x) => x.id === scheduleId) : null;
+  if (scheduleId && !s) return navigate(`/ministerios/${id}`);
+  const slotOf = new Map((s?.slots || []).map((p) => [p.member_id, p]));
+  // Quem está na escala mas saiu da equipe continua aparecendo para o líder decidir.
+  const people = [...d.roster.map((p) => ({ member_id: p.member_id, name: p.name })), ...(s?.slots || []).filter((p) => !d.roster.some((r) => r.member_id === p.member_id))];
+  const tasks = [...new Set(d.schedules.flatMap((x) => x.slots.map((p) => p.task)).filter(Boolean))].sort();
+  const date = s?.service_date || isoLocal(addDays(new Date(), 7 - new Date().getDay()));
+  $view.innerHTML = `
+    <form id="schedule" class="form page">
+      <a href="#/ministerios/${id}" class="back">← ${esc(d.mi.name)}</a>
+      <h1>${s ? 'Editar escala' : 'Nova escala'}</h1>
+      <div class="colors">
+        <label>Data<input name="date" type="date" required value="${date}" min="${isoLocal(new Date())}"></label>
+        ${timeField('time', 'Horário', s?.service_time || '')}
+      </div>
+      <label>Culto ou evento (opcional)<input name="title" maxlength="80" value="${esc(s?.title || '')}" placeholder="Culto de domingo"></label>
+      <fieldset>
+        <legend>Quem serve: marque e escreva a função</legend>
+        ${
+          people.length
+            ? people
+                .map((p) => {
+                  const slot = slotOf.get(p.member_id);
+                  return `
+          <div class="slot-pick">
+            <label class="check"><input type="checkbox" name="pick" value="${p.member_id}" ${slot ? 'checked' : ''}> ${esc(p.name)}
+              ${slot ? `<span class="tag ${SLOT_STATUS[slot.status][1]}">${SLOT_STATUS[slot.status][0]}</span>` : ''}</label>
+            <input name="task-${p.member_id}" maxlength="40" list="tasks" value="${esc(slot?.task || '')}" placeholder="Função (ex.: Vocal)" aria-label="Função de ${esc(p.name)}">
+          </div>`;
+                })
+                .join('')
+            : `<p class="hint">Ninguém na equipe ainda. <a href="#/ministerios/${id}">Coloque as pessoas na equipe</a> primeiro.</p>`
+        }
+        <datalist id="tasks">${tasks.map((t) => `<option value="${esc(t)}">`).join('')}</datalist>
+        <small class="hint" id="pick-count"></small>
+      </fieldset>
+      <label>Observação (opcional)<textarea name="notes" rows="2" maxlength="500" placeholder="Ex.: chegar 30 minutos antes para o ensaio">${esc(s?.notes || '')}</textarea></label>
+      <p class="hint">Quem você marcar recebe um aviso no app e um lembrete na véspera. Se mudar a data ou o horário, todos precisam confirmar de novo.</p>
+      <button class="btn primary big">${s ? 'Salvar escala' : 'Criar escala'}</button>
+      ${s ? '<button class="btn danger-outline" type="button" id="delete">Apagar esta escala</button>' : ''}
+    </form>`;
+  const form = document.getElementById('schedule');
+  bindTimeFields(form);
+  const counter = document.getElementById('pick-count');
+  const picked = () => [...form.querySelectorAll('[name=pick]:checked')].map((i) => i.value);
+  const count = () => (counter.textContent = `${picked().length} ${picked().length === 1 ? 'pessoa escalada' : 'pessoas escaladas'}`);
+  form.addEventListener('change', count);
+  // Escrever a função já marca a pessoa.
+  form.addEventListener('input', (e) => {
+    const m = e.target.name?.match(/^task-(.+)$/);
+    if (m && e.target.value.trim()) form.querySelector(`[name=pick][value="${m[1]}"]`).checked = true;
+    count();
+  });
+  count();
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { error } = await sb.rpc('save_schedule', {
+      p_ministry: id,
+      p_id: s?.id ?? null,
+      p_date: form.date.value,
+      p_time: form.time.value || null,
+      p_title: form.title.value,
+      p_notes: form.notes.value,
+      p_slots: picked().map((member_id) => ({ member_id, task: form[`task-${member_id}`].value.trim() })),
+    });
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    forgetMinistry(id);
+    toast(s ? 'Escala salva.' : 'Escala criada. A equipe já recebeu o aviso.');
+    navigate(`/ministerios/${id}`);
+  });
+  document.getElementById('delete')?.addEventListener('click', async () => {
+    if (!confirm('Apagar esta escala? Quem estava nela não recebe aviso; se preciso, avise a equipe.')) return;
+    const { data, error } = await sb.from('schedules').delete().eq('id', s.id).select('id');
+    if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
+    forgetMinistry(id);
+    toast('Escala apagada.');
+    navigate(`/ministerios/${id}`);
+  });
+}
+
+// ---------------------------------------------------------------------
 // Aniversários: cartão da semana, aniversariantes do mês, mensagem da igreja, notificações
 // ---------------------------------------------------------------------
 const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -4485,9 +4998,10 @@ const NOTIF_GROUPS = {
   avisos: { label: 'Avisos', icon: 'megaphone', kinds: ['aviso'], on: () => featureOn('avisos') },
   agenda: { label: 'Agenda', icon: 'calendar', kinds: ['evento'], on: () => featureOn('agenda') },
   oracao: { label: 'Oração', icon: 'heart', kinds: ['oracao'], on: () => featureOn('oracao') },
+  escalas: { label: 'Escalas', icon: 'clipboard', kinds: ['escala'], on: () => featureOn('escalas') },
   devocional: { label: 'Devocional', icon: 'book', kinds: ['devocional', 'leitura'], on: () => featureOn('devocional') },
   datas: { label: 'Datas', icon: 'cake', kinds: ['aniversario', 'casamento', 'batismo', 'resumo_lideres'], on: () => datesOn() },
-  visitantes: { label: 'Visitantes', icon: 'user', kinds: ['visitante'], on: () => featureOn('visitantes') && isLeaderRole(myRole()) },
+  visitantes: { label: 'Visitantes', icon: 'user', kinds: ['visitante'], on: () => visitorTeam() },
 };
 const notifGroup = (kind) => Object.keys(NOTIF_GROUPS).find((g) => NOTIF_GROUPS[g].kinds.includes(kind)) || 'sistema';
 const NOTIF_PAGE = 30;

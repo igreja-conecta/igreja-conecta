@@ -167,3 +167,29 @@ test.describe('Banco: visitante sem login (devocional e plano de leitura)', () =
     for (const fn of ['devotionals_guard', 'reading_progress_guard']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (ministérios e escalas)', () => {
+  test('não lê nem grava ministérios, equipes e escalas; não chama as funções', async ({ request }) => {
+    for (const table of ['ministries', 'ministry_members', 'schedules', 'schedule_slots']) {
+      const res = await request.get(rest(`${table}?select=*`), { headers });
+      if (res.ok()) expect(await res.json(), table).toEqual([]);
+    }
+    expect((await request.post(rest('ministries'), { headers, data: { church_id: UUID, name: 'Intruso' } })).ok()).toBe(false);
+    expect((await request.post(rest('schedules'), { headers, data: { ministry_id: UUID, service_date: '2030-01-01' } })).ok()).toBe(false);
+    const calls = {
+      ministry_overview: { p_church: UUID },
+      ministry_roster: { p_ministry: UUID },
+      ministry_candidates: { p_ministry: UUID, p_search: 'Fulano' },
+      ministry_schedules: { p_ministry: UUID },
+      my_schedules: { p_church: UUID },
+      save_schedule: { p_ministry: UUID, p_id: null, p_date: '2030-01-01', p_time: null, p_title: null, p_notes: null, p_slots: [] },
+      schedule_answer: { p_slot: UUID, p_confirm: true },
+      can_manage_ministry: { p_ministry: UUID },
+      visitor_team_users: { p_church: UUID },
+      my_visitor_churches: {},
+    };
+    for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
+    expect((await rpc(request, 'deliver_schedule_reminders', { p_secret: 'errada' })).ok()).toBe(false);
+    for (const fn of ['ministry_members_guard', 'ministry_members_left']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
+  });
+});

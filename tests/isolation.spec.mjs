@@ -1027,3 +1027,167 @@ test.describe('Devocional e plano de leitura (014)', () => {
     expect((await rpc('adm-a', 'deliver_devotional_notifications', { p_secret: 'errada' })).ok()).toBe(false);
   });
 });
+
+test.describe('Ministérios e escalas (015)', () => {
+  const tag = `Ministerio ${Date.now().toString(36)}`;
+  const louvor = `${tag} Louvor`;
+  const day = (n) => new Date(Date.now() + n * 864e5).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const date = day(40);
+  const ids = {};
+  const notes = (who, title) => get(who, `notifications?select=title,body,url&title=eq.${encodeURIComponent(title)}`);
+
+  test.beforeAll(async () => {
+    const people = await get('lider-a', 'members?select=id,name&name=in.("Membro da A","Fulano da A")');
+    ids.membro = people.find((p) => p.name === 'Membro da A').id;
+    ids.fulano = people.find((p) => p.name === 'Fulano da A').id;
+    ids.fulanoB = (await get('adm-b', 'members?select=id&name=eq.Fulano%20da%20B'))[0].id;
+  });
+
+  test.afterAll(async () => {
+    if (!api) return;
+    await api.delete(rest(`ministries?name=like.${encodeURIComponent(tag)}*`), { headers: as['lider-a'].headers });
+    await api.delete(rest(`visitors?name=like.${encodeURIComponent(tag)}*`), { headers: as['adm-a'].headers });
+  });
+
+  test('a liderança cria os ministérios; o membro vê só o nome; a outra igreja não vê nada', async () => {
+    const make = (who, data) => api.post(rest('ministries'), { headers: returning(as[who].headers), data: { church_id: church.a, ...data } });
+    expect((await make('membro-a', { name: `${tag} membro` })).ok()).toBe(false);
+    expect((await make('adm-b', { name: `${tag} outra` })).ok()).toBe(false);
+    const made = await make('lider-a', { name: louvor, description: 'Música' });
+    expect(made.ok(), await made.text()).toBe(true);
+    ids.ministry = (await made.json())[0].id;
+
+    expect(await get('membro-a', `ministries?select=name&id=eq.${ids.ministry}`)).toEqual([{ name: louvor }]);
+    for (const who of ['adm-b', 'sem-igreja']) expect(await get(who, `ministries?select=id&id=eq.${ids.ministry}`), who).toEqual([]);
+    const overview = async (who) => (await (await rpc(who, 'ministry_overview', { p_church: church.a })).json()).find((m) => m.id === ids.ministry);
+    // Quem não é da equipe não vê os líderes nem o tamanho da equipe.
+    expect(await overview('membro-a')).toMatchObject({ name: louvor, my_role: null, manage: false, leaders: null, team: null });
+    expect(await overview('lider-a')).toMatchObject({ manage: true, team: 0 });
+    expect(await overview('adm-b')).toBeUndefined();
+    const changed = await api.patch(rest(`ministries?id=eq.${ids.ministry}`), { headers: returning(as['membro-a'].headers), data: { name: `${tag} mudado` } });
+    expect(await changed.text()).not.toContain(ids.ministry);
+  });
+
+  test('equipe: o líder do ministério (membro comum) põe pessoas, mas não escolhe líderes', async () => {
+    const add = (who, member_id, role) => api.post(rest('ministry_members'), { headers: as[who].headers, data: { ministry_id: ids.ministry, member_id, ...(role ? { role } : {}) } });
+    expect((await add('membro-a', ids.membro)).ok()).toBe(false); // ainda não lidera
+    expect((await add('adm-b', ids.fulanoB)).ok()).toBe(false);
+    expect((await add('lider-a', ids.fulanoB)).ok()).toBe(false); // pessoa de outra igreja
+    const lead = await add('lider-a', ids.membro, 'lider');
+    expect(lead.ok(), await lead.text()).toBe(true);
+    expect((await add('membro-a', ids.fulano, 'lider')).ok()).toBe(false);
+    const ok = await add('membro-a', ids.fulano);
+    expect(ok.ok(), await ok.text()).toBe(true);
+    const promote = await api.patch(rest(`ministry_members?ministry_id=eq.${ids.ministry}&member_id=eq.${ids.fulano}`), {
+      headers: returning(as['membro-a'].headers),
+      data: { role: 'lider' },
+    });
+    expect(await promote.text()).not.toContain('lider');
+
+    const roster = async (who) => (await (await rpc(who, 'ministry_roster', { p_ministry: ids.ministry })).json()).map((p) => p.name);
+    expect(await roster('membro-a')).toEqual(['Membro da A', 'Fulano da A']);
+    expect(await roster('adm-b')).toEqual([]);
+    expect(await get('adm-b', `ministry_members?select=member_id&ministry_id=eq.${ids.ministry}`)).toEqual([]);
+    const found = await (await rpc('membro-a', 'ministry_candidates', { p_ministry: ids.ministry, p_search: 'Líder da' })).json();
+    expect(found.map((p) => p.name)).toContain('Líder da A');
+    expect(await (await rpc('adm-b', 'ministry_candidates', { p_ministry: ids.ministry, p_search: 'Líder da' })).json()).toEqual([]);
+  });
+
+  test('escalas: só quem cuida monta, só com a equipe; o voluntário responde só a própria', async () => {
+    const save = (who, data) =>
+      rpc(who, 'save_schedule', { p_ministry: ids.ministry, p_id: null, p_date: date, p_time: '19:00', p_title: 'Culto', p_notes: null, ...data });
+    const slots = [{ member_id: ids.membro, task: 'Vocal' }, { member_id: ids.fulano, task: 'Teclado' }];
+    expect((await save('adm-b', { p_slots: slots })).ok()).toBe(false);
+    expect((await save('lider-a', { p_slots: [{ member_id: ids.fulanoB, task: 'x' }] })).ok()).toBe(false);
+    expect((await api.post(rest('schedules'), { headers: as['lider-a'].headers, data: { ministry_id: ids.ministry, service_date: date } })).ok()).toBe(false);
+    const made = await save('lider-a', { p_slots: slots });
+    expect(made.ok(), await made.text()).toBe(true);
+    ids.schedule = await made.json();
+    expect((await api.post(rest('schedule_slots'), { headers: as['lider-a'].headers, data: { schedule_id: ids.schedule, member_id: ids.fulano } })).ok()).toBe(false);
+
+    // O escalado recebe o aviso; a outra igreja não vê a escala.
+    expect(await notes('membro-a', `Você foi escalado: ${louvor}`)).toHaveLength(1);
+    const listed = async (who) => (await (await rpc(who, 'ministry_schedules', { p_ministry: ids.ministry })).json()).map((s) => s.id);
+    expect(await listed('membro-a')).toEqual([ids.schedule]);
+    for (const who of ['adm-b', 'sem-igreja']) {
+      expect(await listed(who), who).toEqual([]);
+      expect(await get(who, `schedule_slots?select=id&schedule_id=eq.${ids.schedule}`), who).toEqual([]);
+    }
+
+    const [mine] = (await (await rpc('membro-a', 'my_schedules', { p_church: church.a })).json()).filter((s) => s.schedule_id === ids.schedule);
+    expect(mine).toMatchObject({ ministry_name: louvor, task: 'Vocal', status: 'pendente' });
+    const answer = (who, confirm, reason) => rpc(who, 'schedule_answer', { p_slot: mine.slot_id, p_confirm: confirm, p_reason: reason });
+    for (const who of ['lider-a', 'adm-b']) expect((await answer(who, true)).ok(), who).toBe(false);
+    expect(await (await answer('membro-a', true)).json()).toBe('confirmado');
+    expect(await (await answer('membro-a', false, 'Viagem')).json()).toBe('troca');
+    // A única líder do ministério pediu a troca: o aviso vai para a liderança da igreja.
+    const [swap] = await notes('lider-a', `Pedido de troca: ${louvor}`);
+    expect(swap).toMatchObject({ url: `#/ministerios/${ids.ministry}` });
+    expect(await notes('membro-a', `Pedido de troca: ${louvor}`)).toEqual([]);
+    const slot = (await (await rpc('lider-a', 'ministry_schedules', { p_ministry: ids.ministry })).json())[0].slots.find((p) => p.member_id === ids.membro);
+    expect(slot).toMatchObject({ status: 'troca', swap_reason: 'Viagem' });
+    expect(await get('lider-a', `schedule_slots?select=status&id=eq.${mine.slot_id}`)).toEqual([{ status: 'troca' }]);
+    const direct = await api.patch(rest(`schedule_slots?id=eq.${mine.slot_id}`), { headers: returning(as['membro-a'].headers), data: { status: 'confirmado' } });
+    expect(direct.ok()).toBe(false);
+
+    // Mudou o horário: todos voltam a confirmar e recebem o aviso.
+    const moved = await save('lider-a', { p_id: ids.schedule, p_time: '18:30', p_slots: slots });
+    expect(moved.ok(), await moved.text()).toBe(true);
+    expect(await get('lider-a', `schedule_slots?select=status&id=eq.${mine.slot_id}`)).toEqual([{ status: 'pendente' }]);
+    expect(await notes('membro-a', `Escala mudou: ${louvor}`)).toHaveLength(1);
+    expect((await rpc('adm-a', 'deliver_schedule_reminders', { p_secret: 'errada' })).ok()).toBe(false);
+  });
+
+  test('as escalas entram nos próprios dados; quem sai da equipe sai das próximas escalas', async () => {
+    const data = await (await rpc('membro-a', 'export_my_data')).json();
+    const here = data.igrejas.find((c) => c.ministerios.some((m) => m.ministerio === louvor));
+    expect(here.ministerios.find((m) => m.ministerio === louvor).papel).toBe('lider');
+    expect(here.escalas.find((e) => e.ministerio === louvor)).toMatchObject({ data: date, funcao: 'Vocal' });
+
+    const out = await api.delete(rest(`ministry_members?ministry_id=eq.${ids.ministry}&member_id=eq.${ids.membro}`), { headers: returning(as['lider-a'].headers) });
+    expect(out.ok(), await out.text()).toBe(true);
+    const mine = await (await rpc('membro-a', 'my_schedules', { p_church: church.a })).json();
+    expect(mine.filter((s) => s.schedule_id === ids.schedule)).toEqual([]);
+    const removed = await api.delete(rest(`schedules?id=eq.${ids.schedule}`), { headers: returning(as['adm-b'].headers) });
+    expect(await removed.text()).not.toContain(ids.schedule);
+  });
+
+  test('visitantes: a equipe do ministério marcado recebe o aviso e acompanha; apagar continua com a liderança', async () => {
+    const made = await api.post(rest('ministries'), {
+      headers: returning(as['lider-a'].headers),
+      data: { church_id: church.a, name: `${tag} Acolhimento`, receives_visitors: true },
+    });
+    expect(made.ok(), await made.text()).toBe(true);
+    const [acolhimento] = await made.json();
+    // Só um ministério por igreja recebe os visitantes.
+    const second = await api.post(rest('ministries'), { headers: as['lider-a'].headers, data: { church_id: church.a, name: `${tag} Outro`, receives_visitors: true } });
+    expect(second.ok()).toBe(false);
+    const team = await api.post(rest('ministry_members'), { headers: as['lider-a'].headers, data: { ministry_id: acolhimento.id, member_id: ids.membro } });
+    expect(team.ok(), await team.text()).toBe(true);
+    expect(await get('membro-a', `members?select=visitor_team&user_id=eq.${as['membro-a'].id}`)).toEqual([{ visitor_team: true }]);
+
+    const anon = { apikey: ANON_KEY, 'Content-Type': 'application/json' };
+    const reg = await api.post(rest('rpc/register_visitor'), {
+      headers: anon,
+      data: { p_church: church.a, p_name: `${tag} Visitante`, p_phone: null, p_email: null, p_first_time: true, p_source: null, p_wants_contact: true, p_message: null, p_consent: true },
+    });
+    expect(reg.ok(), await reg.text()).toBe(true);
+    const [v] = await get('membro-a', `visitors?select=id,status&name=eq.${encodeURIComponent(`${tag} Visitante`)}`);
+    expect(v).toMatchObject({ status: 'novo' });
+    expect(await get('membro-a', `notifications?select=id&dedupe_key=eq.visitante:${v.id}`)).toHaveLength(1);
+    expect(await get('lider-a', `notifications?select=id&dedupe_key=eq.visitante:${v.id}`)).toEqual([]);
+    expect(await get('lider-a', `visitors?select=id&id=eq.${v.id}`)).toHaveLength(1); // a liderança continua vendo
+    expect(await get('adm-b', `visitors?select=id&id=eq.${v.id}`)).toEqual([]);
+
+    const patch = await api.patch(rest(`visitors?id=eq.${v.id}`), { headers: returning(as['membro-a'].headers), data: { status: 'contatado', notes: 'Liguei' } });
+    expect(await patch.text()).toContain('contatado');
+    const del = await api.delete(rest(`visitors?id=eq.${v.id}`), { headers: returning(as['membro-a'].headers) });
+    expect(await del.text()).not.toContain(v.id);
+    expect((await rpc('membro-a', 'visitor_to_member', { p_visitor: v.id })).ok()).toBe(false);
+
+    // Fora da equipe, não vê mais.
+    await api.delete(rest(`ministries?id=eq.${acolhimento.id}`), { headers: as['lider-a'].headers });
+    expect(await get('membro-a', `visitors?select=id&id=eq.${v.id}`)).toEqual([]);
+    expect(await get('membro-a', `members?select=visitor_team&user_id=eq.${as['membro-a'].id}`)).toEqual([{ visitor_team: false }]);
+  });
+});
