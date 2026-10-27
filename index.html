@@ -17,6 +17,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Igreja Conecta">
   <link rel="stylesheet" href="css/style.css">
+  <script src="js/tema.js"></script>
   <!-- Abre as conexões e pede os arquivos do app de uma vez, em vez de um depois do outro.
        O endereço do Supabase é o mesmo de js/config.js. -->
   <link rel="preconnect" href="https://lmukzyonnggwwwjrfywy.supabase.co" crossorigin>
@@ -39,6 +40,7 @@
       <span id="app-name">Igreja Conecta</span>
     </a>
     <div class="top-actions">
+      <button type="button" id="theme-btn" class="notif-link theme-btn" aria-label="Trocar o tema"></button>
       <a href="#/chat" id="chat-link" class="notif-link" aria-label="Conversas" hidden>
         <svg viewBox="0 0 24 24"><path d="M4 5.5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>
         <span id="chat-badge" class="notif-badge" hidden></span>
