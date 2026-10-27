@@ -222,6 +222,8 @@ if (backlog > 0) {
 
 await rpc('clean_message_log');
 await rpc('clean_notifications');
+// Visitantes que não viraram membros saem depois de 12 meses (LGPD).
+await rpc('clean_visitors');
 
 // Só números: nada de nome ou endereço de aparelho no registro público do GitHub.
 console.log(`Aniversários e datas especiais: ${inApp} na central do app, ${stats.push} push, ${stats.email} e-mail(s), ${backlog} e-mail(s) para amanhã, ${stats.gone} aparelho(s) removido(s), ${stats.failed} falha(s).`);

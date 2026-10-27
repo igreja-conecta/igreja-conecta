@@ -57,6 +57,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `010_celulas.sql` | Células e pequenos grupos: participantes, líder e auxiliar (qualquer pessoa do cadastro), encontros com lista de presença e visitantes, frequência e membros sem célula |
 | `011_mapa.sql` | Local exato no mapa (alfinete) no endereço da igreja, nos eventos e nas células; o app mostra o mapa (OpenStreetMap) e a rota no Google Maps e no Waze |
 | `012_seguranca.sql` | Reforços do scan de segurança: links das redes sociais, logo e imagens só com https://; notificações só para os serviços de push conhecidos; funções de gatilho fechadas |
+| `013_visitantes.sql` | Cadastro de visitantes pelo QR Code (sem login, com limite de envios e autorização), aviso para a liderança, acompanhamento, "cadastrar como membro" e limpeza em 12 meses |
 
 ## Contas de teste
 

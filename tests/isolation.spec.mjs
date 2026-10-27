@@ -2,7 +2,7 @@
 // Cada tentativa de ler ou mexer na outra igreja (ou de passar do próprio papel) precisa falhar.
 // Contas: supabase/002_igrejas_de_teste.sql + supabase/usuarios-de-teste.local.sql.
 import { test, expect } from '@playwright/test';
-import { SUPABASE_URL, rest, configured, testPassword, loginAs, assertCleanTestChurches } from './helpers.mjs';
+import { SUPABASE_URL, ANON_KEY, rest, configured, testPassword, loginAs, assertCleanTestChurches } from './helpers.mjs';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -820,5 +820,86 @@ test.describe('Reforços de segurança (012)', () => {
     } finally {
       await patch({ social: before.social, logo_url: before.logo_url });
     }
+  });
+});
+
+test.describe('Visitantes (013)', () => {
+  const tag = `Visitante ${Date.now().toString(36)}`;
+  const anon = { apikey: ANON_KEY, 'Content-Type': 'application/json' };
+  const register = (data, h = anon) =>
+    api.post(rest('rpc/register_visitor'), {
+      headers: h,
+      data: { p_church: church.a, p_name: tag, p_phone: '5561999990009', p_email: null, p_first_time: true, p_source: 'amigos', p_wants_contact: true, p_message: 'Oração pela família', p_consent: true, ...data },
+    });
+  const mine = `visitors?select=id,name,status,notes,member_id&name=like.${encodeURIComponent(tag)}*`;
+
+  test.afterEach(async () => {
+    for (const v of await get('adm-a', mine)) {
+      if (v.member_id) await api.delete(rest(`members?id=eq.${v.member_id}`), { headers: as['adm-a'].headers });
+      await api.delete(rest(`visitors?id=eq.${v.id}`), { headers: as['adm-a'].headers });
+    }
+  });
+
+  test('quem não tem conta se cadastra; só a liderança da igreja lê, e ela recebe o aviso', async () => {
+    const res = await register({});
+    expect(res.ok(), await res.text()).toBe(true);
+    const [v] = await get('lider-a', mine);
+    expect(v).toMatchObject({ name: tag, status: 'novo' });
+    for (const who of ['membro-a', 'adm-b', 'sem-igreja']) expect(await get(who, mine), who).toEqual([]);
+    const outside = await api.get(rest(mine), { headers: anon });
+    if (outside.ok()) expect(await outside.json()).toEqual([]);
+    const [n] = await get('lider-a', `notifications?select=title,body,url&dedupe_key=eq.visitante:${v.id}`);
+    expect(n).toMatchObject({ title: `Novo visitante: ${tag.split(' ')[0]}`, url: `#/visitantes/${v.id}` });
+    expect(n.body).not.toContain('Oração');
+    expect(await get('membro-a', `notifications?select=id&dedupe_key=eq.visitante:${v.id}`)).toEqual([]);
+  });
+
+  test('sem autorização não grava; o robô (campo escondido) não grava; ninguém grava direto na tabela', async () => {
+    expect((await register({ p_consent: false })).ok()).toBe(false);
+    expect((await register({ p_website: 'http://spam' })).ok()).toBe(true);
+    expect((await register({ p_name: 'x' })).ok()).toBe(false);
+    expect(await get('lider-a', mine)).toEqual([]);
+    const direct = await api.post(rest('visitors'), {
+      headers: as['lider-a'].headers,
+      data: { church_id: church.a, name: tag, consent_at: new Date().toISOString() },
+    });
+    expect(direct.ok()).toBe(false);
+  });
+
+  test('a liderança acompanha e cadastra como membro; o membro comum e a outra igreja, não', async () => {
+    await register({ p_email: `${Date.now().toString(36)}@visitante.invalid` });
+    const [v] = await get('lider-a', mine);
+    const patch = (who, data) => api.patch(rest(`visitors?id=eq.${v.id}`), { headers: returning(as[who].headers), data });
+    expect(await (await patch('membro-a', { status: 'contatado' })).text()).not.toContain(v.id);
+    expect(await (await patch('adm-b', { status: 'contatado' })).text()).not.toContain(v.id);
+    expect((await patch('lider-a', { name: 'Outro nome' })).ok()).toBe(false); // só situação e anotações
+    const ok = await patch('lider-a', { status: 'acompanhando', notes: 'Liguei, vem domingo' });
+    expect(ok.ok(), await ok.text()).toBe(true);
+    expect((await rpc('membro-a', 'visitor_to_member', { p_visitor: v.id })).ok()).toBe(false);
+    expect((await rpc('adm-b', 'visitor_to_member', { p_visitor: v.id })).ok()).toBe(false);
+    const made = await rpc('lider-a', 'visitor_to_member', { p_visitor: v.id });
+    expect(made.ok(), await made.text()).toBe(true);
+    const memberId = await made.json();
+    expect(await get('lider-a', `members?select=name,role,phone&id=eq.${memberId}`)).toEqual([{ name: tag, role: 'membro', phone: '5561999990009' }]);
+    expect((await get('lider-a', mine))[0]).toMatchObject({ status: 'membro', member_id: memberId });
+  });
+
+  test('com a funcionalidade desligada, o cadastro não abre; a limpeza pede a senha', async () => {
+    const res = await api.post(rest('rpc/register_visitor'), {
+      headers: anon,
+      data: { p_church: church.b, p_name: tag, p_phone: null, p_email: null, p_first_time: true, p_source: null, p_wants_contact: true, p_message: null, p_consent: true },
+    });
+    // A Teste B tem a funcionalidade ligada: desliga só para este teste.
+    expect(res.ok(), await res.text()).toBe(true);
+    await api.delete(rest(`visitors?name=eq.${encodeURIComponent(tag)}`), { headers: as['adm-b'].headers });
+    const [b] = await get('adm-b', `churches?select=features&id=eq.${church.b}`);
+    const setFeatures = (features) => api.patch(rest(`churches?id=eq.${church.b}`), { headers: as['adm-b'].headers, data: { features } });
+    expect((await setFeatures({ ...b.features, visitantes: false })).ok()).toBe(true);
+    try {
+      expect((await api.post(rest('rpc/register_visitor'), { headers: anon, data: { p_church: church.b, p_name: tag, p_phone: null, p_email: null, p_first_time: true, p_source: null, p_wants_contact: true, p_message: null, p_consent: true } })).ok()).toBe(false);
+    } finally {
+      await setFeatures(b.features);
+    }
+    expect((await rpc('adm-a', 'clean_visitors', { p_secret: 'errada' })).ok()).toBe(false);
   });
 });

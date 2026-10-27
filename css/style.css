@@ -438,3 +438,13 @@ select:disabled, input:disabled { opacity: .65; }
   background: var(--line); transition: width .2s, background .2s;
 }
 .carousel-dots button[aria-current="true"] { width: 22px; background: var(--brand); }
+
+/* ---------- Visitantes ---------- */
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.visitor-qr h1, .visitor-qr > p { text-align: center; }
+.visitor-qr .qr { width: min(80vw, 360px); margin: 16px auto; background: #fff; padding: 12px; border-radius: var(--radius); }
+.visitor-qr .qr svg { display: block; width: 100%; height: auto; }
+@media print {
+  .visitor-qr h1 { font-size: 2.4rem; }
+  .visitor-qr .qr { width: 70%; }
+}
