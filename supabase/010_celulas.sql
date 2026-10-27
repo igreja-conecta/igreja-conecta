@@ -136,8 +136,10 @@ revoke all on public.cell_members from anon;
 revoke update on public.cell_members from authenticated;
 grant update (role) on public.cell_members to authenticated;
 
+-- security definer: o líder da célula (membro comum) não lê o cadastro dos outros, mas a
+-- conferência da igreja precisa ler.
 create or replace function public.cell_members_guard()
-returns trigger language plpgsql set search_path = '' as $$
+returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   if not exists (
     select 1 from public.cells c join public.members m on m.church_id = c.church_id
@@ -145,7 +147,7 @@ begin
   ) then
     raise exception 'A pessoa precisa ser do cadastro da mesma igreja.' using errcode = '42501';
   end if;
-  if current_user in ('authenticated', 'anon') and new.role <> 'participante'
+  if auth.uid() is not null and new.role <> 'participante'
      and not exists (select 1 from public.cells c where c.id = new.cell_id and public.is_leader(c.church_id)) then
     raise exception 'Só a liderança da igreja escolhe o líder e o auxiliar da célula.' using errcode = '42501';
   end if;

@@ -256,19 +256,29 @@ test.describe('Cadastro de membros (003)', () => {
   });
 
   test('só o administrador da própria igreja desliga uma conta, e a pessoa volta ao aceitar de novo', async () => {
-    const me = await memberOf('membro-a');
-    for (const who of ['lider-a', 'adm-b', 'membro-a']) {
-      expect((await rpc(who, 'unlink_member_account', { p_member: me.id })).ok(), who).toBe(false);
-    }
-    expect((await rpc('adm-a', 'unlink_member_account', { p_member: me.id })).ok()).toBe(true);
+    // Usa a conta "sem-igreja" num cadastro temporário: desligar o "membro-a" derrubaria os
+    // testes de tela que rodam ao mesmo tempo com ele.
+    const created = await api.post(rest('members'), {
+      headers: returning(as['lider-a'].headers),
+      data: { church_id: church.a, name: 'Temporário do desligar', email: 'sem-igreja@teste.igrejaconecta.invalid' },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    const [me] = await created.json();
     try {
-      expect(await (await rpc('membro-a', 'my_church_ids')).json()).toEqual([]);
-    } finally {
+      expect(await (await rpc('sem-igreja', 'link_my_account')).json()).toBe(1);
+      expect((await rpc('sem-igreja', 'respond_to_church', { p_church: church.a, p_accept: true })).ok()).toBe(true);
+      for (const who of ['lider-a', 'adm-b', 'sem-igreja']) {
+        expect((await rpc(who, 'unlink_member_account', { p_member: me.id })).ok(), who).toBe(false);
+      }
+      expect((await rpc('adm-a', 'unlink_member_account', { p_member: me.id })).ok()).toBe(true);
+      expect(await (await rpc('sem-igreja', 'my_church_ids')).json()).toEqual([]);
       // Entrar de novo liga a conta; aceitar o convite devolve o acesso.
-      expect(await (await rpc('membro-a', 'link_my_account')).json()).toBe(1);
-      expect((await rpc('membro-a', 'respond_to_church', { p_church: church.a, p_accept: true })).ok()).toBe(true);
+      expect(await (await rpc('sem-igreja', 'link_my_account')).json()).toBe(1);
+      expect((await rpc('sem-igreja', 'respond_to_church', { p_church: church.a, p_accept: true })).ok()).toBe(true);
+      expect(await (await rpc('sem-igreja', 'my_church_ids')).json()).toEqual([church.a]);
+    } finally {
+      await api.delete(rest(`members?id=eq.${me.id}`), { headers: as['adm-a'].headers });
     }
-    expect(await (await rpc('membro-a', 'my_church_ids')).json()).toEqual([church.a]);
   });
 
   test('o último administrador não é desligado', async () => {
