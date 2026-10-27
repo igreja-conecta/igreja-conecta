@@ -1275,3 +1275,117 @@ test.describe('Inscrição em eventos (016)', () => {
     expect((await rpc('adm-a', 'claim_registration_emails', { p_secret: 'errada' })).ok()).toBe(false);
   });
 });
+
+test.describe('Check-in do ministério infantil (017)', () => {
+  const tag = `Crianca ${Date.now().toString(36)}`;
+  const ids = {};
+  const child = (who, data) => api.post(rest('children'), { headers: returning(as[who].headers), data: { church_id: church.a, ...data } });
+  const roster = async (who) => (await (await rpc(who, 'kids_roster', { p_church: church.a })).json()).filter((k) => k.name.startsWith(tag));
+
+  test.beforeAll(async () => {
+    const people = await get('lider-a', 'members?select=id,name&name=in.("Membro da A","Fulano da A")');
+    ids.membro = people.find((p) => p.name === 'Membro da A').id;
+    ids.fulano = people.find((p) => p.name === 'Fulano da A').id;
+  });
+
+  test.afterAll(async () => {
+    if (!api) return;
+    await api.delete(rest(`children?name=like.${encodeURIComponent(tag)}*`), { headers: as['lider-a'].headers });
+    await api.delete(rest(`ministries?name=like.${encodeURIComponent(tag)}*`), { headers: as['lider-a'].headers });
+  });
+
+  test('o responsável cadastra o filho; só ele, a equipe e a liderança veem; a outra igreja, não', async () => {
+    const made = await child('membro-a', { name: `${tag} Ana`, birth_date: '2019-03-10', care_notes: 'Alergia a amendoim', guardian_member_id: ids.membro });
+    expect(made.ok(), await made.text()).toBe(true);
+    ids.ana = (await made.json())[0].id;
+    // Não cadastra filho em nome de outra pessoa, nem criança "de recepção" sem ser da equipe.
+    expect((await child('membro-a', { name: `${tag} Outro`, guardian_member_id: ids.fulano })).ok()).toBe(false);
+    expect((await child('membro-a', { name: `${tag} Recepção`, guardian_name: 'Maria' })).ok()).toBe(false);
+    expect((await child('adm-b', { name: `${tag} B`, guardian_name: 'Maria' })).ok()).toBe(false);
+
+    const sees = async (who) => (await get(who, `children?select=name&id=eq.${ids.ana}`)).length;
+    expect(await sees('membro-a')).toBe(1);
+    expect(await sees('lider-a')).toBe(1);
+    for (const who of ['adm-b', 'sem-igreja']) expect(await sees(who), who).toBe(0);
+    expect((await roster('lider-a')).map((k) => k.guardian)).toEqual(['Membro da A']);
+    for (const who of ['membro-a', 'adm-b']) expect(await roster(who), who).toEqual([]);
+    // Ninguém troca o responsável.
+    const moved = await api.patch(rest(`children?id=eq.${ids.ana}`), { headers: as['lider-a'].headers, data: { guardian_member_id: ids.fulano } });
+    expect(moved.ok()).toBe(false);
+  });
+
+  test('só a equipe faz a entrada; a retirada só sai com o código certo', async () => {
+    const checkin = (who) => rpc(who, 'kids_checkin', { p_child: ids.ana, p_room: 'Kids' });
+    for (const who of ['membro-a', 'adm-b']) expect((await checkin(who)).ok(), who).toBe(false);
+    const res = await checkin('lider-a');
+    expect(res.ok(), await res.text()).toBe(true);
+    const [{ checkin_id, code, room_name }] = await res.json();
+    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{4}$/);
+    expect(room_name).toBe('Kids');
+    expect((await checkin('lider-a')).ok()).toBe(false); // já está no infantil
+    expect((await api.post(rest('kids_checkins'), { headers: as['lider-a'].headers, data: { church_id: church.a, child_id: ids.ana, code: 'AAAA' } })).ok()).toBe(false);
+
+    // O responsável vê a entrada com o código e recebe o aviso; a outra igreja não vê nada.
+    expect(await get('membro-a', `kids_checkins?select=code&child_id=eq.${ids.ana}`)).toEqual([{ code }]);
+    expect(await get('adm-b', `kids_checkins?select=code&child_id=eq.${ids.ana}`)).toEqual([]);
+    const [n] = await get('membro-a', `notifications?select=body&dedupe_key=eq.infantil:${checkin_id}:entrada`);
+    expect(n.body).toContain(code);
+
+    const lookup = async (who, c) => (await (await rpc(who, 'kids_lookup_code', { p_church: church.a, p_code: c })).json()).map((x) => x.checkin_id);
+    expect(await lookup('lider-a', code.toLowerCase())).toEqual([checkin_id]);
+    for (const who of ['membro-a', 'adm-b']) expect(await lookup(who, code), who).toEqual([]);
+
+    const out = (who, c) => rpc(who, 'kids_checkout', { p_checkin: checkin_id, p_code: c });
+    const wrong = await out('lider-a', code === 'ZZZZ' ? 'YYYY' : 'ZZZZ');
+    expect(wrong.ok()).toBe(false);
+    expect(await wrong.text()).toContain('não confere');
+    expect((await out('membro-a', code)).ok()).toBe(false);
+    const ok = await out('lider-a', code);
+    expect(ok.ok(), await ok.text()).toBe(true);
+    expect((await out('lider-a', code)).ok()).toBe(false); // já foi retirado
+    expect(await get('membro-a', `notifications?select=id&dedupe_key=eq.infantil:${checkin_id}:saida`)).toHaveLength(1);
+  });
+
+  test('a equipe do ministério marcado faz o check-in e cadastra na recepção; desmarcado, não faz mais', async () => {
+    const made = await api.post(rest('ministries'), { headers: returning(as['lider-a'].headers), data: { church_id: church.a, name: `${tag} Infantil`, kids_checkin: true } });
+    expect(made.ok(), await made.text()).toBe(true);
+    const [mi] = await made.json();
+    const second = await api.post(rest('ministries'), { headers: as['lider-a'].headers, data: { church_id: church.a, name: `${tag} Outro`, kids_checkin: true } });
+    expect(second.ok()).toBe(false); // só um por igreja
+    const team = await api.post(rest('ministry_members'), { headers: as['lider-a'].headers, data: { ministry_id: mi.id, member_id: ids.membro } });
+    expect(team.ok(), await team.text()).toBe(true);
+    expect(await get('membro-a', `members?select=kids_team&user_id=eq.${as['membro-a'].id}`)).toEqual([{ kids_team: true }]);
+
+    const desk = await child('membro-a', { name: `${tag} Recepção`, guardian_name: 'Maria Visitante', guardian_phone: '5561999990007' });
+    expect(desk.ok(), await desk.text()).toBe(true);
+    const [{ id: deskId }] = await desk.json();
+    expect((await roster('membro-a')).map((k) => k.name).sort()).toEqual([`${tag} Ana`, `${tag} Recepção`]);
+    const res = await rpc('membro-a', 'kids_checkin', { p_child: deskId, p_room: null });
+    expect(res.ok(), await res.text()).toBe(true);
+    // Apagar a criança: só o responsável ou a liderança.
+    const del = await api.delete(rest(`children?id=eq.${deskId}`), { headers: returning(as['membro-a'].headers) });
+    expect(await del.text()).not.toContain(deskId);
+
+    await api.delete(rest(`ministries?id=eq.${mi.id}`), { headers: as['lider-a'].headers });
+    expect(await roster('membro-a')).toEqual([]);
+    expect((await rpc('membro-a', 'kids_checkin', { p_child: deskId, p_room: null })).ok()).toBe(false);
+  });
+
+  test('os filhos entram nos próprios dados; as salas são da liderança; a limpeza pede a senha', async () => {
+    const data = await (await rpc('membro-a', 'export_my_data')).json();
+    const ana = data.filhos.find((k) => k.nome === `${tag} Ana`);
+    expect(ana).toMatchObject({ alergias_e_cuidados: 'Alergia a amendoim' });
+    expect(ana.entradas_no_infantil).toHaveLength(1);
+
+    const roomName = `${tag} Sala`;
+    expect((await api.post(rest('kids_rooms'), { headers: as['membro-a'].headers, data: { church_id: church.a, name: roomName } })).ok()).toBe(false);
+    expect((await api.post(rest('kids_rooms'), { headers: as['adm-b'].headers, data: { church_id: church.a, name: roomName } })).ok()).toBe(false);
+    const room = await api.post(rest('kids_rooms'), { headers: returning(as['lider-a'].headers), data: { church_id: church.a, name: roomName, min_age: 3, max_age: 5 } });
+    expect(room.ok(), await room.text()).toBe(true);
+    const [{ id: roomId }] = await room.json();
+    expect(await get('membro-a', `kids_rooms?select=name&id=eq.${roomId}`)).toEqual([{ name: roomName }]);
+    expect(await get('adm-b', `kids_rooms?select=name&id=eq.${roomId}`)).toEqual([]);
+    await api.delete(rest(`kids_rooms?id=eq.${roomId}`), { headers: as['lider-a'].headers });
+    expect((await rpc('adm-a', 'clean_kids', { p_secret: 'errada' })).ok()).toBe(false);
+  });
+});

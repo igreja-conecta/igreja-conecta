@@ -85,7 +85,7 @@ export const FEATURES = [
   { key: 'visitantes', label: 'Cadastro de visitantes', phase: 2 },
   { key: 'celulas', label: 'Células e pequenos grupos', phase: 3 },
   { key: 'inscricoes', label: 'Inscrições em eventos', phase: 3 },
-  { key: 'infantil', label: 'Check-in do ministério infantil', phase: 3, soon: true },
+  { key: 'infantil', label: 'Check-in do ministério infantil', phase: 3 },
   { key: 'carteirinha', label: 'Carteirinha digital', phase: 3, soon: true },
   { key: 'relatorios', label: 'Relatórios', phase: 3, soon: true },
   { key: 'galeria', label: 'Galeria de fotos', phase: 3, soon: true },

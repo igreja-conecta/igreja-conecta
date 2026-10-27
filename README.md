@@ -61,6 +61,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `014_devocional.sql` | Devocional do dia (agendado, com Amém e aviso às 7h), planos de leitura da Bíblia com o progresso de cada um, tradução da Bíblia da igreja |
 | `015_escalas.sql` | Ministérios e escalas: equipe e líder (qualquer pessoa do cadastro), escalas com função, confirmar ou pedir troca, aviso ao ser escalado e lembrete na véspera; o ministério de Acolhimento recebe os avisos de visitantes |
 | `016_inscricoes.sql` | Inscrição em eventos: vagas, prazo, lista de espera que anda sozinha, cancelar, lista de inscritos e planilha para a liderança, e-mail de confirmação dentro do limite diário |
+| `017_infantil.sql` | Check-in do ministério infantil: filhos cadastrados pelo responsável (ou na recepção), salas por idade, entrada com código de retirada sorteado pelo banco, etiquetas, retirada só com o código, avisos ao responsável e limpeza em 12 meses |
 
 ## Contas de teste
 
