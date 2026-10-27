@@ -54,6 +54,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `007_relogio.sql` | Relógio do Supabase: manda o GitHub rodar os lembretes (a cada 10 min) e os aniversários (7h) na hora certa, e publicar o site quando uma igreja muda nome ou ícone. Precisa do segredo `github_token` no Vault |
 | `008_datas_especiais.sql` | Aniversário de casamento e de batismo: datas no cadastro, mensagens próprias com `{anos}`, envio às 7h junto com os aniversários, resumo da liderança e lista do mês |
 | `009_oracao.sql` | Pedidos de oração: só para os pastores (administrador e líderes) ou para o mural da igreja com aprovação, anônimo opcional, "Estou orando", avisos na central e por push |
+| `010_celulas.sql` | Células e pequenos grupos: participantes, líder e auxiliar (qualquer pessoa do cadastro), encontros com lista de presença e visitantes, frequência e membros sem célula |
 
 ## Contas de teste
 

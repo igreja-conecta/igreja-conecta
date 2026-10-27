@@ -256,19 +256,29 @@ test.describe('Cadastro de membros (003)', () => {
   });
 
   test('só o administrador da própria igreja desliga uma conta, e a pessoa volta ao aceitar de novo', async () => {
-    const me = await memberOf('membro-a');
-    for (const who of ['lider-a', 'adm-b', 'membro-a']) {
-      expect((await rpc(who, 'unlink_member_account', { p_member: me.id })).ok(), who).toBe(false);
-    }
-    expect((await rpc('adm-a', 'unlink_member_account', { p_member: me.id })).ok()).toBe(true);
+    // Usa a conta "sem-igreja" num cadastro temporário: desligar o "membro-a" derrubaria os
+    // testes de tela que rodam ao mesmo tempo com ele.
+    const created = await api.post(rest('members'), {
+      headers: returning(as['lider-a'].headers),
+      data: { church_id: church.a, name: 'Temporário do desligar', email: 'sem-igreja@teste.igrejaconecta.invalid' },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    const [me] = await created.json();
     try {
-      expect(await (await rpc('membro-a', 'my_church_ids')).json()).toEqual([]);
-    } finally {
+      expect(await (await rpc('sem-igreja', 'link_my_account')).json()).toBe(1);
+      expect((await rpc('sem-igreja', 'respond_to_church', { p_church: church.a, p_accept: true })).ok()).toBe(true);
+      for (const who of ['lider-a', 'adm-b', 'sem-igreja']) {
+        expect((await rpc(who, 'unlink_member_account', { p_member: me.id })).ok(), who).toBe(false);
+      }
+      expect((await rpc('adm-a', 'unlink_member_account', { p_member: me.id })).ok()).toBe(true);
+      expect(await (await rpc('sem-igreja', 'my_church_ids')).json()).toEqual([]);
       // Entrar de novo liga a conta; aceitar o convite devolve o acesso.
-      expect(await (await rpc('membro-a', 'link_my_account')).json()).toBe(1);
-      expect((await rpc('membro-a', 'respond_to_church', { p_church: church.a, p_accept: true })).ok()).toBe(true);
+      expect(await (await rpc('sem-igreja', 'link_my_account')).json()).toBe(1);
+      expect((await rpc('sem-igreja', 'respond_to_church', { p_church: church.a, p_accept: true })).ok()).toBe(true);
+      expect(await (await rpc('sem-igreja', 'my_church_ids')).json()).toEqual([church.a]);
+    } finally {
+      await api.delete(rest(`members?id=eq.${me.id}`), { headers: as['adm-a'].headers });
     }
-    expect(await (await rpc('membro-a', 'my_church_ids')).json()).toEqual([church.a]);
   });
 
   test('o último administrador não é desligado', async () => {
@@ -659,5 +669,135 @@ test.describe('Pedidos de oração (009)', () => {
     expect(data.pedidos_de_oracao.map((p) => p.pedido)).toContain(`Exportado ${tag}`);
     expect(JSON.stringify((await (await rpc('lider-a', 'export_my_data')).json()).pedidos_de_oracao)).not.toContain(tag);
     expect((await rpc('adm-a', 'claim_notification_push', { p_secret: 'errada' })).ok()).toBe(false);
+  });
+});
+
+test.describe('Células (010)', () => {
+  // "membro-a" lidera uma célula (sem ser da liderança da igreja) e é só participante de outra.
+  const tag = `Célula ${Date.now().toString(36)}`;
+  const id = {}; // cadastros usados
+  const cell = {}; // led: a que membro-a lidera; joined: a que membro-a só participa
+  const members = (who, data) => api.post(rest('cell_members'), { headers: returning(as[who].headers), data });
+  const roster = async (who, c) => (await rpc(who, 'cell_roster', { p_cell: c })).json();
+  // Encontros de hoje e de amanhã (horário de Brasília): depois da entrada das pessoas na célula.
+  const brDay = (plus) => new Date(Date.now() + plus * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const day1 = brDay(0);
+  const day2 = brDay(1);
+  const meeting = (who, c, present, date = day1) =>
+    rpc(who, 'save_cell_meeting', { p_cell: c, p_date: date, p_topic: 'Tema', p_notes: null, p_visitors: 2, p_present: present });
+
+  test.beforeAll(async () => {
+    const people = await get('lider-a', 'members?select=id,name&name=in.("Membro da A","Fulano da A","Bissexto da A")');
+    for (const p of people) id[p.name] = p.id;
+    [{ id: id['Fulano da B'] }] = await get('adm-b', 'members?select=id&name=eq.Fulano da B');
+    for (const k of ['led', 'joined']) {
+      const res = await api.post(rest('cells'), {
+        headers: returning(as['lider-a'].headers),
+        data: { church_id: church.a, name: `${tag} ${k}`, weekday: 3, meets_at: '19:30' },
+      });
+      expect(res.ok(), await res.text()).toBe(true);
+      [{ id: cell[k] }] = await res.json();
+    }
+    for (const [c, member, role] of [
+      [cell.led, id['Membro da A'], 'lider'],
+      [cell.led, id['Fulano da A'], 'participante'],
+      [cell.joined, id['Membro da A'], 'participante'],
+      [cell.joined, id['Fulano da A'], 'lider'],
+    ]) {
+      const res = await members('lider-a', { cell_id: c, member_id: member, role });
+      expect(res.ok(), await res.text()).toBe(true);
+    }
+  });
+
+  test.afterAll(async () => {
+    await api.delete(rest(`cells?name=like.*${encodeURIComponent(tag)}*`), { headers: as['lider-a'].headers });
+  });
+
+  test('a liderança cria células; o membro comum e a outra igreja não criam nem veem as dos outros', async () => {
+    expect((await api.post(rest('cells'), { headers: as['membro-a'].headers, data: { church_id: church.a, name: `${tag} intrusa` } })).ok()).toBe(false);
+    expect((await api.post(rest('cells'), { headers: as['adm-b'].headers, data: { church_id: church.a, name: `${tag} intrusa` } })).ok()).toBe(false);
+    expect(await get('adm-b', `cells?select=id&id=in.(${cell.led},${cell.joined})`)).toEqual([]);
+    expect(await get('adm-b', `cell_members?select=member_id&cell_id=eq.${cell.led}`)).toEqual([]);
+    expect(await roster('adm-b', cell.led)).toEqual([]);
+    // O membro vê só as células de que participa.
+    expect((await get('membro-a', `cells?select=id&name=like.*${encodeURIComponent(tag)}*`)).map((c) => c.id).sort()).toEqual([cell.led, cell.joined].sort());
+    const [other] = await (await api.post(rest('cells'), { headers: returning(as['lider-a'].headers), data: { church_id: church.a, name: `${tag} outra` } })).json();
+    expect(await get('membro-a', `cells?select=id&id=eq.${other.id}`)).toEqual([]);
+    expect(await roster('membro-a', other.id)).toEqual([]);
+  });
+
+  test('o participante vê os outros sem o telefone de quem não autorizou, e não vê presença nem encontros', async () => {
+    const list = await roster('membro-a', cell.joined);
+    expect(list.map((p) => p.name).sort()).toEqual(['Fulano da A', 'Membro da A']);
+    const fulano = list.find((p) => p.name === 'Fulano da A');
+    expect(fulano).toMatchObject({ role: 'lider', phone: null, misses: null, last_present: null });
+    expect((await meeting('membro-a', cell.joined, [id['Membro da A']])).ok()).toBe(false);
+    expect(await get('membro-a', `cell_meetings?select=id&cell_id=eq.${cell.joined}`)).toEqual([]);
+    expect((await members('membro-a', { cell_id: cell.joined, member_id: id['Bissexto da A'] })).ok()).toBe(false);
+    expect(await (await rpc('membro-a', 'cell_candidates', { p_cell: cell.joined, p_search: 'Bissexto' })).json()).toEqual([]);
+  });
+
+  test('o líder da célula registra a presença (só de quem é da célula) e vê as faltas seguidas', async () => {
+    const res = await meeting('membro-a', cell.led, [id['Membro da A'], id['Fulano da B']], day1);
+    expect(res.ok(), await res.text()).toBe(true);
+    const meetingId = await res.json();
+    expect((await meeting('membro-a', cell.led, [id['Membro da A']], day2)).ok()).toBe(true);
+    const present = await get('membro-a', `cell_attendance?select=member_id&meeting_id=eq.${meetingId}`);
+    expect(present.map((p) => p.member_id)).toEqual([id['Membro da A']]); // a pessoa da outra igreja foi ignorada
+    const list = await roster('membro-a', cell.led);
+    expect(list.find((p) => p.name === 'Fulano da A')).toMatchObject({ misses: 2, last_present: null, phone: '5561999990001' });
+    expect(list.find((p) => p.name === 'Membro da A')).toMatchObject({ misses: 0, last_present: day2, is_me: true });
+    // Corrigir o mesmo dia troca a lista de presença.
+    expect((await meeting('membro-a', cell.led, [id['Fulano da A']], day2)).ok()).toBe(true);
+    expect((await roster('lider-a', cell.led)).find((p) => p.name === 'Fulano da A')).toMatchObject({ misses: 0, last_present: day2 });
+    // A outra igreja não lê nem grava.
+    expect(await get('adm-b', `cell_meetings?select=id&cell_id=eq.${cell.led}`)).toEqual([]);
+    expect(await get('adm-b', `cell_attendance?select=member_id&meeting_id=eq.${meetingId}`)).toEqual([]);
+    expect((await meeting('adm-b', cell.led, [])).ok()).toBe(false);
+    expect((await api.post(rest('cell_attendance'), { headers: as['membro-a'].headers, data: { meeting_id: meetingId, member_id: id['Fulano da A'] } })).ok()).toBe(false);
+  });
+
+  test('o líder da célula coloca e tira participantes, mas não escolhe líderes', async () => {
+    const found = await (await rpc('membro-a', 'cell_candidates', { p_cell: cell.led, p_search: 'bissexto' })).json();
+    expect(found).toEqual([{ member_id: id['Bissexto da A'], name: 'Bissexto da A' }]);
+    expect(await (await rpc('membro-a', 'cell_candidates', { p_cell: cell.led, p_search: 'Fulano' })).json()).toEqual([]); // já está
+    expect((await members('membro-a', { cell_id: cell.led, member_id: id['Bissexto da A'], role: 'auxiliar' })).ok()).toBe(false);
+    expect((await members('membro-a', { cell_id: cell.led, member_id: id['Bissexto da A'] })).ok()).toBe(true);
+    const promote = await api.patch(rest(`cell_members?cell_id=eq.${cell.led}&member_id=eq.${id['Bissexto da A']}`), {
+      headers: returning(as['membro-a'].headers),
+      data: { role: 'lider' },
+    });
+    if (promote.ok()) expect(await promote.json()).toEqual([]);
+    const removed = await api.delete(rest(`cell_members?cell_id=eq.${cell.led}&member_id=eq.${id['Bissexto da A']}`), {
+      headers: returning(as['membro-a'].headers),
+    });
+    expect(await removed.json()).toHaveLength(1);
+    // O líder não tira a si mesmo (o papel de líder é da liderança da igreja).
+    const self = await api.delete(rest(`cell_members?cell_id=eq.${cell.led}&member_id=eq.${id['Membro da A']}`), {
+      headers: returning(as['membro-a'].headers),
+    });
+    expect(await self.json()).toEqual([]);
+    // Ninguém coloca na célula uma pessoa de outra igreja.
+    expect((await members('lider-a', { cell_id: cell.led, member_id: id['Fulano da B'] })).ok()).toBe(false);
+    expect((await members('adm-b', { cell_id: cell.led, member_id: id['Fulano da B'] })).ok()).toBe(false);
+  });
+
+  test('com a funcionalidade desligada, ninguém cria células', async () => {
+    const [b] = await get('adm-b', `churches?select=features&id=eq.${church.b}`);
+    const setFeatures = (features) => api.patch(rest(`churches?id=eq.${church.b}`), { headers: as['adm-b'].headers, data: { features } });
+    expect((await setFeatures({ ...b.features, celulas: false })).ok()).toBe(true);
+    try {
+      expect((await api.post(rest('cells'), { headers: as['adm-b'].headers, data: { church_id: church.b, name: `${tag} desligada` } })).ok()).toBe(false);
+    } finally {
+      await setFeatures(b.features);
+    }
+  });
+
+  test('as células e as próprias presenças entram no arquivo dos próprios dados', async () => {
+    const data = await (await rpc('membro-a', 'export_my_data')).json();
+    const mine = data.igrejas[0].celulas.filter((c) => c.celula.startsWith(tag));
+    expect(mine.map((c) => c.papel).sort()).toEqual(['lider', 'participante']);
+    expect(mine.find((c) => c.papel === 'lider').presencas).toEqual([day1]);
+    expect(JSON.stringify(data)).not.toContain('Fulano');
   });
 });
