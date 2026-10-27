@@ -191,3 +191,21 @@ test('rota até o local: pelo alfinete ou pelo endereço; on-line não tem rota'
   expect(placeBlock({ lat: null, lng: null, address: 'Templo' })).not.toContain('place-map');
   expect(placeBlock({ lat: 1, lng: 2, address: '' })).toContain('data-lat="1"');
 });
+
+test('regras de segurança das páginas (CSP): os scripts do 404.html batem com a impressão digital', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { createHash } = await import('node:crypto');
+  const page = readFileSync(new URL('../404.html', import.meta.url), 'utf8');
+  const csp = page.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1];
+  for (const [, code] of page.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+    expect(csp).toContain(`'sha256-${createHash('sha256').update(code).digest('base64')}'`);
+  }
+  const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  expect(index).toMatch(/http-equiv="Content-Security-Policy"[^>]*object-src 'none'/);
+  expect(index).not.toMatch(/<script>(?!\s*<\/script>)/); // nenhum script escrito dentro da página
+  // Nem comandos no HTML das telas (onclick="..."): a CSP bloquearia.
+  for (const file of ['app.js', 'map.js', 'install.js', 'push.js', 'pix.js']) {
+    const code = readFileSync(new URL(`../js/${file}`, import.meta.url), 'utf8');
+    expect(code, file).not.toMatch(/\son[a-z]+="/);
+  }
+});

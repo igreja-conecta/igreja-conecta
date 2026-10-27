@@ -340,9 +340,13 @@ test.describe('Aniversários (004)', () => {
   });
 
   test('cada pessoa vê só os próprios aparelhos; o registro de envios não é aberto aos membros', async () => {
-    const endpoint = `https://push.exemplo.invalid/teste-${Date.now()}`;
+    // Endereço com a cara do serviço de push do Chrome (nunca recebe nada: o envio pula as igrejas de teste).
+    const endpoint = `https://fcm.googleapis.com/fcm/send/teste-igreja-conecta-${Date.now()}`;
     const saved = await rpc('membro-a', 'save_push_subscription', { p_endpoint: endpoint, p_p256dh: 'chave', p_auth: 'auth' });
-    expect(saved.ok()).toBe(true);
+    expect(saved.ok(), await saved.text()).toBe(true);
+    // Endereço que não é de um serviço de push: recusado (012).
+    const other = await rpc('membro-a', 'save_push_subscription', { p_endpoint: 'https://atacante.invalid/x', p_p256dh: 'a', p_auth: 'b' });
+    expect(other.ok()).toBe(false);
     const q = `push_subscriptions?select=endpoint&endpoint=eq.${encodeURIComponent(endpoint)}`;
     try {
       expect(await get('membro-a', q)).toHaveLength(1);
@@ -799,5 +803,22 @@ test.describe('Células (010)', () => {
     expect(mine.map((c) => c.papel).sort()).toEqual(['lider', 'participante']);
     expect(mine.find((c) => c.papel === 'lider').presencas).toEqual([day1]);
     expect(JSON.stringify(data)).not.toContain('Fulano');
+  });
+});
+
+test.describe('Reforços de segurança (012)', () => {
+  test('o admin não grava link "javascript:" nas redes sociais nem logo fora do https, nem pela API', async () => {
+    const [before] = await get('adm-a', `churches?select=social,logo_url&id=eq.${church.a}`);
+    const patch = (data) => api.patch(rest(`churches?id=eq.${church.a}`), { headers: returning(as['adm-a'].headers), data });
+    try {
+      for (const bad of ['javascript:alert(document.cookie)', 'JaVaScRiPt:alert(1)', 'http://site.com', 'https://x.com/"><img src=x>', 'data:text/html,oi']) {
+        expect((await patch({ social: { site: bad } })).ok(), bad).toBe(false);
+      }
+      expect((await patch({ logo_url: 'javascript:alert(1)' })).ok()).toBe(false);
+      const ok = await patch({ social: { instagram: 'https://instagram.com/igreja_teste' } });
+      expect(ok.ok(), await ok.text()).toBe(true);
+    } finally {
+      await patch({ social: before.social, logo_url: before.logo_url });
+    }
   });
 });

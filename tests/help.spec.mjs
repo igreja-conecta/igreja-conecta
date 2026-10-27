@@ -1,6 +1,10 @@
 // Tela de Ajuda: cada papel vê os tópicos que fazem sentido para ele (Android).
 import { test, expect } from '@playwright/test';
-import { configured, testPassword, loginAs, openLoggedIn } from './helpers.mjs';
+import { configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations } from './helpers.mjs';
+
+// Nada pode ser bloqueado pela regra de segurança das páginas (CSP).
+test.beforeEach(async ({ page }) => watchCsp(page));
+test.afterEach(async ({ page }) => expect(await cspViolations(page).catch(() => [])).toEqual([]));
 
 const accounts = {};
 

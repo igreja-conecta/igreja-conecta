@@ -81,6 +81,7 @@ export async function assertCleanTestChurches(request, as) {
 // Abre o app já logado com uma conta de teste (a sessão vai onde o supabase-js a guarda).
 export async function openLoggedIn(page, session, url) {
   const ref = new URL(SUPABASE_URL).hostname.split('.')[0];
+  await watchCsp(page);
   await page.addInitScript(
     ([key, value]) => {
       if (!sessionStorage.getItem('__sessao_de_teste')) {
@@ -95,3 +96,12 @@ export async function openLoggedIn(page, session, url) {
   );
   await page.goto(url);
 }
+
+// Anota o que o navegador bloquear pela regra de segurança das páginas (CSP).
+export async function watchCsp(page) {
+  await page.addInitScript(() => {
+    window.__csp = [];
+    document.addEventListener('securitypolicyviolation', (e) => window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`));
+  });
+}
+export const cspViolations = (page) => page.evaluate(() => window.__csp || []);

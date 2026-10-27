@@ -1,7 +1,11 @@
 // Telas de membros com a líder da igreja Teste A logada: lista, busca, cadastro, edição e planilha.
 // Tudo o que o teste cria começa com "UI Teste" e é apagado no fim.
 import { test, expect } from '@playwright/test';
-import { rest, configured, testPassword, loginAs, openLoggedIn } from './helpers.mjs';
+import { rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations } from './helpers.mjs';
+
+// Nada pode ser bloqueado pela regra de segurança das páginas (CSP).
+test.beforeEach(async ({ page }) => watchCsp(page));
+test.afterEach(async ({ page }) => expect(await cspViolations(page).catch(() => [])).toEqual([]));
 
 test.describe.configure({ mode: 'serial' });
 

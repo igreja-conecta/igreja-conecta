@@ -1,6 +1,10 @@
 // O site abre no Android e no iPhone: início, página da igreja e páginas que não existem.
 import { test, expect } from '@playwright/test';
-import { configured } from './helpers.mjs';
+import { configured, watchCsp, cspViolations } from './helpers.mjs';
+
+// Nada pode ser bloqueado pela regra de segurança das páginas (CSP).
+test.beforeEach(async ({ page }) => watchCsp(page));
+test.afterEach(async ({ page }) => expect(await cspViolations(page).catch(() => [])).toEqual([]));
 
 test.beforeEach(() => test.skip(!configured, 'Falta a chave pública em js/config.js'));
 

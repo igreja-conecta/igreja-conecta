@@ -1,7 +1,11 @@
 // Pedidos de oração nas telas, com contas da igreja Teste A (Android).
 // O que o teste cria leva uma marca no texto e é apagado no fim.
 import { test, expect } from '@playwright/test';
-import { rest, configured, testPassword, loginAs, openLoggedIn } from './helpers.mjs';
+import { rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations } from './helpers.mjs';
+
+// Nada pode ser bloqueado pela regra de segurança das páginas (CSP).
+test.beforeEach(async ({ page }) => watchCsp(page));
+test.afterEach(async ({ page }) => expect(await cspViolations(page).catch(() => [])).toEqual([]));
 
 test.describe.configure({ mode: 'serial' });
 
