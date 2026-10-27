@@ -24,20 +24,32 @@ export function testPassword() {
 
 export const testEmail = (user) => `${user}@teste.igrejaconecta.invalid`;
 
-// Entra com uma conta de teste e devolve os cabeçalhos para falar com o banco como ela.
-export async function loginAs(request, user) {
+// Sessões das contas de teste da rodada (gravadas pelo tests/global-setup.mjs).
+export const SESSIONS_FILE = new URL('./sessoes.local', import.meta.url);
+
+const asAccount = (session) => ({
+  id: session.user.id,
+  session,
+  headers: { apikey: ANON_KEY, Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+});
+
+// Entra de verdade (usado só pelo global-setup, ou se a sessão guardada faltar ou estiver vencendo).
+export async function freshLogin(request, user) {
   const res = await request.post(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
     data: { email: testEmail(user), password: testPassword() },
   });
   if (!res.ok()) throw new Error(`Login de ${user} falhou (${res.status()}): ${await res.text()}. Rode supabase/usuarios-de-teste.local.sql.`);
-  const session = await res.json();
-  const { access_token, user: info } = session;
-  return {
-    id: info.id,
-    session,
-    headers: { apikey: ANON_KEY, Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-  };
+  return res.json();
+}
+
+// Conta de teste logada: cabeçalhos para falar com o banco como ela e a sessão para o navegador.
+export async function loginAs(request, user) {
+  try {
+    const saved = JSON.parse(readFileSync(SESSIONS_FILE, 'utf8'))[user];
+    if (saved && saved.expires_at * 1000 > Date.now() + 10 * 60 * 1000) return asAccount(saved);
+  } catch {}
+  return asAccount(await freshLogin(request, user));
 }
 
 // As igrejas de teste só podem ter as contas de teste, com os papéis esperados. Se alguém entrar
@@ -76,7 +88,10 @@ export async function openLoggedIn(page, session, url) {
         sessionStorage.setItem('__sessao_de_teste', '1');
       }
     },
-    [`sb-${ref}-auth-token`, JSON.stringify(session)],
+    // A mesma sessão serve a vários testes ao mesmo tempo: o navegador não deve renová-la
+    // (renovar invalida a cópia dos outros). Quem confere a validade do token é o banco.
+    // Também evita a renovação nos testes que adiantam o relógio do navegador.
+    [`sb-${ref}-auth-token`, JSON.stringify({ ...session, expires_at: 4102444800 })],
   );
   await page.goto(url);
 }
