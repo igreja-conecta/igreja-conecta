@@ -37,7 +37,8 @@ test('a líder cria a célula, coloca os participantes e escolhe o líder', asyn
   await page.getByRole('link', { name: 'Nova célula' }).click();
   await page.getByLabel('Nome').fill(name);
   await page.getByLabel('Dia da semana').selectOption({ label: 'quarta' });
-  await page.getByLabel('Horário').fill('19:30');
+  await page.getByLabel('Horário: hora').selectOption('19');
+  await page.getByLabel('Horário: minutos').selectOption('30');
   await page.getByLabel('Local (opcional)').fill('Rua das Flores, 10');
   await page.getByRole('button', { name: 'Criar célula' }).click();
   await expect(page.getByRole('heading', { name })).toBeVisible();
