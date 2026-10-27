@@ -51,11 +51,13 @@ test('o admin vê a prévia da mensagem com os campos trocados', async ({ page }
 
 // Datas especiais (008): na Teste A, "Casada da A" (12/06/2010, autorizou mostrar) e
 // "Batizado da A" (20/06/2020, não autorizou).
-test('a lista do mês mostra casamento e batismo: a liderança com os anos, o membro só o que foi autorizado', async ({ page }) => {
+test('a liderança vê casamento e batismo na lista do mês, com os anos', async ({ page }) => {
   await openLoggedIn(page, accounts['lider-a'].session, '/i/teste-a/#/aniversariantes?mes=2027-06');
   await expect(page.locator('.bday-day', { hasText: 'Casada da A' })).toContainText('💍 Casamento · 17 anos');
   await expect(page.locator('.bday-day', { hasText: 'Batizado da A' })).toContainText('🕊️ Batismo · 7 anos');
+});
 
+test('o membro vê na lista do mês só as datas especiais autorizadas, sem os anos', async ({ page }) => {
   await openLoggedIn(page, accounts['membro-a'].session, '/i/teste-a/#/aniversariantes?mes=2027-06');
   const wedding = page.locator('.bday-day', { hasText: 'Casada da A' });
   await expect(wedding).toContainText('💍 Casamento');

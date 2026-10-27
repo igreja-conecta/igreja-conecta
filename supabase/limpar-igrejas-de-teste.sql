@@ -17,6 +17,19 @@ where m.church_id = c.id
   and coalesce(m.email, '') not like '%@teste.igrejaconecta.invalid'
   and m.name not in ('Fulano da A', 'Fulano da B', 'Bissexto da A', 'Casada da A', 'Batizado da A');
 
+-- Recria os cadastros sem conta que os testes usam (se tiverem sumido).
+insert into public.members (church_id, role, name, phone, birth_date, show_birthday, wedding_date, show_wedding, baptism_date, show_baptism)
+select c.id, 'membro', v.name, v.phone, v.birth_date::date, v.show_birthday, v.wedding_date::date, v.show_wedding, v.baptism_date::date, v.show_baptism
+from (values
+  ('teste-a', 'Fulano da A',   '5561999990001', '1980-03-15', false, null,         false, null,         false),
+  ('teste-b', 'Fulano da B',   '5561999990002', '1975-07-20', false, null,         false, null,         false),
+  ('teste-a', 'Bissexto da A', null,            '2000-02-29', true,  null,         false, null,         false),
+  ('teste-a', 'Casada da A',   null,            null,         false, '2010-06-12', true,  null,         false),
+  ('teste-a', 'Batizado da A', null,            null,         false, null,         false, '2020-06-20', false)
+) as v(slug, name, phone, birth_date, show_birthday, wedding_date, show_wedding, baptism_date, show_baptism)
+join public.churches c on c.slug = v.slug
+where not exists (select 1 from public.members m where m.church_id = c.id and m.name = v.name);
+
 with v(slug, email, role, name) as (values
   ('teste-a', 'adm-a@teste.igrejaconecta.invalid', 'admin', 'Admin da A'),
   ('teste-a', 'lider-a@teste.igrejaconecta.invalid', 'lider', 'Líder da A'),
