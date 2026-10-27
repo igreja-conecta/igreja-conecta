@@ -83,7 +83,7 @@ export const FEATURES = [
   { key: 'escalas', label: 'Escalas de ministérios', phase: 2, soon: true },
   { key: 'pix', label: 'Dízimos e ofertas por Pix', phase: 2 },
   { key: 'visitantes', label: 'Cadastro de visitantes', phase: 2, soon: true },
-  { key: 'celulas', label: 'Células e pequenos grupos', phase: 3, soon: true },
+  { key: 'celulas', label: 'Células e pequenos grupos', phase: 3 },
   { key: 'inscricoes', label: 'Inscrições em eventos', phase: 3, soon: true },
   { key: 'infantil', label: 'Check-in do ministério infantil', phase: 3, soon: true },
   { key: 'carteirinha', label: 'Carteirinha digital', phase: 3, soon: true },

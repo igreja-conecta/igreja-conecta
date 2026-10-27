@@ -275,6 +275,11 @@ const churchRoutes = [
   [/^\/oracao\/novo$/, viewPrayerForm],
   [/^\/oracao\/meus$/, viewMyPrayers],
   [/^\/oracao\/moderar$/, viewPrayerModeration],
+  [/^\/celulas$/, viewCells],
+  [/^\/celulas\/nova$/, viewCellForm],
+  [/^\/celulas\/([0-9a-f-]{36})$/, viewCell],
+  [/^\/celulas\/([0-9a-f-]{36})\/editar$/, viewCellForm],
+  [/^\/celulas\/([0-9a-f-]{36})\/encontro$/, viewCellMeeting],
 ];
 
 let renderId = 0;
@@ -615,6 +620,7 @@ async function viewChurchHome() {
     ['avisos', icon.megaphone, 'Avisos', '#/avisos'],
     ['aniversarios', icon.cake, 'Aniversariantes', '#/aniversariantes'],
     ['oracao', icon.heart, 'Oração', '#/oracao'],
+    ['celulas', icon.users, isLeaderRole(m.role) ? 'Células' : 'Célula', '#/celulas'],
     ['pix', icon.pix, 'Ofertar', '#/ofertar'],
   ].filter(([k]) => (k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : featureOn(k)));
   $view.innerHTML = `
@@ -660,6 +666,7 @@ async function viewMenu() {
         ${admin ? `<a class="menu-row" href="#/config">${icon.gear}<span>Configurar a igreja</span>${icon.chevron}</a>` : ''}
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         ${datesOn() ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
+        ${featureOn('celulas') ? `<a class="menu-row" href="#/celulas">${icon.users}<span>${isLeaderRole(m.role) ? 'Células' : 'Minha célula'}</span>${icon.chevron}</a>` : ''}
         ${featureOn('oracao') ? `<a class="menu-row" href="#/oracao">${icon.heart}<span>Pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${featureOn('oracao') && isPastoral() ? `<a class="menu-row" href="#/oracao/moderar">${icon.heart}<span>Moderar pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${offerReady() ? `<a class="menu-row" href="#/ofertar">${icon.pix}<span>Dízimos e ofertas</span>${icon.chevron}</a>` : ''}
@@ -699,7 +706,7 @@ async function viewMyData() {
 
       <section class="card">
         <h2>${icon.upload} Baixar meus dados</h2>
-        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, os seus pedidos de oração, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
+        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus pedidos de oração, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
         <button class="btn" id="export">Baixar arquivo</button>
         <p class="hint">Para corrigir algum dado, use "Meu cadastro" ou fale com a secretaria da igreja.</p>
       </section>
@@ -836,6 +843,13 @@ function helpTopics() {
            <p>As suas datas só aparecem para os outros membros se você autorizar em <em>Meu cadastro</em>, e só o dia e o mês, nunca o ano. A liderança sempre vê.</p>`,
         ]]
       : []),
+    ...(features('celulas')
+      ? [[
+          'Minha célula',
+          `<p>Em <a href="#/celulas">Menu &gt; Minha célula</a> você vê o dia, o horário e o local da sua célula (o endereço abre no mapa), quem lidera e os outros participantes. O telefone de cada um só aparece se a pessoa autorizou em <em>Meu cadastro</em>.</p>
+           <p><strong>Se você lidera a célula</strong> (líder ou auxiliar), toque em <em>Registrar encontro</em> depois de cada encontro: marque quem veio, quantos visitantes vieram e, se quiser, o tema. A lista mostra quem faltou nos últimos encontros, para você procurar. Você também coloca e tira participantes, buscando pelo nome no cadastro da igreja. A presença só é vista por você e pela liderança da igreja.</p>`,
+        ]]
+      : []),
     ...(features('oracao')
       ? [[
           'Pedidos de oração',
@@ -916,6 +930,13 @@ function helpTopics() {
            <p>Marque <strong>Mandar notificação para os membros</strong> só nos avisos importantes. Isso só pode ser escolhido ao publicar.</p>`,
         ]]
       : []),
+    ...(features('celulas')
+      ? [[
+          'Organizar as células',
+          `<p>Em <a href="#/celulas">Menu &gt; Células</a>, toque em <em>Nova célula</em> e preencha o nome, o dia, o horário e o local. Depois, abra a célula e coloque os participantes buscando pelo nome. Ao lado de cada pessoa, escolha quem é <strong>Líder</strong> ou <strong>Auxiliar</strong>: qualquer pessoa do cadastro pode liderar uma célula, mesmo sem outro papel na igreja.</p>
+           <p>A lista de células mostra o número de participantes e a <strong>frequência</strong> (a média de presença nos 4 últimos encontros). Embaixo ficam os <strong>membros sem célula</strong>, para encaminhar. Quando uma célula encerrar, desmarque <em>Célula ativa</em> na edição: o histórico fica guardado.</p>`,
+        ]]
+      : []),
     ...(features('oracao') && isPastoral()
       ? [[
           'Moderar pedidos de oração',
@@ -938,7 +959,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -2504,6 +2525,379 @@ async function viewPrayerModeration(ctx) {
       if (!confirm('Tirar este pedido do mural? Quem pediu continua vendo em "Meus pedidos".')) return;
       update(card, { status: 'recusado' }, 'Pedido tirado do mural.');
     });
+  });
+}
+
+// ---------------------------------------------------------------------
+// Células e pequenos grupos: participantes, encontros e presença
+// ---------------------------------------------------------------------
+const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+const CELL_ROLES = { lider: 'Líder', auxiliar: 'Auxiliar', participante: 'Participante' };
+const fmtTime = (t) => (t ? `${Number(t.slice(0, 2))}h${t.slice(3, 5) === '00' ? '' : t.slice(3, 5)}` : '');
+const cellWhen = (c) =>
+  [c.weekday != null ? `Toda ${WEEKDAYS[c.weekday]}${c.weekday === 0 || c.weekday === 6 ? '' : '-feira'}` : '', fmtTime(c.meets_at)]
+    .filter(Boolean)
+    .join(', às ');
+
+async function viewCells(ctx) {
+  if (!requireMemberFeature('/celulas', 'celulas')) return;
+  const leader = isLeaderRole(myRole());
+  const { data: cells, error } = await sb
+    .from('cells')
+    .select('id, name, weekday, meets_at, location, active, cell_members(member_id, role)')
+    .eq('church_id', state.church.id)
+    .order('name');
+  if (error) throw error;
+  if (!leader) {
+    const mine = cells.filter((c) => c.active);
+    if (mine.length === 1) return navigate(`/celulas/${mine[0].id}`);
+    if (!ctx.alive()) return;
+    $view.innerHTML = `
+      <div class="page">
+        <h1>Minha célula</h1>
+        ${
+          mine.length
+            ? `<div class="list">${mine
+                .map((c) => `<a class="menu-row" href="#/celulas/${c.id}">${icon.users}<span>${esc(c.name)}<small class="hint"> · ${esc(cellWhen(c))}</small></span>${icon.chevron}</a>`)
+                .join('')}</div>`
+            : '<div class="empty"><p>Você ainda não está em nenhuma célula. Fale com a secretaria ou com a liderança da igreja.</p></div>'
+        }
+      </div>`;
+    return;
+  }
+
+  // Liderança: todas as células, a frequência dos últimos encontros e quem está sem célula.
+  const since = isoLocal(addDays(new Date(), -60));
+  const [meetings, people] = await Promise.all([
+    sb.from('cell_meetings').select('cell_id, meeting_date, cell_attendance(count)').gte('meeting_date', since).order('meeting_date', { ascending: false }),
+    sb.from('members').select('id, name, role, status').eq('church_id', state.church.id).eq('status', 'ativo').order('name'),
+  ]);
+  if (meetings.error) throw meetings.error;
+  if (people.error) throw people.error;
+  if (!ctx.alive()) return;
+  const nameOf = new Map(people.data.map((m) => [m.id, m.name]));
+  const inCell = new Set(cells.filter((c) => c.active).flatMap((c) => c.cell_members.map((x) => x.member_id)));
+  const without = people.data.filter((m) => !inCell.has(m.id));
+  const freq = (c) => {
+    const last = meetings.data.filter((e) => e.cell_id === c.id).slice(0, 4);
+    const size = c.cell_members.length;
+    if (!last.length || !size) return null;
+    return Math.round((100 * last.reduce((n, e) => n + (e.cell_attendance[0]?.count || 0), 0)) / (last.length * size));
+  };
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Células</h1>
+      <div class="actions-row"><a class="btn primary" href="#/celulas/nova">${icon.plus} Nova célula</a></div>
+      ${
+        cells.length
+          ? `<div class="list">${cells
+              .map((c) => {
+                const f = freq(c);
+                const leaders = c.cell_members.filter((x) => x.role === 'lider').map((x) => nameOf.get(x.member_id)).filter(Boolean);
+                return `
+            <a class="member-row ${c.active ? '' : 'inactive'}" href="#/celulas/${c.id}">
+              <span class="avatar">${icon.users}</span>
+              <span><strong>${esc(c.name)}</strong><small>${esc([cellWhen(c), leaders.length ? `Líder: ${leaders.join(', ')}` : 'Sem líder'].filter(Boolean).join(' · '))}</small></span>
+              <span class="tags">
+                <span class="tag">${c.cell_members.length} ${c.cell_members.length === 1 ? 'pessoa' : 'pessoas'}</span>
+                ${!c.active ? '<span class="tag">Encerrada</span>' : f == null ? '<span class="tag">Sem encontros</span>' : `<span class="tag ${f >= 60 ? 'ok' : 'wait'}">Frequência ${f}%</span>`}
+              </span>
+            </a>`;
+              })
+              .join('')}</div>
+             <p class="hint">Frequência: média de presença nos 4 últimos encontros (dos últimos 60 dias).</p>`
+          : '<div class="empty"><p>Nenhuma célula ainda. Crie a primeira.</p></div>'
+      }
+      <section class="card">
+        <h2>${icon.users} Membros sem célula (${without.length})</h2>
+        ${
+          without.length
+            ? `<p class="pre">${without.map((m) => esc(m.name)).join('\n')}</p>`
+            : '<p>Todos os membros ativos estão em alguma célula.</p>'
+        }
+      </section>
+    </div>`;
+}
+
+async function viewCellForm(ctx, id) {
+  if (!requireMemberFeature(id ? `/celulas/${id}/editar` : '/celulas/nova', 'celulas')) return;
+  if (!isLeaderRole(myRole())) return navigate('/celulas');
+  let c = { name: '', weekday: null, meets_at: null, location: '', description: '', active: true };
+  if (id) {
+    const { data, error } = await sb.from('cells').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data) return navigate('/celulas');
+    c = data;
+  }
+  if (!ctx.alive()) return;
+  $view.innerHTML = `
+    <form id="cell" class="form page">
+      <a href="${id ? `#/celulas/${id}` : '#/celulas'}" class="back">← ${id ? esc(c.name) : 'Células'}</a>
+      <h1>${id ? 'Editar célula' : 'Nova célula'}</h1>
+      <label>Nome<input name="name" required minlength="2" maxlength="80" value="${esc(c.name)}" placeholder="Célula Esperança"></label>
+      <div class="colors">
+        <label>Dia da semana
+          <select name="weekday"><option value="">—</option>${WEEKDAYS.map((d, i) => `<option value="${i}" ${c.weekday === i ? 'selected' : ''}>${d}</option>`).join('')}</select>
+        </label>
+        <label>Horário<input name="meets_at" type="time" value="${esc(c.meets_at ? c.meets_at.slice(0, 5) : '')}"></label>
+      </div>
+      <label>Local (opcional)<input name="location" maxlength="200" value="${esc(c.location || '')}" placeholder="Rua das Flores, 10 · ou: on-line"></label>
+      <label>Descrição (opcional)<textarea name="description" rows="3" maxlength="1000">${esc(c.description || '')}</textarea></label>
+      ${id ? `<label class="check"><input type="checkbox" name="active" ${c.active ? 'checked' : ''}> Célula ativa
+        <small class="hint">Desmarque quando a célula encerrar: ela some para os participantes, e o histórico fica guardado.</small></label>` : ''}
+      ${id ? '' : '<p class="hint">Depois de criar, abra a célula para escolher o líder e colocar os participantes.</p>'}
+      <button class="btn primary big">${id ? 'Salvar' : 'Criar célula'}</button>
+      ${id ? '<button class="btn danger-outline" type="button" id="delete">Excluir célula</button>' : ''}
+    </form>`;
+  const form = document.getElementById('cell');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const row = {
+      name: form.name.value.trim(),
+      weekday: form.weekday.value === '' ? null : Number(form.weekday.value),
+      meets_at: form.meets_at.value || null,
+      location: form.location.value.trim() || null,
+      description: form.description.value.trim() || null,
+    };
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { data, error } = id
+      ? await sb.from('cells').update({ ...row, active: form.active.checked, updated_at: new Date().toISOString() }).eq('id', id).select('id').single()
+      : await sb.from('cells').insert({ ...row, church_id: state.church.id }).select('id').single();
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    toast(id ? 'Célula salva.' : 'Célula criada. Agora escolha o líder e os participantes.');
+    navigate(`/celulas/${data.id}`);
+  });
+  document.getElementById('delete')?.addEventListener('click', async () => {
+    if (!confirm(`Excluir a célula "${c.name}"? O histórico de encontros e presenças também é apagado. Para guardar o histórico, prefira desmarcar "Célula ativa".`)) return;
+    const { data, error } = await sb.from('cells').delete().eq('id', id).select('id');
+    if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para excluir.', 'error');
+    toast('Célula excluída.');
+    navigate('/celulas');
+  });
+}
+
+async function viewCell(ctx, id) {
+  if (!requireMemberFeature(`/celulas/${id}`, 'celulas')) return;
+  const [cellRes, rosterRes, manageRes] = await Promise.all([
+    sb.from('cells').select('*').eq('id', id).maybeSingle(),
+    sb.rpc('cell_roster', { p_cell: id }),
+    sb.rpc('can_manage_cell', { p_cell: id }),
+  ]);
+  if (cellRes.error) throw cellRes.error;
+  if (rosterRes.error) throw rosterRes.error;
+  const c = cellRes.data;
+  if (!ctx.alive()) return;
+  if (!c) {
+    $view.innerHTML = `<div class="empty"><h2>Célula não encontrada</h2><a class="btn" href="#/celulas">Voltar</a></div>`;
+    return;
+  }
+  const roster = rosterRes.data;
+  const manage = !!manageRes.data;
+  const leader = isLeaderRole(myRole());
+  let meetings = [];
+  if (manage) {
+    const { data, error } = await sb
+      .from('cell_meetings')
+      .select('id, meeting_date, topic, visitors, cell_attendance(count)')
+      .eq('cell_id', id)
+      .order('meeting_date', { ascending: false })
+      .limit(20);
+    if (error) throw error;
+    meetings = data;
+  }
+  if (!ctx.alive()) return;
+  const photos = await signedPhotos(roster.filter((p) => p.photo_path).map((p) => miniOf(p.photo_path))).catch(() => ({}));
+  if (!ctx.alive()) return;
+
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/celulas" class="back">← ${leader ? 'Células' : 'Minha célula'}</a>
+      <h1>${esc(c.name)}</h1>
+      ${!c.active ? '<p class="notice">Esta célula está encerrada.</p>' : ''}
+      ${cellWhen(c) ? `<p class="meta">${icon.clock}${esc(cellWhen(c))}</p>` : ''}
+      ${c.location ? `<p class="meta">${icon.pin}${/^on-?line$/i.test(c.location.trim()) ? esc(c.location) : `<a href="${esc(mapsUrl(c.location))}" target="_blank" rel="noopener">${esc(c.location)}</a>`}</p>` : ''}
+      ${c.description ? `<div class="card"><p class="pre">${esc(c.description)}</p></div>` : ''}
+      ${
+        manage
+          ? `<div class="actions-row">
+              <a class="btn primary" href="#/celulas/${id}/encontro">${icon.plus} Registrar encontro</a>
+              ${leader ? `<a class="btn" href="#/celulas/${id}/editar">Editar célula</a>` : ''}
+            </div>`
+          : ''
+      }
+
+      <h2>Participantes (${roster.length})</h2>
+      <div class="list">${
+        roster
+          .map(
+            (p) => `
+        <div class="member-row" data-member="${p.member_id}">
+          ${avatar(p.name, p.photo_path && photos[miniOf(p.photo_path)])}
+          <span><strong>${esc(p.name)}${p.is_me ? ' (você)' : ''}</strong>
+            ${p.phone ? `<small><a href="tel:+${esc(p.phone)}">${esc(fmtPhone(p.phone))}</a></small>` : ''}
+            ${manage && p.misses >= 2 ? `<small class="hint warn">Faltou nos ${p.misses} últimos encontros</small>` : ''}</span>
+          <span class="tags">
+            ${
+              leader
+                ? `<select data-role aria-label="Papel de ${esc(p.name)} na célula">${Object.entries(CELL_ROLES)
+                    .map(([k, label]) => `<option value="${k}" ${p.role === k ? 'selected' : ''}>${label}</option>`)
+                    .join('')}</select>`
+                : p.role !== 'participante'
+                  ? `<span class="tag role">${CELL_ROLES[p.role]}</span>`
+                  : ''
+            }
+            ${manage && (leader || p.role === 'participante') ? `<button class="btn small danger-outline" data-remove aria-label="Tirar ${esc(p.name)} da célula">Tirar</button>` : ''}
+          </span>
+        </div>`,
+          )
+          .join('') || '<div class="empty"><p>Ninguém na célula ainda.</p></div>'
+      }</div>
+      ${
+        manage
+          ? `<form id="add-member" class="form card">
+              <label>Colocar participante<input name="q" type="search" placeholder="Digite o nome de alguém do cadastro" autocomplete="off"></label>
+              <div id="candidates" class="list"></div>
+              <p class="hint">Quem ainda não está no cadastro precisa ser cadastrado pela secretaria.</p>
+            </form>
+            <h2>Encontros</h2>
+            ${
+              meetings.length
+                ? `<div class="list">${meetings
+                    .map(
+                      (e) => `
+                <a class="event-card" href="#/celulas/${id}/encontro?data=${e.meeting_date}">
+                  <span class="event-time">${esc(fmtDate(e.meeting_date).slice(0, 5))}</span>
+                  <span><strong>${esc(e.topic || 'Encontro')}</strong>
+                    <small>${e.cell_attendance[0]?.count || 0} de ${roster.length} presentes${e.visitors ? ` · ${e.visitors} ${e.visitors === 1 ? 'visitante' : 'visitantes'}` : ''}</small></span>
+                  ${icon.chevron}
+                </a>`,
+                    )
+                    .join('')}</div>`
+                : '<div class="empty"><p>Nenhum encontro registrado ainda.</p></div>'
+            }`
+          : ''
+      }
+    </div>`;
+
+  $view.querySelectorAll('[data-member]').forEach((row) => {
+    const memberId = row.dataset.member;
+    row.querySelector('[data-role]')?.addEventListener('change', async (e) => {
+      const { data, error } = await sb.from('cell_members').update({ role: e.target.value }).eq('cell_id', id).eq('member_id', memberId).select('role');
+      if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
+      toast('Papel na célula salvo.');
+    });
+    row.querySelector('[data-remove]')?.addEventListener('click', async () => {
+      const name = row.querySelector('strong').textContent;
+      if (!confirm(`Tirar ${name} da célula? As presenças dela continuam no histórico.`)) return;
+      const { data, error } = await sb.from('cell_members').delete().eq('cell_id', id).eq('member_id', memberId).select('member_id');
+      if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
+      toast('Participante tirado da célula.');
+      render();
+    });
+  });
+
+  const addForm = document.getElementById('add-member');
+  if (addForm) {
+    const box = document.getElementById('candidates');
+    let timer;
+    addForm.addEventListener('submit', (e) => e.preventDefault());
+    addForm.q.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const term = addForm.q.value.trim();
+        if (term.length < 2) return (box.innerHTML = '');
+        const { data } = await sb.rpc('cell_candidates', { p_cell: id, p_search: term });
+        if (addForm.q.value.trim() !== term) return;
+        box.innerHTML = data?.length
+          ? data.map((m) => `<button type="button" class="menu-row" data-add="${m.member_id}">${icon.plus}<span>${esc(m.name)}</span></button>`).join('')
+          : '<p class="hint">Ninguém encontrado (ou já está na célula).</p>';
+        box.querySelectorAll('[data-add]').forEach((b) => {
+          b.onclick = async () => {
+            b.disabled = true;
+            const { error } = await sb.from('cell_members').insert({ cell_id: id, member_id: b.dataset.add });
+            if (error) {
+              b.disabled = false;
+              return toast(errorText(error), 'error');
+            }
+            toast(`${b.textContent.trim()} entrou na célula.`);
+            render();
+          };
+        });
+      }, 250);
+    });
+  }
+}
+
+async function viewCellMeeting(ctx, id) {
+  if (!requireMemberFeature(`/celulas/${id}/encontro`, 'celulas')) return;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(ctx.params.get('data') || '') ? ctx.params.get('data') : isoLocal(new Date());
+  const [cellRes, rosterRes, meetRes] = await Promise.all([
+    sb.from('cells').select('id, name').eq('id', id).maybeSingle(),
+    sb.rpc('cell_roster', { p_cell: id }),
+    sb.from('cell_meetings').select('id, topic, notes, visitors, cell_attendance(member_id)').eq('cell_id', id).eq('meeting_date', date).maybeSingle(),
+  ]);
+  if (cellRes.error) throw cellRes.error;
+  if (rosterRes.error) throw rosterRes.error;
+  if (meetRes.error) throw meetRes.error;
+  if (!ctx.alive()) return;
+  if (!cellRes.data) return navigate('/celulas');
+  const meeting = meetRes.data;
+  const present = new Set((meeting?.cell_attendance || []).map((a) => a.member_id));
+  const roster = rosterRes.data;
+  $view.innerHTML = `
+    <form id="meeting" class="form page">
+      <a href="#/celulas/${id}" class="back">← ${esc(cellRes.data.name)}</a>
+      <h1>${meeting ? 'Corrigir encontro' : 'Registrar encontro'}</h1>
+      <label>Data<input name="date" type="date" required value="${date}" max="${isoLocal(addDays(new Date(), 1))}"></label>
+      <label>Tema (opcional)<input name="topic" maxlength="120" value="${esc(meeting?.topic || '')}" placeholder="Estudo de Romanos 8"></label>
+      <fieldset>
+        <legend>Presença: marque quem veio</legend>
+        ${
+          roster.length
+            ? roster
+                .map((p) => `<label class="check"><input type="checkbox" name="present" value="${p.member_id}" ${present.has(p.member_id) ? 'checked' : ''}> ${esc(p.name)}</label>`)
+                .join('')
+            : '<p class="hint">Ninguém na célula ainda.</p>'
+        }
+        <small class="hint" id="present-count"></small>
+      </fieldset>
+      <label>Visitantes (quantos vieram)<input name="visitors" type="number" min="0" max="200" inputmode="numeric" value="${meeting?.visitors || 0}"></label>
+      <label>Observação (opcional)<textarea name="notes" rows="3" maxlength="1000">${esc(meeting?.notes || '')}</textarea></label>
+      <button class="btn primary big">Salvar encontro</button>
+      ${meeting ? '<button class="btn danger-outline" type="button" id="delete">Apagar este encontro</button>' : ''}
+    </form>`;
+  const form = document.getElementById('meeting');
+  const counter = document.getElementById('present-count');
+  const count = () => (counter.textContent = `${form.querySelectorAll('[name=present]:checked').length} de ${roster.length} presentes`);
+  form.addEventListener('change', count);
+  count();
+  // Outra data: abre o encontro daquele dia (se já houver, para corrigir).
+  form.date.addEventListener('change', () => form.date.value && form.date.value !== date && navigate(`/celulas/${id}/encontro?data=${form.date.value}`));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { error } = await sb.rpc('save_cell_meeting', {
+      p_cell: id,
+      p_date: form.date.value,
+      p_topic: form.topic.value,
+      p_notes: form.notes.value,
+      p_visitors: Math.max(0, Math.min(200, Number(form.visitors.value) || 0)),
+      p_present: [...form.querySelectorAll('[name=present]:checked')].map((i) => i.value),
+    });
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    toast('Encontro salvo.');
+    navigate(`/celulas/${id}`);
+  });
+  document.getElementById('delete')?.addEventListener('click', async () => {
+    if (!confirm('Apagar este encontro e a lista de presença dele?')) return;
+    const { error } = await sb.from('cell_meetings').delete().eq('id', meeting.id);
+    if (error) return toast(errorText(error), 'error');
+    toast('Encontro apagado.');
+    navigate(`/celulas/${id}`);
   });
 }
 
