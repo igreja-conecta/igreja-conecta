@@ -24,7 +24,7 @@ test.beforeAll(async ({ playwright }) => {
 });
 
 const album = async () =>
-  (await (await api.get(rest(`gallery_albums?select=id,gallery_photos(id,path,mini_path)&title=eq.${encodeURIComponent(title)}`), { headers: as['lider-a'].headers })).json())[0];
+  (await (await api.get(rest(`gallery_albums?select=id,gallery_photos!gallery_photos_album_id_fkey(id,path,mini_path)&title=eq.${encodeURIComponent(title)}`), { headers: as['lider-a'].headers })).json())[0];
 
 test.afterAll(async () => {
   if (!api) return;
