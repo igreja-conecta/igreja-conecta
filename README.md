@@ -59,6 +59,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `012_seguranca.sql` | Reforços do scan de segurança: links das redes sociais, logo e imagens só com https://; notificações só para os serviços de push conhecidos; funções de gatilho fechadas |
 | `013_visitantes.sql` | Cadastro de visitantes pelo QR Code (sem login, com limite de envios e autorização), aviso para a liderança, acompanhamento, "cadastrar como membro" e limpeza em 12 meses |
 | `014_devocional.sql` | Devocional do dia (agendado, com Amém e aviso às 7h), planos de leitura da Bíblia com o progresso de cada um, tradução da Bíblia da igreja |
+| `015_escalas.sql` | Ministérios e escalas: equipe e líder (qualquer pessoa do cadastro), escalas com função, confirmar ou pedir troca, aviso ao ser escalado e lembrete na véspera; o ministério de Acolhimento recebe os avisos de visitantes |
 
 ## Contas de teste
 
