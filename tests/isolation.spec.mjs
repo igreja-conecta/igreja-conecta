@@ -1599,3 +1599,147 @@ test.describe('Galeria de fotos (020)', () => {
     expect(await get('adm-b', `gallery_photos?select=count&church_id=eq.${church.b}`)).toEqual([{ count }]);
   });
 });
+
+test.describe('Chat (021)', () => {
+  // Um segundo membro comum na Teste A (conta "sem-igreja", só durante estes testes).
+  const tag = `chat ${Date.now().toString(36)}`;
+  const ids = {};
+  const start = (who, member, c = church.a) => rpc(who, 'start_conversation', { p_church: c, p_member: member });
+  const send = (who, conv, body, extra = {}) =>
+    api.post(rest('messages'), { headers: returning(as[who].headers), data: { conversation_id: conv, body, ...extra } });
+  const msgs = (who, conv) => get(who, `messages?select=body,church_id,sender_id&conversation_id=eq.${conv}&body=like.*${encodeURIComponent(tag)}*`);
+  const setFeatures = async (patch) => {
+    const [a] = await get('adm-a', `churches?select=features&id=eq.${church.a}`);
+    return api.patch(rest(`churches?id=eq.${church.a}`), { headers: as['adm-a'].headers, data: { features: { ...a.features, ...patch } } });
+  };
+
+  test.beforeAll(async () => {
+    const people = await get('adm-a', 'members?select=id,name&name=in.("Membro da A","Líder da A","Admin da A")');
+    for (const p of people) ids[p.name] = p.id;
+    const created = await api.post(rest('members'), {
+      headers: returning(as['adm-a'].headers),
+      data: { church_id: church.a, name: `Membro temporário ${tag}`, email: 'sem-igreja@teste.igrejaconecta.invalid' },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    ids.temp = (await created.json())[0].id;
+    await rpc('sem-igreja', 'link_my_account');
+    expect((await rpc('sem-igreja', 'respond_to_church', { p_church: church.a, p_accept: true })).ok()).toBe(true);
+  });
+
+  test.afterAll(async () => {
+    if (!api) return;
+    await setFeatures({ chat_membros: false });
+    await api.patch(rest(`members?id=eq.${ids['Admin da A']}`), { headers: as['adm-a'].headers, data: { chat_enabled: true } });
+    // Sair da igreja apaga o cadastro temporário e as conversas dele.
+    await rpc('sem-igreja', 'leave_church', { p_church: church.a });
+    if (ids.temp) await api.delete(rest(`members?id=eq.${ids.temp}`), { headers: as['adm-a'].headers });
+  });
+
+  test('o membro fala com a liderança; só as duas pessoas leem; ninguém finge ser outra pessoa', async () => {
+    const res = await start('membro-a', ids['Líder da A']);
+    expect(res.ok(), await res.text()).toBe(true);
+    ids.conv = await res.json();
+    expect(await (await start('membro-a', ids['Líder da A'])).json()).toBe(ids.conv); // a mesma conversa
+    expect(await (await start('lider-a', ids['Membro da A'])).json()).toBe(ids.conv);
+    // A outra igreja não abre conversa com quem é da Teste A (nem dizendo que é da própria igreja).
+    expect((await start('adm-b', ids['Líder da A'], church.a)).ok()).toBe(false);
+    expect((await start('adm-b', ids['Líder da A'], church.b)).ok()).toBe(false);
+
+    const sent = await send('membro-a', ids.conv, `Olá ${tag}`, { church_id: church.b });
+    expect(sent.ok(), await sent.text()).toBe(true);
+    expect((await sent.json())[0].church_id).toBe(church.a); // a igreja vem sempre da conversa
+    expect((await msgs('lider-a', ids.conv)).map((m) => m.body)).toEqual([`Olá ${tag}`]);
+    for (const who of ['adm-a', 'adm-b', 'sem-igreja']) {
+      expect(await msgs(who, ids.conv), who).toEqual([]);
+      expect(await get(who, `conversations?select=id&id=eq.${ids.conv}`), who).toEqual([]);
+    }
+    // Ninguém escreve na conversa dos outros nem com o nome de outra pessoa.
+    expect((await send('adm-a', ids.conv, `intruso ${tag}`)).ok()).toBe(false);
+    expect((await send('membro-a', ids.conv, `falso ${tag}`, { sender_id: as['lider-a'].id })).ok()).toBe(false);
+    expect((await api.post(rest('conversations'), { headers: as['membro-a'].headers, data: { church_id: church.a, user_a: as['membro-a'].id, user_b: as['adm-a'].id, name_a: 'x', name_b: 'y' } })).ok()).toBe(false);
+    expect((await send('membro-a', ids.conv, 'x'.repeat(2001))).ok()).toBe(false);
+    const edit = await api.patch(rest(`messages?conversation_id=eq.${ids.conv}`), { headers: returning(as['membro-a'].headers), data: { body: 'editado' } });
+    expect(await edit.text()).not.toContain('editado');
+
+    // Não lidas: aparece para a líder; ao abrir, some.
+    const row = async () => (await (await rpc('lider-a', 'my_conversations', { p_church: church.a, p_conv: ids.conv })).json())[0];
+    expect(await row()).toMatchObject({ unread: true, other_name: 'Membro da A', last_mine: false, can_send: true });
+    expect(await (await rpc('lider-a', 'chat_unread_count', { p_church: church.a })).json()).toBeGreaterThanOrEqual(1);
+    await rpc('lider-a', 'mark_conversation_read', { p_conv: ids.conv });
+    expect((await row()).unread).toBe(false);
+    expect(await (await rpc('adm-b', 'my_conversations', { p_church: church.a })).json()).toEqual([]);
+  });
+
+  test('membro com membro, só se a igreja liberar', async () => {
+    expect((await start('membro-a', ids.temp)).ok()).toBe(false);
+    const search = async (who) => (await (await rpc(who, 'chat_contacts', { p_church: church.a, p_search: 'temporário' })).json()).map((p) => p.member_id);
+    expect(await search('membro-a')).toEqual([]);
+    expect(await search('lider-a')).toContain(ids.temp); // a liderança acha qualquer membro
+    expect((await (await rpc('membro-a', 'chat_contacts', { p_church: church.a })).json()).map((p) => p.role)).not.toContain('membro');
+
+    expect((await setFeatures({ chat_membros: true })).ok()).toBe(true);
+    try {
+      expect(await search('membro-a')).toContain(ids.temp);
+      const res = await start('membro-a', ids.temp);
+      expect(res.ok(), await res.text()).toBe(true);
+      ids.members = await res.json();
+      expect((await send('sem-igreja', ids.members, `entre membros ${tag}`)).ok()).toBe(true);
+    } finally {
+      await setFeatures({ chat_membros: false });
+    }
+    // Desligado de novo: a conversa entre membros não recebe mais mensagens.
+    const blocked = await send('membro-a', ids.members, `depois ${tag}`);
+    expect(blocked.ok()).toBe(false);
+    expect(await blocked.text()).toContain('só com a liderança');
+  });
+
+  test('quem desliga "receber mensagens" não recebe conversa nova nem mensagem, mas responde', async () => {
+    const conv = await (await start('membro-a', ids['Admin da A'])).json();
+    const off = await api.patch(rest(`members?id=eq.${ids['Admin da A']}`), { headers: as['adm-a'].headers, data: { chat_enabled: false } });
+    expect(off.ok(), await off.text()).toBe(true);
+    try {
+      expect((await start('sem-igreja', ids['Admin da A'])).ok()).toBe(false);
+      expect((await (await rpc('membro-a', 'chat_contacts', { p_church: church.a })).json()).map((p) => p.member_id)).not.toContain(ids['Admin da A']);
+      const refused = await send('membro-a', conv, `para quem desligou ${tag}`);
+      expect(refused.ok()).toBe(false);
+      expect(await refused.text()).toContain('desligou o chat');
+      expect((await send('adm-a', conv, `resposta ${tag}`)).ok()).toBe(true);
+    } finally {
+      await api.patch(rest(`members?id=eq.${ids['Admin da A']}`), { headers: as['adm-a'].headers, data: { chat_enabled: true } });
+    }
+  });
+
+  test('bloquear e denunciar; a denúncia avisa o administrador sem as mensagens', async () => {
+    const conv = await (await start('sem-igreja', ids['Líder da A'])).json();
+    expect((await send('sem-igreja', conv, `mensagem secreta ${tag}`)).ok()).toBe(true);
+    expect((await rpc('lider-a', 'chat_block', { p_conv: conv, p_block: true })).ok()).toBe(true);
+    for (const who of ['lider-a', 'sem-igreja']) expect((await send(who, conv, `bloqueada ${tag}`)).ok(), who).toBe(false);
+    expect((await rpc('sem-igreja', 'chat_block', { p_conv: conv, p_block: false })).ok()).toBe(false); // só quem bloqueou
+    expect((await rpc('adm-a', 'chat_block', { p_conv: conv, p_block: false })).ok()).toBe(false);
+    expect((await rpc('lider-a', 'chat_block', { p_conv: conv, p_block: false })).ok()).toBe(true);
+    expect((await send('sem-igreja', conv, `de novo ${tag}`)).ok()).toBe(true);
+
+    expect((await rpc('adm-b', 'chat_report', { p_conv: conv, p_reason: 'x' })).ok()).toBe(false);
+    const rep = await rpc('sem-igreja', 'chat_report', { p_conv: conv, p_reason: `Motivo ${tag}` });
+    expect(rep.ok(), await rep.text()).toBe(true);
+    const [n] = await get('adm-a', `notifications?select=title,body&body=like.*${encodeURIComponent(`Motivo ${tag}`)}*`);
+    expect(n.title).toBe('Denúncia no chat');
+    expect(n.body).toContain('Líder da A');
+    expect(n.body).not.toContain('mensagem secreta');
+    expect(await msgs('adm-a', conv)).toEqual([]); // o administrador continua sem ler a conversa
+    expect((await (await rpc('lider-a', 'my_conversations', { p_church: church.a, p_conv: conv })).json())[0]).toMatchObject({ blocked: true, blocked_by_me: false, can_send: false });
+  });
+
+  test('as conversas entram nos próprios dados; quem sai da igreja leva as conversas dela', async () => {
+    const data = await (await rpc('membro-a', 'export_my_data')).json();
+    const conv = data.conversas_do_chat.find((c) => c.com === 'Líder da A');
+    expect(conv.mensagens.map((m) => m.texto)).toContain(`Olá ${tag}`);
+    expect(conv.mensagens.find((m) => m.texto === `Olá ${tag}`).de).toBe('você');
+
+    const before = await get('sem-igreja', 'conversations?select=id');
+    expect(before.length).toBeGreaterThanOrEqual(2);
+    expect((await rpc('sem-igreja', 'leave_church', { p_church: church.a })).ok()).toBe(true);
+    ids.temp = null;
+    for (const c of before) expect(await get('lider-a', `conversations?select=id&id=eq.${c.id}`)).toEqual([]);
+  });
+});

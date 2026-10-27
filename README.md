@@ -65,6 +65,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `018_carteirinha.sql` | Carteirinha digital de membro: "membro desde" (liderança), código secreto do QR (a pessoa troca quando quiser) e conferência pública que mostra só o que está na carteirinha |
 | `019_relatorios.sql` | Relatórios da liderança: membros (novos por mês, faixa etária, uso do app), visitantes e conversão, células, infantil, escalas, inscrições e participação, só totais, por período de até 400 dias |
 | `020_galeria.sql` | Galeria de fotos: álbuns só para os membros (pasta privada), publicam a liderança e o ministério marcado, limite de 300 fotos por igreja conferido no banco, arquivos até 400 KB (o app reduz no aparelho) e "pedir para tirar esta foto" |
+| `021_chat.sql` | Chat 1 a 1 dentro da igreja: membro com a liderança (e entre membros, se a igreja ligar), "receber mensagens", só as duas pessoas leem, bloquear e denunciar (sem as mensagens), limites por hora, tempo real pelo canal particular de cada pessoa |
 
 ## Contas de teste
 

@@ -90,6 +90,8 @@ export const FEATURES = [
   { key: 'relatorios', label: 'Relatórios', phase: 3 },
   { key: 'galeria', label: 'Galeria de fotos', phase: 3 },
   { key: 'devocional', label: 'Devocional e plano de leitura', phase: 3 },
+  { key: 'chat', label: 'Chat com a liderança', phase: 3 },
+  { key: 'chat_membros', label: 'Chat: membros também conversam entre si', phase: 3 },
 ];
 
 // Texto sem acentos e em minúsculas, para buscas e nomes de colunas.

@@ -278,3 +278,24 @@ test.describe('Banco: visitante sem login (galeria)', () => {
     expect(up.ok()).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (chat)', () => {
+  test('não lê nem grava conversas e mensagens; não chama as funções', async ({ request }) => {
+    for (const table of ['conversations', 'messages', 'chat_reports']) {
+      const res = await request.get(rest(`${table}?select=*`), { headers });
+      if (res.ok()) expect(await res.json(), table).toEqual([]);
+    }
+    expect((await request.post(rest('messages'), { headers, data: { conversation_id: UUID, body: 'oi' } })).ok()).toBe(false);
+    const calls = {
+      start_conversation: { p_church: UUID, p_member: UUID },
+      my_conversations: { p_church: UUID },
+      chat_unread_count: { p_church: UUID },
+      mark_conversation_read: { p_conv: UUID },
+      chat_contacts: { p_church: UUID },
+      chat_block: { p_conv: UUID, p_block: true },
+      chat_report: { p_conv: UUID },
+    };
+    for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
+    for (const fn of ['chat_message_guard', 'chat_message_after']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
+  });
+});
