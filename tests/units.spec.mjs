@@ -1,6 +1,6 @@
 // Funções puras do app, testadas sem navegador.
 import { test, expect } from '@playwright/test';
-import { slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone, esc } from '../js/util.js';
+import { slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone, esc, fmtMoney } from '../js/util.js';
 import { pixPayload, normalizePixKey, guessPixType, crc16, parseAmount } from '../js/pix.js';
 
 test('endereço da igreja a partir do nome', () => {
@@ -34,6 +34,14 @@ test('telefone no formato do banco', () => {
   expect(normalizePhone('+55 61 99999-8888')).toBe('5561999998888');
   expect(normalizePhone('9999')).toBe(null);
   expect(fmtPhone('5561999998888')).toBe('(61) 99999-8888');
+});
+
+test('valores do financeiro: centavos do banco em reais', () => {
+  const brl = (cents) => fmtMoney(cents).replace(/\s/g, ' ');
+  expect(brl(123456)).toBe('R$ 1.234,56');
+  expect(brl(5)).toBe('R$ 0,05');
+  expect(brl(0)).toBe('R$ 0,00');
+  expect(brl(-15000)).toBe('-R$ 150,00');
 });
 
 test('textos escapados antes de ir para a tela', () => {

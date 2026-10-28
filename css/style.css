@@ -718,3 +718,26 @@ body:not(.has-tabbar) .fab { bottom: calc(16px + env(safe-area-inset-bottom)); }
 body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bottom)); }
 /* Espaço no fim da lista para o botão não cobrir a última conversa */
 .page:has(.fab) { padding-bottom: 80px; }
+
+/* Financeiro (tesouraria) */
+.month-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; }
+.month-nav strong { flex: 1; text-align: center; text-transform: capitalize; }
+.month-nav .btn { width: 44px; padding: 0; font-size: 1.2rem; }
+.fin-amount { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fin-amount.entrada { color: color-mix(in srgb, #2f9e44 75%, var(--ink)); }
+.fin-amount.saida { color: var(--danger); }
+.stat-tile .fin-amount, .stat-tile > strong { font-size: 1.15rem; }
+.fin-balances { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); margin: 0 0 16px; }
+.fin-balances > div { display: flex; justify-content: space-between; gap: 10px; padding: 10px 14px; font-variant-numeric: tabular-nums; }
+.fin-balances > div + div { border-top: 1px solid var(--line); }
+.fin-balances .total { font-weight: 700; }
+.fin-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); color: var(--ink); text-decoration: none; }
+.fin-day { flex: none; width: 28px; text-align: center; font-weight: 700; color: var(--muted); }
+.fin-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fin-text strong, .fin-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-text small { color: var(--muted); }
+.fin-config-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.fin-config-row > span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fin-config-row small { color: var(--muted); }
+.fin-config-row.inactive > span { opacity: .6; }
+.fin-config-row .btn { width: auto; }

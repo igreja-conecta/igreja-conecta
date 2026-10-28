@@ -92,6 +92,7 @@ export const FEATURES = [
   { key: 'devocional', label: 'Devocional e plano de leitura', phase: 3 },
   { key: 'chat', label: 'Chat com a liderança', phase: 3 },
   { key: 'chat_membros', label: 'Chat: membros também conversam entre si', phase: 3 },
+  { key: 'financeiro', label: 'Financeiro e prestação de contas', phase: 3 },
 ];
 
 // Texto sem acentos e em minúsculas, para buscas e nomes de colunas.
@@ -122,6 +123,9 @@ export function parseBirthDate(s, today = new Date()) {
 }
 
 export const fmtDate = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
+
+// Centavos (como ficam no banco) em reais: 123456 → "R$ 1.234,56".
+export const fmtMoney = (cents) => (Number(cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
