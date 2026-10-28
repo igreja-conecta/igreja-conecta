@@ -40,6 +40,10 @@ test('a líder vê e busca os membros da igreja', async ({ page }) => {
   await expect(page.locator('.member-row', { hasText: 'Fulano da B' })).toHaveCount(0);
   await page.getByLabel('Buscar membros').fill('fulano');
   await expect(page.locator('.member-row')).toHaveCount(1);
+  // Cadastrar fica no botão redondo "+"; a planilha continua no topo.
+  await expect(page.getByRole('link', { name: 'Importar planilha' })).toBeVisible();
+  await page.getByRole('link', { name: 'Novo membro' }).click();
+  await expect(page.getByRole('heading', { name: 'Novo membro' })).toBeVisible();
 });
 
 test('a líder cadastra e edita um membro, mas não muda o papel nem exclui', async ({ page }) => {

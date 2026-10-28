@@ -1363,7 +1363,7 @@ function helpTopics() {
     ],
     [
       'Cadastrar membros',
-      `<p>Na aba <a href="#/membros">Membros</a>, toque em <em>Novo membro</em>. Só o nome é obrigatório, mas <strong>sem e-mail a pessoa não consegue entrar no app</strong>. Marque que a pessoa concordou em ter os dados no app.</p>
+      `<p>Na aba <a href="#/membros">Membros</a>, toque no botão <strong>+</strong>, embaixo à direita. Só o nome é obrigatório, mas <strong>sem e-mail a pessoa não consegue entrar no app</strong>. Marque que a pessoa concordou em ter os dados no app.</p>
        <p>A etiqueta de cada pessoa mostra a situação:</p>
        <ul class="bullets">
          <li><strong>Ainda não entrou:</strong> tem e-mail, mas ainda não abriu o app. Mande o endereço do app para ela.</li>
@@ -1842,7 +1842,6 @@ async function viewMembers(ctx) {
     <div class="page">
       <h1>Membros</h1>
       <div class="actions-row">
-        <a class="btn primary" href="#/membros/novo">${icon.plus} Novo membro</a>
         <a class="btn" href="#/membros/importar">${icon.upload} Importar planilha</a>
       </div>
       <label class="search">${icon.search}<input type="search" id="q" placeholder="Buscar por nome, e-mail ou telefone" aria-label="Buscar membros"></label>
@@ -1853,6 +1852,7 @@ async function viewMembers(ctx) {
       </div>
       <p class="hint" id="count"></p>
       <div class="list" id="members"></div>
+      ${fab('#/membros/novo', 'Novo membro')}
     </div>`;
 
   const list = document.getElementById('members');
