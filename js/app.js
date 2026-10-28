@@ -222,7 +222,9 @@ function prefetchScreens() {
     }
     if (featureOn('avisos')) screenFetch('avisos', loadAnnouncements).catch(() => {});
     if (regsOn()) screenFetch('inscricoes', loadRegistrations).catch(() => {});
-    if (chatOn()) screenFetch('chat', loadChats).catch(() => {}); // só na memória (PRIVATE_SCREENS)
+    // Conversas e visitantes: só na memória (PRIVATE_SCREENS), nunca gravados no aparelho.
+    if (chatOn()) screenFetch('chat', loadChats).then(prefetchConversations).catch(() => {});
+    if (visitorTeam()) screenFetch('visitantes', loadVisitors).catch(() => {});
     if (featureOn('infantil')) screenFetch('filhos', loadMyKids).catch(() => {});
     if (kidsTeam()) screenFetch('infantil', loadKids).catch(() => {});
     if (featureOn('galeria')) {
@@ -6832,6 +6834,28 @@ async function loadConversation(id) {
   return { c: info.data?.[0] ?? null, messages: msgs.data.reverse() };
 }
 
+// No Início, junto com a lista: as mensagens das conversas mais recentes (uma busca só), para a
+// conversa abrir na hora. Só na memória (PRIVATE_SCREENS); ao abrir, a tela confere com o banco.
+const CHAT_PREFETCH = 8;
+async function prefetchConversations(rows) {
+  const top = (rows || []).slice(0, CHAT_PREFETCH).filter((c) => !screenCached(`conversa:${c.id}`));
+  if (!top.length) return;
+  const { data, error } = await sb
+    .from('messages')
+    .select('id, conversation_id, sender_id, body, created_at')
+    .in('conversation_id', top.map((c) => c.id))
+    .order('created_at', { ascending: false })
+    .limit(60 * top.length);
+  if (error) return;
+  for (const c of top) {
+    const messages = data
+      .filter((m) => m.conversation_id === c.id)
+      .reverse()
+      .map(({ conversation_id, ...m }) => m);
+    if (!screenCached(`conversa:${c.id}`)) screenUpdate(`conversa:${c.id}`, { c, messages });
+  }
+}
+
 async function viewConversation(ctx, id) {
   if (!requireChat(`/chat/${id}`)) return;
   await screenShowWithPhotos(
@@ -6853,7 +6877,10 @@ function drawConversation(ctx, id, data, photos) {
     return;
   }
   // Redesenho da mesma conversa (o banco respondeu): mantém o que ainda está "enviando…".
-  const pending = chatOpen?.id === id && chatOpen.ctx === ctx ? chatOpen.messages.filter((m) => m.pending) : [];
+  // (Sem as que o banco já trouxe gravadas: mesma pessoa, mesmo texto, de lá para cá.)
+  const saved = (p) =>
+    data.messages.some((m) => m.sender_id === p.sender_id && m.body === p.body && Date.parse(m.created_at) >= Date.parse(p.created_at) - 60000);
+  const pending = chatOpen?.id === id && chatOpen.ctx === ctx ? chatOpen.messages.filter((m) => m.pending && !saved(m)) : [];
   const messages = [...data.messages.filter((m) => !pending.some((p) => p.id === m.id)), ...pending];
   let draft = '';
   try {
@@ -6953,18 +6980,24 @@ function drawConversation(ctx, id, data, photos) {
       grow();
       paint();
       const { data: saved, error } = await sb.from('messages').insert({ conversation_id: id, body }).select('id, sender_id, body, created_at').single();
-      const i = messages.indexOf(temp);
+      // A tela pode ter sido redesenhada enquanto enviava (o banco respondeu): usa a lista atual.
+      const v = chatOpen?.id === id && chatOpen.ctx === ctx ? chatOpen : { messages, paint, remember };
+      const i = v.messages.findIndex((x) => x.id === temp.id);
       if (error) {
-        messages.splice(i, 1);
-        if (!input.value) input.value = body;
-        grow();
-        paint();
+        if (i >= 0) v.messages.splice(i, 1);
+        const box = document.getElementById('chat-form')?.body;
+        if (box && !box.value) box.value = body;
+        v.paint();
         return toast(errorText(error), 'error');
       }
-      if (messages.some((x) => x.id === saved.id)) messages.splice(i, 1); // o tempo real chegou antes
-      else messages[i] = saved;
-      paint();
-      remember();
+      if (i >= 0) {
+        if (v.messages.some((x) => x.id === saved.id)) v.messages.splice(i, 1); // o tempo real chegou antes
+        else v.messages[i] = saved;
+      } else if (!v.messages.some((x) => x.id === saved.id)) {
+        v.messages.push(saved);
+      }
+      v.paint();
+      v.remember();
       screenForget('chat');
       if (first) pushInvite(document.getElementById('chat-push'), { title: 'Quer saber quando responderem?', note: 'Ative as notificações neste celular.' }).catch(() => {});
     });
