@@ -250,6 +250,9 @@ select:disabled, input:disabled { opacity: .65; }
 .member-row strong, .member-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .member-row small { color: var(--muted); }
 .member-row.inactive { opacity: .6; }
+/* Nova conversa: a pessoa é um botão com o mesmo formato da lista de membros */
+button.member-row { font: inherit; text-align: left; width: 100%; cursor: pointer; }
+.member-row > svg:last-child { flex: none; color: var(--muted); }
 .tags { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
 .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; background: var(--line); color: var(--muted); white-space: nowrap; }
 .tag.ok { background: color-mix(in srgb, #2f9e44 18%, var(--surface)); color: color-mix(in srgb, #2f9e44 75%, var(--ink)); }
@@ -663,6 +666,7 @@ a.notice { display: block; color: inherit; text-decoration: none; }
   background: var(--brand); color: var(--brand-ink); box-shadow: 0 4px 14px rgb(0 0 0 / .25); text-decoration: none;
 }
 .fab svg { width: 28px; height: 28px; }
+button.fab { border: 0; padding: 0; cursor: pointer; font: inherit; }
 .fab:active { transform: scale(.96); }
 body:not(.has-tabbar) .fab { bottom: calc(16px + env(safe-area-inset-bottom)); }
 /* "+" com menu (mais de uma forma de criar): as opções sobem acima do botão; o "+" vira "×". */

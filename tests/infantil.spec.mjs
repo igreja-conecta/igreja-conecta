@@ -59,6 +59,10 @@ test('o responsável cadastra o filho com as alergias', async ({ page }) => {
 test('a liderança cria a sala, faz a entrada e imprime a etiqueta com o código', async ({ page }) => {
   await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/menu');
   await page.getByRole('link', { name: 'Check-in infantil' }).click();
+  // A retirada fica no topo; o "+" abre Cadastrar criança e Salas.
+  await expect(page.getByRole('link', { name: 'Retirada por código' })).toBeVisible();
+  await page.getByLabel('Cadastrar criança ou salas').click();
+  await expect(page.getByRole('link', { name: 'Cadastrar criança' })).toHaveAttribute('href', '#/infantil/crianca/nova');
   await page.getByRole('link', { name: 'Salas', exact: true }).click();
   await page.getByLabel('Nome').fill(room);
   await page.getByLabel('Idade de').selectOption('0');

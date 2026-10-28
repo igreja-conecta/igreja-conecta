@@ -59,6 +59,8 @@ test('a liderança vê o visitante, chama no WhatsApp e registra o acompanhament
   await page.getByRole('link', { name: /^Contatado/ }).click();
   await expect(page.locator('.member-row', { hasText: name })).toContainText('Contatado');
 
+  // O QR Code fica no botão redondo (com o ícone do QR Code, não o "+").
+  await expect(page.locator('.fab')).toHaveAttribute('href', '#/visitantes/qr');
   await page.getByRole('link', { name: 'QR Code para o culto' }).click();
   await expect(page.locator('#visitor-qr svg')).toBeVisible();
   await expect(page.locator('.visitor-qr code')).toHaveText(/\/i\/teste-a\/#\/visitante$/);

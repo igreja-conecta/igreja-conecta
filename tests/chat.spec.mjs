@@ -119,6 +119,10 @@ test('o botão + abre a lista de quem dá para chamar, com busca', async ({ page
   await page.getByRole('link', { name: 'Nova conversa' }).click();
   await expect(page.getByRole('heading', { name: 'Membros', exact: true })).toBeVisible();
   await expect(page.locator('.chat-person', { hasText: 'Membro da A' })).toBeVisible();
+  // Mesmo formato da lista de membros: foto redonda de 44 px, sem esticar.
+  const box = await page.locator('.chat-person .avatar').first().boundingBox();
+  expect(Math.round(box.width)).toBe(44);
+  expect(Math.round(box.height)).toBe(44);
   await page.getByLabel('Buscar pessoa').fill('membro');
   await expect(page.locator('.chat-person:visible')).toHaveCount(1);
   await page.getByLabel('Buscar pessoa').fill('ninguem-com-esse-nome');
