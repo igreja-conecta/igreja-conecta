@@ -1,6 +1,6 @@
 // Funções puras do app, testadas sem navegador.
 import { test, expect } from '@playwright/test';
-import { slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone, esc, fmtMoney } from '../js/util.js';
+import { slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE } from '../js/util.js';
 import { pixPayload, normalizePixKey, guessPixType, crc16, parseAmount } from '../js/pix.js';
 
 test('endereço da igreja a partir do nome', () => {
@@ -42,6 +42,60 @@ test('valores do financeiro: centavos do banco em reais', () => {
   expect(brl(5)).toBe('R$ 0,05');
   expect(brl(0)).toBe('R$ 0,00');
   expect(brl(-15000)).toBe('-R$ 150,00');
+});
+
+test('planilha do financeiro: datas, tipos, valores, nomes, erros e linhas já lançadas', () => {
+  expect(parseDay('05/10/2026')).toBe('2026-10-05');
+  expect(parseDay('5/1/26')).toBe('2026-01-05');
+  expect(parseDay('2026-10-05')).toBe('2026-10-05');
+  expect(parseDay('31/02/2026')).toBe(null);
+  expect(parseDay('ontem')).toBe(null);
+
+  const base = {
+    accounts: [{ id: 'cx', name: 'Caixa' }, { id: 'bc', name: 'Banco' }],
+    categories: [
+      { id: 'dz', kind: 'entrada', name: 'Dízimos' },
+      { id: 'al', kind: 'saida', name: 'Aluguel' },
+    ],
+  };
+  // O modelo para baixar é aceito e importa as três linhas.
+  const model = parseFinanceCsv(FINANCE_CSV_TEMPLATE, base).rows;
+  expect(model.map((r) => [r.kind, r.amount_cents, r.errors])).toEqual([
+    ['entrada', 125000, []],
+    ['transferencia', 100000, []],
+    ['saida', 80000, []],
+  ]);
+  expect(model[1]).toMatchObject({ account_id: 'cx', to_account_id: 'bc', category_id: null });
+
+  const csv = [
+    'Data,Tipo,Valor,Categoria,Conta,Conta destino,Descrição',
+    '01/10/2026,RECEITA,"1.000,50",dizimos,caixa,,Culto',
+    '02/10/2026,despesa,300,Dízimos,Banco,,categoria do outro tipo',
+    '03/10/2026,saída,0,Aluguel,Banco,,',
+    '04/10/2026,transferência,10,,Caixa,Caixa,',
+    '05/10/2026,pix,10,Aluguel,Banco,,',
+    '06/11/2026,entrada,10,Dízimos,Carteira,,',
+    '07/12/2026,entrada,10,Dízimos,Caixa,,mês fechado',
+    '01/10/2026,entrada,"1.000,50",Dízimos,Caixa,,culto',
+    '01/10/2026,entrada,"1.000,50",Dízimos,Caixa,,Culto',
+  ].join('\n');
+  const existing = new Map([['2026-10-01|entrada|100050|cx||dz|culto', 2]]);
+  const { rows } = parseFinanceCsv(csv, { ...base, closedMonths: new Set(['2026-12']), existing });
+  expect(rows.map((r) => r.errors)).toEqual([
+    [],
+    ['categoria de saída "Dízimos" não existe'],
+    ['valor inválido'],
+    ['as duas contas são a mesma'],
+    ['tipo inválido (entrada, saída ou transferência)'],
+    ['conta "Carteira" não existe'],
+    ['mês fechado'],
+    [],
+    [],
+  ]);
+  expect(rows[0]).toMatchObject({ line: 2, entry_date: '2026-10-01', kind: 'entrada', amount_cents: 100050, account_id: 'cx', category_id: 'dz' });
+  // Duas iguais já estão no banco: as duas primeiras iguais são puladas e a terceira entra.
+  expect(rows.map((r) => r.skip)).toEqual(['já lançado', null, null, null, null, null, null, 'já lançado', null]);
+  expect(parseFinanceCsv('nome;valor\nx;1', base).error).toMatch(/colunas data, tipo, valor e conta/);
 });
 
 test('textos escapados antes de ir para a tela', () => {
