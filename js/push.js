@@ -55,6 +55,27 @@ export async function syncPush(sb) {
   await saveSubscription(sb, await currentSubscription());
 }
 
+// Antes, a inscrição de todas as páginas ficava no service worker da raiz do site. Agora cada
+// igreja tem o seu (o mesmo endereço do app instalado). Na página da igreja, se o aparelho já
+// tinha aceitado, passa a inscrição para o service worker da igreja e apaga a antiga, sem
+// precisar ativar de novo.
+export async function movePushToPage(sb, rootUrl, vapidKey) {
+  if (pushSupport() !== 'ok' || Notification.permission !== 'granted') return;
+  const reg = await navigator.serviceWorker.ready;
+  const root = new URL(rootUrl).href;
+  if (reg.scope === root) return; // página da raiz: nada a mudar
+  const old = await navigator.serviceWorker.getRegistration(root);
+  if (!old || old.scope !== root) return;
+  const oldSub = await old.pushManager.getSubscription();
+  if (!oldSub) return;
+  if (!(await reg.pushManager.getSubscription())) {
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(vapidKey) });
+    await saveSubscription(sb, sub);
+  }
+  await sb.from('push_subscriptions').delete().eq('endpoint', oldSub.endpoint);
+  await oldSub.unsubscribe();
+}
+
 async function saveSubscription(sb, sub) {
   const { keys } = sub.toJSON();
   const { error } = await sb.rpc('save_push_subscription', { p_endpoint: sub.endpoint, p_p256dh: keys.p256dh, p_auth: keys.auth });

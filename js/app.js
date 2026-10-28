@@ -7,7 +7,7 @@ import {
 } from './util.js';
 import { resizeImage, resizeLogo, makeIconSet, resizeForGallery } from './images.js';
 import { maybeSuggestInstall, installState, installNow, iconReady, ICON_PREPARING } from './install.js';
-import { pushSupport, pushActive, enablePush, disablePush, syncPush } from './push.js';
+import { pushSupport, pushActive, enablePush, disablePush, syncPush, movePushToPage } from './push.js';
 import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg, qrImage } from './pix.js';
 import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
 import { BOOKS, BIBLE_VERSIONS, bibleUrl, bookName, bookChapters, verseRef, READING_PLANS, planReading, passageLabel, readingLabel } from './biblia.js';
@@ -500,7 +500,11 @@ async function setUser(user) {
   await loadMemberships();
   renderAccountLink();
   // Aparelho que já aceitou notificações: garante que a inscrição está nesta conta.
-  if (user) syncPush(sb).catch(() => {});
+  if (user)
+    movePushToPage(sb, ROOT_URL, CONFIG.VAPID_PUBLIC_KEY)
+      .catch(() => {})
+      .then(() => syncPush(sb))
+      .catch(() => {});
   // Chat: canal particular desta conta e o número de conversas não lidas.
   listenChat().catch(() => {});
   chatUnread = 0;
@@ -7725,7 +7729,11 @@ document.addEventListener('click', (e) => {
   location.hash = a.getAttribute('href').slice(1);
 });
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// Cada igreja tem o seu service worker, com o mesmo endereço do app instalado dela (i/<igreja>/):
+// assim o Android mostra os avisos pelo app da igreja, como no Desapega. Com o da raiz do site,
+// o aviso ia para o Chrome e sumia em silêncio quando o Chrome não tinha permissão no celular.
+const SW_SCOPE = SLUG ? PAGE_URL.replace(/\/?$/, '/') : ROOT_URL;
+if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('sw.js', ROOT_URL).href, { scope: SW_SCOPE }).catch(() => {});
 let quickStarted = null;
 boot().catch((e) => {
   console.error(e);
