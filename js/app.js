@@ -1499,7 +1499,7 @@ function helpTopics() {
           'Financeiro (tesouraria)',
           `<p>O administrador marca quem cuida do dinheiro: no cadastro da pessoa, em <a href="#/membros">Membros</a>, marque <strong>Tesouraria</strong>. Só o administrador e a tesouraria veem o <a href="#/financeiro">Menu &gt; Financeiro</a>.</p>
            <p>Lá, toque no botão <strong>+</strong>, embaixo à direita, e em <em>Novo lançamento</em> para lançar uma <strong>entrada</strong> (dízimos, ofertas…), uma <strong>saída</strong> (aluguel, luz…) ou uma <strong>transferência</strong> entre contas (ex.: o dinheiro do culto depositado no banco). As setas trocam o mês; a tela mostra os totais e o saldo de cada conta. Arraste um lançamento para a esquerda para apagar.</p>
-           <p>Para lançar muita coisa de uma vez, toque no <strong>+</strong> e em <a href="#/financeiro/importar">Importar planilha</a>: baixe o modelo, preencha no Excel ou no Google Planilhas e salve como CSV. O app mostra os erros de cada linha antes de gravar e pula o que já foi lançado (importar de novo não duplica). <em>Baixar planilha do mês</em> traz os lançamentos no mesmo formato, para o contador.</p>
+           <p>Para lançar muita coisa de uma vez, toque no <strong>+</strong> e em <a href="#/financeiro/importar">Importar planilha</a>: baixe o modelo, preencha no Excel ou no Google Planilhas e salve como CSV. O app mostra os erros de cada linha antes de gravar e pula o que já foi lançado (importar de novo não duplica). <em>Baixar planilha do mês</em> traz os lançamentos no mesmo formato, para o contador. Importou errado? <em>Apagar os lançamentos do mês</em> tira todos de uma vez (com Desfazer).</p>
            <p>Em <em>Contas e categorias</em>, mude os nomes, crie outras e informe o <strong>saldo inicial</strong> de cada conta (o que ela tinha antes do primeiro lançamento). O app só registra: o dinheiro não passa por ele.</p>
            <p>No fim do mês, toque em <strong>Fechar e publicar o mês</strong> (dá para deixar um recado, como "reforma do telhado concluída"). Os lançamentos do mês ficam travados e todos os membros recebem um aviso para ver a <a href="#/prestacao">Prestação de contas</a>: só os totais por categoria, nunca os lançamentos nem as descrições. Antes de fechar, toque em <em>Prévia</em> para ver como vai ficar. Para corrigir depois, toque em <em>Reabrir o mês</em>: ele sai da prestação até você fechar de novo.</p>`,
         ]]
@@ -6578,7 +6578,8 @@ function drawFinance(key, d) {
       ${
         d.entries.length
           ? `${closed ? '' : '<p class="hint swipe-hint">Arraste um lançamento para a esquerda para apagar.</p>'}
-             <div class="list" id="fin-entries">${d.entries.map(row).join('')}</div>`
+             <div class="list" id="fin-entries">${d.entries.map(row).join('')}</div>
+             ${closed ? '' : '<p><button type="button" class="btn danger-outline" id="fin-clear">Apagar os lançamentos do mês</button></p>'}`
           : `<div class="empty"><p>Nenhum lançamento neste mês.${closed ? '' : ' Toque no <strong>+</strong> para lançar uma entrada, uma saída ou uma transferência.'}</p></div>`
       }
       <h2>Prestação de contas</h2>
@@ -6613,6 +6614,37 @@ function drawFinance(key, d) {
             ])
       }
     </div>`;
+
+  // Apagar o mês inteiro (ex.: uma planilha importada errada), com "Desfazer". Como no arrastar,
+  // fica guardado no banco (deleted_at); o banco recusa se o mês estiver fechado.
+  document.getElementById('fin-clear')?.addEventListener('click', async () => {
+    const n = d.entries.length;
+    const what = n === 1 ? 'o lançamento' : `os ${n} lançamentos`;
+    if (!await ask(`Apagar ${what} de ${finMonthLabel(key)}? ${n === 1 ? 'Ele sai' : 'Eles saem'} dos totais e dos saldos.`)) return;
+    const { data, error } = await sb
+      .from('fin_entries')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('church_id', state.church.id)
+      .is('deleted_at', null)
+      .gte('entry_date', `${key}-01`)
+      .lte('entry_date', monthEnd(key))
+      .select('id');
+    if (error) return toast(errorText(error), 'error');
+    const ids = data.map((x) => x.id);
+    forgetFinance();
+    render();
+    toast(ids.length === 1 ? '1 lançamento apagado.' : `${ids.length} lançamentos apagados.`, '', {
+      label: 'Desfazer',
+      run: async () => {
+        for (let i = 0; i < ids.length; i += 100) {
+          const { error: err } = await sb.from('fin_entries').update({ deleted_at: null }).in('id', ids.slice(i, i + 100));
+          if (err) return toast(errorText(err), 'error');
+        }
+        forgetFinance();
+        if (location.hash.startsWith('#/financeiro')) render();
+      },
+    });
+  });
 
   // Planilha do mês no mesmo formato do modelo de importar (abre no Excel; serve para o contador).
   document.getElementById('fin-csv').onclick = () => {
