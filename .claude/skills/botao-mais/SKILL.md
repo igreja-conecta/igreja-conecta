@@ -6,7 +6,7 @@ description: Regras do botão redondo com "+" (canto inferior direito) para cria
 # Botão redondo com "+"
 
 Pedido do usuário: a ação de **criar** de uma tela de lista fica num **botão redondo com "+"** no
-canto inferior direito, como em apps de celular (já usado em Conversas, Agenda, Avisos, Devocional e Galeria). Ele não
+canto inferior direito, como em apps de celular (já usado em Conversas, Agenda, Avisos, Devocional, Galeria, Células e Ministérios). Ele não
 ocupa espaço no topo da tela e fica sempre ao alcance do polegar.
 
 ## Como usar
@@ -55,6 +55,6 @@ importante.
 
 ## Telas que ainda usam o botão antigo (candidatas)
 
-Membros (Novo membro), Plano de leitura (Novo plano), Células (Nova
-célula), Ministérios (Novo ministério) e, dentro do ministério, Nova escala.
+Membros (Novo membro) e Plano de leitura (Novo plano). Dentro do ministério, Nova escala fica como
+está (tela com várias ações, como dentro do álbum da galeria).
 Só troque quando o usuário pedir.

@@ -1411,14 +1411,14 @@ function helpTopics() {
     ...(features('escalas')
       ? [[
           'Organizar os ministérios',
-          `<p>Em <a href="#/escalas">Menu &gt; Ministérios e escalas</a>, toque em <em>Novo ministério</em> (há sugestões prontas: Louvor, Acolhimento, Infantil e Mídia). Depois, abra o ministério, coloque a equipe buscando pelo nome e escolha quem é <strong>Líder</strong>: qualquer pessoa do cadastro pode liderar um ministério e montar as escalas dele.</p>
+          `<p>Em <a href="#/escalas">Menu &gt; Ministérios e escalas</a>, toque no botão <strong>+</strong>, embaixo à direita (há sugestões prontas: Louvor, Acolhimento, Infantil e Mídia). Depois, abra o ministério, coloque a equipe buscando pelo nome e escolha quem é <strong>Líder</strong>: qualquer pessoa do cadastro pode liderar um ministério e montar as escalas dele.</p>
            <p>Os pedidos de troca aparecem no alto da tela de escalas.${features('visitantes') ? ' Marque <strong>Recebe os avisos de visitantes</strong> no ministério de Acolhimento: a equipe dele passa a receber o aviso de cada visitante e a ver os cadastros para o acompanhamento. Sem esse ministério, o aviso vai para a liderança.' : ''}</p>`,
         ]]
       : []),
     ...(features('celulas')
       ? [[
           'Organizar as células',
-          `<p>Em <a href="#/celulas">Menu &gt; Células</a>, toque em <em>Nova célula</em> e preencha o nome, o dia, o horário e o local. Depois, abra a célula e coloque os participantes buscando pelo nome. Ao lado de cada pessoa, escolha quem é <strong>Líder</strong> ou <strong>Auxiliar</strong>: qualquer pessoa do cadastro pode liderar uma célula, mesmo sem outro papel na igreja.</p>
+          `<p>Em <a href="#/celulas">Menu &gt; Células</a>, toque no botão <strong>+</strong>, embaixo à direita, e preencha o nome, o dia, o horário e o local. Depois, abra a célula e coloque os participantes buscando pelo nome. Ao lado de cada pessoa, escolha quem é <strong>Líder</strong> ou <strong>Auxiliar</strong>: qualquer pessoa do cadastro pode liderar uma célula, mesmo sem outro papel na igreja.</p>
            <p>A lista de células mostra o número de participantes e a <strong>frequência</strong> (a média de presença nos 4 últimos encontros). Embaixo ficam os <strong>membros sem célula</strong>, para encaminhar. Quando uma célula encerrar, desmarque <em>Célula ativa</em> na edição: o histórico fica guardado.</p>`,
         ]]
       : []),
@@ -4424,7 +4424,6 @@ function drawCells(ctx, { cells, meetings, people }) {
   $view.innerHTML = `
     <div class="page">
       <h1>Células</h1>
-      <div class="actions-row"><a class="btn primary" href="#/celulas/nova">${icon.plus} Nova célula</a></div>
       ${
         cells.length
           ? `<div class="list">${cells
@@ -4443,7 +4442,7 @@ function drawCells(ctx, { cells, meetings, people }) {
               })
               .join('')}</div>
              <p class="hint">Frequência: média de presença nos 4 últimos encontros (dos últimos 60 dias).</p>`
-          : '<div class="empty"><p>Nenhuma célula ainda. Crie a primeira.</p></div>'
+          : '<div class="empty"><p>Nenhuma célula ainda. Toque no <strong>+</strong> para criar a primeira.</p></div>'
       }
       <section class="card">
         <h2>${icon.users} Membros sem célula (${without.length})</h2>
@@ -4453,6 +4452,7 @@ function drawCells(ctx, { cells, meetings, people }) {
             : '<p>Todos os membros ativos estão em alguma célula.</p>'
         }
       </section>
+      ${fab('#/celulas/nova', 'Nova célula')}
     </div>`;
 }
 
@@ -4878,7 +4878,6 @@ function drawSchedules(data) {
           : '<div class="empty"><p>Você não está em nenhuma escala nos próximos dias.</p></div>'
       }
       <h2>Ministérios</h2>
-      ${leader ? `<div class="actions-row"><a class="btn primary" href="#/ministerios/novo">${icon.plus} Novo ministério</a></div>` : ''}
       ${
         data.ministries.length
           ? `<div class="list">${data.ministries
@@ -4902,9 +4901,10 @@ function drawSchedules(data) {
           </a>`,
               )
               .join('')}</div>`
-          : `<div class="empty"><p>${leader ? 'Nenhum ministério ainda. Crie o primeiro.' : 'Nenhum ministério ainda.'}</p></div>`
+          : `<div class="empty"><p>${leader ? 'Nenhum ministério ainda. Toque no <strong>+</strong> para criar o primeiro.' : 'Nenhum ministério ainda.'}</p></div>`
       }
       ${leader ? '' : '<p class="hint">Quer servir num ministério? Fale com o líder dele ou com a liderança da igreja.</p>'}
+      ${leader ? fab('#/ministerios/novo', 'Novo ministério') : ''}
     </div>`;
 
   $view.querySelectorAll('[data-slot]').forEach((card) => {
