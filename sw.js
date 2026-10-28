@@ -106,8 +106,9 @@ self.addEventListener('push', (e) => {
       if (viewing) return;
       return self.registration.showNotification(msg.title || 'Igreja Conecta', {
         body: msg.body || '',
-        // No Android o ícone grande aparece à direita, repetindo a logo que já fica à esquerda.
-        icon: ANDROID ? undefined : msg.icon || 'icons/icon-192.png',
+        // No Android o ícone grande aparece à direita: sem imagem, o Chrome desenha uma bola com a letra
+        // do site ("I"); uma imagem transparente não mostra nada (como no Desapega). O ícone da igreja já aparece à esquerda.
+        icon: ANDROID ? 'icons/vazio.png' : msg.icon || 'icons/icon-192.png',
         badge: 'icons/badge-96.png',
         image: msg.image,
         tag: msg.tag,
