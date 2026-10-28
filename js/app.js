@@ -7295,7 +7295,7 @@ async function viewNotifications(ctx) {
             </div>`
           : '';
     document.getElementById('push-line').innerHTML = active
-      ? `${icon.bell} Ativadas neste aparelho · <button class="link-btn" id="push-off">Desativar</button>`
+      ? `${icon.bell} Ativadas neste aparelho · <button class="link-btn" id="push-test">Enviar aviso de teste</button> · <button class="link-btn" id="push-off">Desativar</button>`
       : blocked
         ? 'As notificações estão bloqueadas para este site. Libere nas configurações do navegador para receber no celular.'
         : support === 'ok' || support === 'ios-instalar'
@@ -7303,6 +7303,7 @@ async function viewNotifications(ctx) {
           : 'Este navegador não recebe notificações no celular. Use o Chrome (Android) ou o app instalado (iPhone).';
     document.getElementById('push-on')?.addEventListener('click', (e) => togglePush(e.currentTarget, true));
     document.getElementById('push-off')?.addEventListener('click', (e) => togglePush(e.currentTarget, false));
+    document.getElementById('push-test')?.addEventListener('click', (e) => sendTestPush(e.currentTarget));
   });
 
   let data;
@@ -7357,6 +7358,36 @@ async function viewNotifications(ctx) {
 }
 
 // Convite discreto na página inicial para ativar as notificações (some por 30 dias ao fechar).
+// Aviso de teste para este aparelho (pela mesma função que manda os avisos do chat): mostra
+// se o aviso sai daqui e se o celular deixa aparecer.
+async function sendTestPush(btn) {
+  btn.disabled = true;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const subscription = await reg.pushManager.getSubscription();
+    const { data } = await sb.auth.getSession();
+    if (!subscription || !data.session) throw new Error('Ative as notificações neste aparelho primeiro.');
+    const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/enviar-push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: CONFIG.SUPABASE_ANON_KEY, Authorization: `Bearer ${data.session.access_token}` },
+      body: JSON.stringify({ test: true, endpoint: subscription.endpoint, church: state.church?.slug }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || 'Não foi possível enviar o teste.');
+    if (out.sent) {
+      toast('Aviso de teste enviado. Se não aparecer em 1 minuto, o celular está bloqueando as notificações do app: confira as configurações de notificação.');
+    } else if (out.gone || !out.devices) {
+      toast('Este aparelho não está mais inscrito. Toque em Desativar e ative as notificações de novo.', 'error');
+    } else {
+      toast('O serviço de notificações recusou o envio. Desative e ative as notificações de novo.', 'error');
+    }
+  } catch (err) {
+    toast(errorText(err), 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function pushInvite(el, { title = 'Receba as mensagens da igreja no celular', note = 'Como a mensagem no dia do seu aniversário.' } = {}) {
   if (!el || !isActiveMember() || pushSupport() !== 'ok' || Notification.permission !== 'default' || (await pushActive())) return;
   try {
