@@ -86,6 +86,8 @@ test('o membro vê o devocional no Início e toca em Amém; não escreve devocio
 
 test('o líder cria um plano de leitura; o membro entra, marca a leitura de hoje e vê o progresso', async ({ page, browser }) => {
   await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/leitura');
+  // A liderança cria pelo botão redondo "+".
+  await expect(page.locator('.fab')).toHaveAttribute('href', '#/leitura/novo');
   await page.getByRole('link', { name: 'Novo plano' }).click();
   await page.getByLabel('Salmos e Provérbios em 31 dias').check();
   await expect(page.getByLabel('Data de início')).toHaveValue(today);
@@ -100,6 +102,7 @@ test('o líder cria um plano de leitura; o membro entra, marca a leitura de hoje
   const plan = member.locator('section.reading-plan', { hasText: 'Salmos e Provérbios em 31 dias' });
   await expect(plan).toContainText('Dia 1 de 31');
   await expect(member.getByRole('link', { name: 'Novo plano' })).toHaveCount(0);
+  await expect(member.locator('.fab')).toHaveCount(0);
   await plan.getByRole('button', { name: 'Entrar no plano' }).click();
   await expect(member.getByText('Você entrou no plano. Boa leitura!')).toBeVisible();
   await expect(plan).toContainText('Leitura de hoje');

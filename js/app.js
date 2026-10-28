@@ -284,6 +284,12 @@ function toast(msg, kind = '') {
 
 // Botão redondo com "+" no canto inferior direito, para criar algo na tela (conversa, evento, aviso).
 const fab = (href, label) => `<a class="fab" href="${href}" aria-label="${esc(label)}" title="${esc(label)}">${icon.plus}</a>`;
+// Mais de uma forma de criar na mesma tela: o "+" abre um menu com as opções ([href, texto]).
+const fabMenu = (label, items) => `
+  <details class="fab-menu">
+    <summary class="fab" aria-label="${esc(label)}" title="${esc(label)}">${icon.plus}</summary>
+    <div class="fab-options">${items.map(([href, text]) => `<a class="btn" href="${href}">${esc(text)}</a>`).join('')}</div>
+  </details>`;
 
 const navigate = (path) => {
   if (location.hash === `#${path}`) render();
@@ -1315,7 +1321,7 @@ function helpTopics() {
     ...(features('oracao')
       ? [[
           'Pedidos de oração',
-          `<p>Em <a href="#/oracao">Pedidos de oração</a>, toque em <em>Fazer um pedido</em> e escolha para quem vai:</p>
+          `<p>Em <a href="#/oracao">Pedidos de oração</a>, toque no botão <strong>+</strong>, embaixo à direita, e escolha para quem vai:</p>
            <ul class="bullets">
              <li><strong>Só para os pastores:</strong> só o pastor (administrador) e os líderes leem. A secretaria não vê.</li>
              <li><strong>Para a igreja orar junto:</strong> vai para o mural depois da aprovação da liderança e fica lá por 30 dias. Se quiser, marque <em>Não mostrar meu nome</em> (a liderança continua vendo quem enviou).</li>
@@ -1363,7 +1369,7 @@ function helpTopics() {
     ],
     [
       'Cadastrar membros',
-      `<p>Na aba <a href="#/membros">Membros</a>, toque em <em>Novo membro</em>. Só o nome é obrigatório, mas <strong>sem e-mail a pessoa não consegue entrar no app</strong>. Marque que a pessoa concordou em ter os dados no app.</p>
+      `<p>Na aba <a href="#/membros">Membros</a>, toque no botão <strong>+</strong>, embaixo à direita, e em <em>Novo membro</em>. Só o nome é obrigatório, mas <strong>sem e-mail a pessoa não consegue entrar no app</strong>. Marque que a pessoa concordou em ter os dados no app.</p>
        <p>A etiqueta de cada pessoa mostra a situação:</p>
        <ul class="bullets">
          <li><strong>Ainda não entrou:</strong> tem e-mail, mas ainda não abriu o app. Mande o endereço do app para ela.</li>
@@ -1375,7 +1381,7 @@ function helpTopics() {
     ],
     [
       'Importar uma planilha de membros',
-      `<p>Em <a href="#/membros/importar">Membros &gt; Importar planilha</a>, toque em <em>Baixar modelo</em> e preencha no Excel ou no Google Planilhas, com as colunas <strong>nome</strong>, <strong>email</strong>, <strong>telefone</strong> e <strong>nascimento</strong> (datas como 15/03/1980)${features('datas_especiais') ? '. Se quiser, acrescente <strong>casamento</strong> e <strong>batismo</strong>' : ''}.</p>
+      `<p>Em <a href="#/membros/importar">Membros &gt; + &gt; Importar planilha</a>, toque em <em>Baixar modelo</em> e preencha no Excel ou no Google Planilhas, com as colunas <strong>nome</strong>, <strong>email</strong>, <strong>telefone</strong> e <strong>nascimento</strong> (datas como 15/03/1980)${features('datas_especiais') ? '. Se quiser, acrescente <strong>casamento</strong> e <strong>batismo</strong>' : ''}.</p>
        <p>Salve como <strong>CSV</strong> e escolha o arquivo. O app mostra uma prévia antes de gravar: as linhas com erro são explicadas, e quem já tem o e-mail cadastrado é pulado.</p>`,
     ],
     ...(features('agenda')
@@ -1430,7 +1436,7 @@ function helpTopics() {
               ? `<p>Em <a href="#/devocional">Devocional</a>, toque no botão <strong>+</strong>, embaixo à direita. Escolha o dia em que ele aparece (um por dia), o título, o versículo-base e a mensagem; a imagem é opcional. Dá para deixar vários prontos: os <strong>agendados</strong> só aparecem para os membros no dia marcado. Marque <em>Avisar os membros às 7h</em> para mandar a notificação.</p>`
               : '<p>Os devocionais são escritos pelo pastor (administrador) e pelos líderes.</p>'
           }
-           <p>Em <a href="#/leitura">Plano de leitura</a>, toque em <em>Novo plano</em>, escolha um dos planos prontos e a data de início: todos leem a mesma parte no mesmo dia. Dentro do plano, a liderança vê quantas pessoas estão lendo e o progresso médio (nunca o de uma pessoa), muda a data de início ou encerra o plano.</p>
+           <p>Em <a href="#/leitura">Plano de leitura</a>, toque no botão <strong>+</strong>, embaixo à direita, escolha um dos planos prontos e a data de início: todos leem a mesma parte no mesmo dia. Dentro do plano, a liderança vê quantas pessoas estão lendo e o progresso médio (nunca o de uma pessoa), muda a data de início ou encerra o plano.</p>
            <p>O app não traz o texto da Bíblia (as traduções têm direitos autorais): os links abrem a YouVersion na tradução escolhida em <em>Configurar a igreja &gt; Bíblia</em>.</p>`,
         ]]
       : []),
@@ -1841,10 +1847,6 @@ async function viewMembers(ctx) {
   $view.innerHTML = `
     <div class="page">
       <h1>Membros</h1>
-      <div class="actions-row">
-        <a class="btn primary" href="#/membros/novo">${icon.plus} Novo membro</a>
-        <a class="btn" href="#/membros/importar">${icon.upload} Importar planilha</a>
-      </div>
       <label class="search">${icon.search}<input type="search" id="q" placeholder="Buscar por nome, e-mail ou telefone" aria-label="Buscar membros"></label>
       <div class="chips filters">
         ${[['ativo', 'Ativos'], ['inativo', 'Inativos'], ['todos', 'Todos']]
@@ -1853,6 +1855,7 @@ async function viewMembers(ctx) {
       </div>
       <p class="hint" id="count"></p>
       <div class="list" id="members"></div>
+      ${fabMenu('Adicionar membros', [['#/membros/novo', 'Novo membro'], ['#/membros/importar', 'Importar planilha']])}
     </div>`;
 
   const list = document.getElementById('members');
@@ -3210,7 +3213,6 @@ function drawPrayerWall(rows) {
     <div class="page">
       <h1>Pedidos de oração</h1>
       ${prayerTabs('/oracao')}
-      <div class="actions-row"><a class="btn primary" href="#/oracao/novo">${icon.plus} Fazer um pedido</a></div>
       ${
         rows.length
           ? rows
@@ -3228,6 +3230,7 @@ function drawPrayerWall(rows) {
               .join('')
           : `<div class="empty"><p>Nenhum pedido no mural agora. Os pedidos aprovados ficam aqui por 30 dias.</p></div>`
       }
+      ${fab('#/oracao/novo', 'Fazer um pedido')}
     </div>`;
   $view.querySelectorAll('[data-pray]').forEach((b) => {
     b.onclick = async () => {
@@ -3308,7 +3311,6 @@ function drawMyPrayers(rows) {
     <div class="page">
       <h1>Pedidos de oração</h1>
       ${prayerTabs('/oracao/meus')}
-      <div class="actions-row"><a class="btn primary" href="#/oracao/novo">${icon.plus} Fazer um pedido</a></div>
       ${
         rows.length
           ? rows
@@ -3329,8 +3331,9 @@ function drawMyPrayers(rows) {
             </article>`,
               )
               .join('')
-          : `<div class="empty"><p>Você ainda não fez nenhum pedido.</p></div>`
+          : `<div class="empty"><p>Você ainda não fez nenhum pedido. Toque no <strong>+</strong> para fazer o primeiro.</p></div>`
       }
+      ${fab('#/oracao/novo', 'Fazer um pedido')}
     </div>`;
   $view.querySelectorAll('[data-answered]').forEach((b) => {
     b.onclick = async () => {
@@ -4135,7 +4138,6 @@ function drawReading(data) {
     <div class="page">
       <h1>Plano de leitura</h1>
       ${devotionalTabs('/leitura')}
-      ${leader ? `<div class="actions-row"><a class="btn primary" href="#/leitura/novo">${icon.plus} Novo plano</a></div>` : ''}
       ${
         plans.length
           ? plans
@@ -4162,8 +4164,9 @@ function drawReading(data) {
             </section>`;
               })
               .join('')
-          : `<div class="empty"><p>A igreja ainda não escolheu um plano de leitura.${leader ? ' Toque em <em>Novo plano</em> para começar.' : ''}</p></div>`
+          : `<div class="empty"><p>A igreja ainda não escolheu um plano de leitura.${leader ? ' Toque no <strong>+</strong> para começar.' : ''}</p></div>`
       }
+      ${leader ? fab('#/leitura/novo', 'Novo plano') : ''}
     </div>`;
   bindReading(data, drawReading);
 }
@@ -7819,6 +7822,12 @@ document.addEventListener('click', (e) => {
   if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
   location.hash = a.getAttribute('href').slice(1);
+});
+
+// O menu do botão "+" fecha ao tocar fora dele.
+document.addEventListener('click', (e) => {
+  const open = document.querySelector('.fab-menu[open]');
+  if (open && !open.contains(e.target)) open.open = false;
 });
 
 // Cada igreja tem o seu service worker, com o mesmo endereço do app instalado dela (i/<igreja>/):

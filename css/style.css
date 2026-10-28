@@ -665,5 +665,16 @@ a.notice { display: block; color: inherit; text-decoration: none; }
 .fab svg { width: 28px; height: 28px; }
 .fab:active { transform: scale(.96); }
 body:not(.has-tabbar) .fab { bottom: calc(16px + env(safe-area-inset-bottom)); }
+/* "+" com menu (mais de uma forma de criar): as opções sobem acima do botão; o "+" vira "×". */
+.fab-menu summary { list-style: none; cursor: pointer; }
+.fab-menu summary::-webkit-details-marker { display: none; }
+.fab-menu summary svg { transition: transform .15s; }
+.fab-menu[open] summary svg { transform: rotate(45deg); }
+.fab-options {
+  position: fixed; right: 16px; bottom: calc(var(--tabbar-h) + 84px + env(safe-area-inset-bottom)); z-index: 6;
+  display: grid; gap: 8px; justify-items: end;
+}
+.fab-options .btn { box-shadow: 0 4px 14px rgb(0 0 0 / .2); background: var(--surface); }
+body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bottom)); }
 /* Espaço no fim da lista para o botão não cobrir a última conversa */
 .page:has(.fab) { padding-bottom: 80px; }

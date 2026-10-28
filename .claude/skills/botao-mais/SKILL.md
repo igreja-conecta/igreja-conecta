@@ -6,7 +6,7 @@ description: Regras do botão redondo com "+" (canto inferior direito) para cria
 # Botão redondo com "+"
 
 Pedido do usuário: a ação de **criar** de uma tela de lista fica num **botão redondo com "+"** no
-canto inferior direito, como em apps de celular (já usado em Conversas, Agenda, Avisos, Devocional, Galeria, Células e Ministérios). Ele não
+canto inferior direito, como em apps de celular (já usado em Conversas, Agenda, Avisos, Devocional, Plano de leitura, Galeria, Células, Ministérios, Membros e Pedidos de oração). Ele não
 ocupa espaço no topo da tela e fica sempre ao alcance do polegar.
 
 ## Como usar
@@ -27,9 +27,13 @@ $view.innerHTML = `
 - `href`: a tela de criar (o mesmo destino do botão antigo).
 - `label`: o que o botão faz, por extenso ("Novo evento", "Nova conversa"). Vira o `aria-label` e o
   `title`: é o que o leitor de tela fala e o que os testes procuram (`getByRole('link', { name })`).
-- **Só para quem pode criar** (ex.: `isLeaderRole(myRole())`, `galleryTeam()`). A regra de verdade
+- **Só para quem pode criar** (ex.: `isLeaderRole(myRole())`, `galleryTeam()`; em Pedidos de oração todo membro pode, então o botão aparece para todos). A regra de verdade
   continua no banco; o botão escondido só evita oferecer o que vai dar erro.
 - **Um botão por tela**, só para a ação principal. Ações de um item (editar, apagar) continuam no item.
+- **Mais de uma forma de criar** (ex.: Membros: Novo membro e Importar planilha): use
+  `fabMenu(label, [[href, texto], ...])`. O "+" abre um menu acima dele com as opções e vira "×";
+  tocar fora fecha. Sem script na página (é um `<details>`). No teste, abra pelo `getByLabel(label)`
+  antes de clicar na opção.
 - Não use o botão em formulários nem em telas de detalhe com várias ações: lá vale o botão normal.
 
 ## O que já vem pronto (não repita)
@@ -55,6 +59,6 @@ importante.
 
 ## Telas que ainda usam o botão antigo (candidatas)
 
-Membros (Novo membro) e Plano de leitura (Novo plano). Dentro do ministério, Nova escala fica como
+Nenhuma. Dentro do ministério, Nova escala fica como
 está (tela com várias ações, como dentro do álbum da galeria).
 Só troque quando o usuário pedir.

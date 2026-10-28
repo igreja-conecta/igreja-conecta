@@ -40,6 +40,21 @@ test('a líder vê e busca os membros da igreja', async ({ page }) => {
   await expect(page.locator('.member-row', { hasText: 'Fulano da B' })).toHaveCount(0);
   await page.getByLabel('Buscar membros').fill('fulano');
   await expect(page.locator('.member-row')).toHaveCount(1);
+  // O botão redondo "+" abre o menu com as duas formas de adicionar; tocar fora fecha.
+  const fabBtn = page.getByLabel('Adicionar membros');
+  const novo = page.getByRole('link', { name: 'Novo membro' });
+  await expect(novo).toBeHidden();
+  await fabBtn.click();
+  await expect(page.getByRole('link', { name: 'Importar planilha' })).toBeVisible();
+  await page.getByRole('heading', { name: 'Membros' }).click();
+  await expect(novo).toBeHidden();
+  await fabBtn.click();
+  await page.getByRole('link', { name: 'Importar planilha' }).click();
+  await expect(page.getByRole('heading', { name: 'Importar planilha' })).toBeVisible();
+  await page.goBack();
+  await fabBtn.click();
+  await novo.click();
+  await expect(page.getByRole('heading', { name: 'Novo membro' })).toBeVisible();
 });
 
 test('a líder cadastra e edita um membro, mas não muda o papel nem exclui', async ({ page }) => {
