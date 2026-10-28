@@ -90,24 +90,31 @@ self.addEventListener('fetch', (e) => {
   );
 });
 
-// Mensagens de aniversário e resumos (enviados pelo GitHub Actions: scripts/enviar-aniversarios.mjs).
+// Avisos no celular: aniversários, resumos e central (GitHub Actions) e mensagens do chat
+// (Edge Function enviar-push). Como no Desapega: avisa as janelas abertas, não mostra o aviso
+// de uma conversa que a pessoa já está vendo e toca de novo a cada mensagem da mesma conversa.
 self.addEventListener('push', (e) => {
   let msg = {};
   try {
     msg = e.data ? e.data.json() : {};
   } catch {}
-  const tell = self.clients
-    .matchAll({ type: 'window', includeUncontrolled: true })
-    .then((wins) => wins.forEach((w) => w.postMessage({ type: 'push', url: msg.url || '' })));
-  e.waitUntil(Promise.all([tell, self.registration.showNotification(msg.title || 'Igreja Conecta', {
-      body: msg.body || '',
-      // No Android o ícone grande aparece à direita, repetindo a logo que já fica à esquerda.
-      icon: ANDROID ? undefined : msg.icon || 'icons/icon-192.png',
-      badge: 'icons/badge-96.png',
-      image: msg.image,
-      tag: msg.tag,
-      data: { url: msg.url || './' },
-    })]),
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      // App aberto: atualiza o sininho e o chat.
+      wins.forEach((w) => w.postMessage({ type: 'push', url: msg.url || '' }));
+      const viewing = msg.url && wins.some((w) => w.focused && w.visibilityState === 'visible' && w.url === msg.url);
+      if (viewing) return;
+      return self.registration.showNotification(msg.title || 'Igreja Conecta', {
+        body: msg.body || '',
+        // No Android o ícone grande aparece à direita, repetindo a logo que já fica à esquerda.
+        icon: ANDROID ? undefined : msg.icon || 'icons/icon-192.png',
+        badge: 'icons/badge-96.png',
+        image: msg.image,
+        tag: msg.tag,
+        renotify: !!msg.tag, // mensagem nova da mesma conversa toca de novo
+        data: { url: msg.url || './' },
+      });
+    }),
   );
 });
 
