@@ -45,6 +45,8 @@ test('a liderança cria o álbum e envia fotos, reduzidas no aparelho', async ({
   await page.setViewportSize({ width: 412, height: 915 });
   const shot2 = await page.screenshot({ fullPage: true });
   await page.getByRole('link', { name: 'Galeria de fotos' }).click();
+  // Quem publica cria pelo botão redondo "+".
+  await expect(page.locator('.fab')).toHaveAttribute('href', '#/galeria/novo');
   await page.getByRole('link', { name: 'Novo álbum' }).click();
   await page.getByLabel('Título').fill(title);
   await page.getByRole('button', { name: 'Criar álbum' }).click();
@@ -122,4 +124,6 @@ test('a Galeria abre na hora, com as capas, mesmo com o banco demorando', async 
   const card = page.locator('.album-card', { hasText: title });
   await expect(card).toContainText('1 foto', { timeout: 1000 });
   await expect(card.locator('img')).toBeVisible({ timeout: 1000 });
+  // O membro não publica: sem o botão "+".
+  await expect(page.locator('.fab')).toHaveCount(0);
 });
