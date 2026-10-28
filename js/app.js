@@ -337,6 +337,7 @@ const icon = {
   chevron: '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>',
   users: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.3a6.5 6.5 0 0 1 3.5 5.7"/></svg>',
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  qr: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2M20 14v.01M14 20h.01M17 17v3h3M20 17v.01"/></svg>',
   upload: '<svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v4h16v-4"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 5 5"/></svg>',
   clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
@@ -1305,7 +1306,7 @@ function helpTopics() {
           `<p>Em <a href="#/filhos">Menu &gt; Meus filhos</a>, toque no botão <strong>+</strong>, embaixo à direita, e cadastre os seus filhos com a data de nascimento e, se houver, as alergias e os cuidados. Só você, a equipe do infantil e a liderança veem.</p>
            <p>No culto, a equipe faz a entrada e você recebe no app um <strong>código de retirada</strong> de 4 letras e números (ele também aparece no Início). Para buscar a criança, mostre o código: sem ele, a equipe não libera. Você recebe um aviso na entrada e na retirada.</p>${
              kidsTeam()
-               ? `<p><strong>Se você é da equipe do infantil:</strong> em <a href="#/infantil">Menu &gt; Check-in infantil</a>, busque a criança e toque em <em>Entrada</em>; confira a sala (sugerida pela idade) e imprima as etiquetas, uma para a criança e outra com o código para o responsável. Sem impressora, escreva o código num adesivo. Na saída, toque em <em>Retirada por código</em> e digite o código que o responsável mostrar. Crianças de quem não usa o app são cadastradas na hora, em <em>Cadastrar criança</em>.</p>`
+               ? `<p><strong>Se você é da equipe do infantil:</strong> em <a href="#/infantil">Menu &gt; Check-in infantil</a>, busque a criança e toque em <em>Entrada</em>; confira a sala (sugerida pela idade) e imprima as etiquetas, uma para a criança e outra com o código para o responsável. Sem impressora, escreva o código num adesivo. Na saída, toque em <em>Retirada por código</em> e digite o código que o responsável mostrar. Crianças de quem não usa o app são cadastradas na hora: toque no botão <strong>+</strong>, embaixo à direita, e em <em>Cadastrar criança</em>.</p>`
                : ''
            }`,
         ]]
@@ -1403,7 +1404,7 @@ function helpTopics() {
     ...(features('visitantes')
       ? [[
           'Visitantes',
-          `<p>Em <a href="#/visitantes">Menu &gt; Visitantes</a>, toque em <em>QR Code para o culto</em> e projete no telão ou imprima. O visitante aponta a câmera, preenche um cadastro rápido (sem precisar de conta) e autoriza a igreja a guardar os dados.</p>
+          `<p>Em <a href="#/visitantes">Menu &gt; Visitantes</a>, toque no botão do <strong>QR Code</strong>, embaixo à direita, e projete no telão ou imprima. O visitante aponta a câmera, preenche um cadastro rápido (sem precisar de conta) e autoriza a igreja a guardar os dados.</p>
            <p>A cada visitante, a liderança (ou a equipe do ministério de Acolhimento, se houver) recebe uma notificação. Abra o cadastro para <strong>chamar no WhatsApp</strong> (a mensagem já vem escrita), mudar a situação (<em>Novo, Contatado, Acompanhando, Virou membro, Sem interesse</em>) e anotar o acompanhamento. <em>Cadastrar como membro</em> leva os dados para o cadastro de membros.</p>
            <p>O administrador muda a mensagem do WhatsApp na tela do QR Code. Quem não virou membro é apagado sozinho 12 meses depois do cadastro.</p>`,
         ]]
@@ -3580,9 +3581,6 @@ async function viewVisitors(ctx) {
     $view.innerHTML = `
       <div class="page">
         <h1>Visitantes</h1>
-        <div class="actions-row">
-          <a class="btn primary" href="#/visitantes/qr">QR Code para o culto</a>
-        </div>
         <div class="chips filters">
           <a class="chip ${filter ? '' : 'active'}" href="#/visitantes">Em andamento</a>
           ${Object.entries(VISITOR_STATUS)
@@ -3606,6 +3604,7 @@ async function viewVisitors(ctx) {
             : `<div class="empty"><p>${filter ? 'Ninguém nesta situação.' : 'Nenhum visitante em andamento. Mostre o QR Code no culto!'}</p></div>`
         }
         <p class="hint">Quem não virou membro é apagado sozinho 12 meses depois do cadastro.</p>
+        <a class="fab" href="#/visitantes/qr" aria-label="QR Code para o culto" title="QR Code para o culto">${icon.qr}</a>
       </div>`;
   });
 }
@@ -5535,8 +5534,6 @@ function drawKids(ctx, { kids, rooms, day }) {
       <p class="hint">${esc(fmtLongDay(isoLocal(new Date())))}</p>
       <div class="actions-row">
         <a class="btn primary" href="#/infantil/retirada">Retirada por código</a>
-        <a class="btn" href="#/infantil/crianca/nova">${icon.plus} Cadastrar criança</a>
-        ${isLeaderRole(myRole()) ? '<a class="btn" href="#/infantil/salas">Salas</a>' : ''}
       </div>
       ${rooms.length ? '' : `<p class="notice">Nenhuma sala criada ainda. ${isLeaderRole(myRole()) ? '<a href="#/infantil/salas">Criar as salas</a>' : 'Peça à liderança para criar as salas.'}</p>`}
       <h2>Nas salas agora (${open.length})</h2>
@@ -5580,6 +5577,12 @@ function drawKids(ctx, { kids, rooms, day }) {
           )
           .join('') || `<div class="empty"><p>${term ? 'Ninguém com esse nome.' : 'Nenhuma criança cadastrada.'}</p></div>`
       }</div>
+      ${
+        // A retirada fica no topo (é a mais usada); o "+" cadastra e, para a liderança, leva às salas.
+        isLeaderRole(myRole())
+          ? fabMenu('Cadastrar criança ou salas', [['#/infantil/crianca/nova', 'Cadastrar criança'], ['#/infantil/salas', 'Salas']])
+          : fab('#/infantil/crianca/nova', 'Cadastrar criança')
+      }
     </div>`;
   const search = document.getElementById('kid-search');
   search.addEventListener('submit', (e) => e.preventDefault());
@@ -6792,8 +6795,8 @@ function drawChatNew(ctx, people, photos) {
   // A busca e o texto digitado continuam ao redesenhar (fotos que chegaram, banco que respondeu).
   const typed = document.getElementById('chat-search')?.q.value || '';
   const row = (p) => `
-    <button type="button" class="menu-row chat-person" data-start="${p.member_id}" data-name="${esc(fold(p.name))}">
-      ${avatar(p.name, p.photo_path && photos[miniOf(p.photo_path)])}<span>${esc(p.name)}<small class="hint"> · ${esc(ROLES[p.role])}</small></span>${icon.chevron}
+    <button type="button" class="member-row chat-person" data-start="${p.member_id}" data-name="${esc(fold(p.name))}">
+      ${avatar(p.name, p.photo_path && photos[miniOf(p.photo_path)])}<span><strong>${esc(p.name)}</strong><small>${esc(ROLES[p.role])}</small></span>${icon.chevron}
     </button>`;
   const leaders = people.filter((p) => isLeaderRole(p.role));
   const members = people.filter((p) => !isLeaderRole(p.role));
@@ -7212,7 +7215,7 @@ function drawBirthdays(rows, minis, y, m) {
               .join('')}</div>`
           : `<div class="empty"><p>Nenhum aniversariante em ${MONTHS[m - 1]}.</p></div>`
       }
-      <button class="btn no-print" id="print">${icon.print} Imprimir</button>
+      <button class="fab no-print" id="print" aria-label="Imprimir" title="Imprimir">${icon.print}</button>
     </div>`;
   document.getElementById('print').onclick = () => window.print();
 }

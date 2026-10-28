@@ -6,7 +6,7 @@ description: Regras do botão redondo com "+" (canto inferior direito) para cria
 # Botão redondo com "+"
 
 Pedido do usuário: a ação de **criar** de uma tela de lista fica num **botão redondo com "+"** no
-canto inferior direito, como em apps de celular (já usado em Conversas, Agenda, Avisos, Devocional, Plano de leitura, Galeria, Células, Ministérios, Membros, Pedidos de oração e Meus filhos). Ele não
+canto inferior direito, como em apps de celular (já usado em Conversas, Agenda, Avisos, Devocional, Plano de leitura, Galeria, Células, Ministérios, Membros, Pedidos de oração, Meus filhos e Check-in infantil). Ele não
 ocupa espaço no topo da tela e fica sempre ao alcance do polegar.
 
 ## Como usar
@@ -31,10 +31,14 @@ $view.innerHTML = `
   continua no banco; o botão escondido só evita oferecer o que vai dar erro.
 - **Um botão por tela**, só para a ação principal. Ações de um item (editar, apagar) continuam no item.
 - **Mais de uma forma de criar** (ex.: Membros: Novo membro e Importar planilha): use
-  `fabMenu(label, [[href, texto], ...])`. O "+" abre um menu acima dele com as opções e vira "×";
+  `fabMenu(label, [[href, texto], ...])` (ex. também: Check-in infantil, com Cadastrar criança e Salas; a Retirada por código, a ação mais usada, fica no topo). O "+" abre um menu acima dele com as opções e vira "×";
   tocar fora fecha. Sem script na página (é um `<details>`). No teste, abra pelo `getByLabel(label)`
   antes de clicar na opção.
 - Não use o botão em formulários nem em telas de detalhe com várias ações: lá vale o botão normal.
+- **Ação principal que não é criar** (ex.: Aniversariantes: Imprimir; Visitantes: QR Code para o culto, com `icon.qr`): o mesmo botão redondo, mas
+  com o ícone da ação, nunca o "+" (o "+" quer dizer criar). Ex.: `<button class="fab no-print"
+  id="print" aria-label="Imprimir" title="Imprimir">${icon.print}</button>`; `no-print` o esconde
+  na folha impressa.
 
 ## O que já vem pronto (não repita)
 

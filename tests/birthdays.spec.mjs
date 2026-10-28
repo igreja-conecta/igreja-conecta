@@ -35,7 +35,9 @@ test('a liderança vê todos, com a idade, e pode imprimir', async ({ page }) =>
   await expect(page.locator('.bday-day', { hasText: 'Fulano da A' })).toContainText('faz 47 anos');
   await page.getByRole('link', { name: 'Próximo mês' }).click();
   await expect(page.getByRole('heading', { name: 'Aniversariantes de abril' })).toBeVisible();
+  // Imprimir fica no botão redondo (com o ícone da impressora, não o "+").
   await expect(page.getByRole('button', { name: 'Imprimir' })).toBeVisible();
+  await expect(page.locator('.fab#print')).toBeVisible();
 });
 
 test('o admin vê a prévia da mensagem com os campos trocados', async ({ page }) => {
