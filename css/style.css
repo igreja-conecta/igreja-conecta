@@ -741,3 +741,6 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 .fin-config-row small { color: var(--muted); }
 .fin-config-row.inactive > span { opacity: .6; }
 .fin-config-row .btn { width: auto; }
+.menu-row.fin-month > span { display: flex; flex-direction: column; }
+.menu-row.fin-month small { color: var(--muted); font-weight: 400; }
+.fin-balances small { color: var(--muted); }
