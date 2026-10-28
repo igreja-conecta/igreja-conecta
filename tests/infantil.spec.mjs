@@ -40,6 +40,8 @@ const notes = async (who, title) =>
 test('o responsável cadastra o filho com as alergias', async ({ page }) => {
   await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/menu');
   await page.getByRole('link', { name: 'Meus filhos' }).click();
+  // O responsável cadastra pelo botão redondo "+".
+  await expect(page.locator('.fab')).toHaveAttribute('href', '#/filhos/novo');
   await page.getByRole('link', { name: 'Cadastrar filho' }).click();
   await page.getByLabel('Nome da criança').fill(kid);
   await page.getByLabel('Data de nascimento').fill(birth);
