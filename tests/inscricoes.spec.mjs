@@ -1,7 +1,7 @@
 // Inscrição em eventos nas telas, com contas da igreja Teste A (Android).
 // O que o teste cria leva uma marca no nome e é apagado no fim.
 import { test, expect } from '@playwright/test';
-import { rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations } from './helpers.mjs';
+import { rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations, answer } from './helpers.mjs';
 
 // Nada pode ser bloqueado pela regra de segurança das páginas (CSP).
 test.beforeEach(async ({ page }) => watchCsp(page));
@@ -84,8 +84,8 @@ test('o membro cancela e a vaga passa sozinha para a fila', async ({ page }) => 
   const id = await eventId();
   await openLoggedIn(page, as['membro-a'].session, `/i/teste-a/#/agenda/${id}`);
   const box = page.locator('#reg-box');
-  page.once('dialog', (d) => d.accept());
   await box.getByRole('button', { name: 'Cancelar minha inscrição' }).click();
+  await answer(page);
   await expect(page.getByText('Inscrição cancelada.')).toBeVisible();
   // A vaga foi para a líder (primeira da fila): para o membro, continua esgotado.
   await expect(box).toContainText('Vagas esgotadas (1).');

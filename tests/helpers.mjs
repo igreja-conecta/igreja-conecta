@@ -105,3 +105,12 @@ export async function watchCsp(page) {
   });
 }
 export const cspViolations = (page) => page.evaluate(() => window.__csp || []);
+
+// Responde a pergunta do app (janela com o nome da igreja, no lugar da do navegador): digita o
+// texto, se houver, e toca no botão da ação.
+export async function answer(page, text) {
+  const dlg = page.locator('dialog.ask');
+  await dlg.waitFor();
+  if (text != null) await dlg.locator('input').fill(text);
+  await dlg.locator('button[value="ok"]').click();
+}

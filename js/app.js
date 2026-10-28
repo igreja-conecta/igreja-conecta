@@ -294,6 +294,50 @@ function toast(msg, kind = '', action = null) {
   toastTimer = setTimeout(() => (el.hidden = true), kind === 'error' ? 6000 : action ? 6000 : 3500);
 }
 
+// Pergunta numa janela do app, com o nome da igreja no topo (a janela do navegador, confirm/prompt,
+// mostraria o endereço do site). Devolve true/false; com `input`, o texto digitado (ou null se cancelou).
+// O botão da ação diz o que faz ("Apagar", "Excluir"…, tirado da própria pergunta) e fica vermelho
+// quando apaga ou tira algo. Esc e "Cancelar" desistem; Enter confirma.
+const ASK_DANGER = ['Apagar', 'Excluir', 'Tirar', 'Desligar', 'Sair', 'Desativar', 'Bloquear', 'Denunciar'];
+function ask(message, { ok, danger, input, value = '', placeholder = '', readonly = false } = {}) {
+  const verb = message.match(/^[A-ZÀ-Ú][a-zà-ú]+/)?.[0];
+  const label = ok || (verb && /r$/.test(verb) ? verb : 'Confirmar');
+  const red = danger ?? ASK_DANGER.includes(label.split(' ')[0]);
+  const dlg = document.createElement('dialog');
+  dlg.className = 'ask';
+  dlg.innerHTML = `
+    <form method="dialog">
+      <h2></h2>
+      <p class="pre"></p>
+      ${input ? `<input name="answer" type="${input === 'email' ? 'email' : 'text'}" maxlength="500" autocomplete="off">` : ''}
+      <div class="actions-row">
+        <button type="button" class="btn" value="cancel">${readonly ? 'Fechar' : 'Cancelar'}</button>
+        ${readonly ? '' : `<button class="btn ${red ? 'danger' : 'primary'}" value="ok"></button>`}
+      </div>
+    </form>`;
+  dlg.querySelector('h2').textContent = state.church?.name || 'Igreja Conecta';
+  dlg.querySelector('p').textContent = message;
+  const field = dlg.querySelector('input');
+  if (field) {
+    Object.assign(field, { value, placeholder, readOnly: readonly });
+    field.setAttribute('aria-label', message);
+  }
+  const okBtn = dlg.querySelector('[value="ok"]');
+  if (okBtn) okBtn.textContent = label;
+  document.body.append(dlg);
+  return new Promise((resolve) => {
+    dlg.querySelector('[value="cancel"]').onclick = () => dlg.close('cancel');
+    dlg.addEventListener('close', () => {
+      const yes = dlg.returnValue === 'ok';
+      dlg.remove();
+      resolve(input ? (yes ? field.value : null) : yes);
+    });
+    dlg.showModal();
+    (field && !readonly ? field : okBtn || field)?.focus();
+    if (readonly) field?.select();
+  });
+}
+
 // Botão redondo com "+" no canto inferior direito, para criar algo na tela (conversa, evento, aviso).
 const fab = (href, label) => `<a class="fab" href="${href}" aria-label="${esc(label)}" title="${esc(label)}">${icon.plus}</a>`;
 // Mais de uma forma de criar na mesma tela: o "+" abre um menu com as opções ([href, texto]).
@@ -849,7 +893,7 @@ async function viewPlatform(ctx) {
   $view.querySelectorAll('.platform-church').forEach((row) => {
     const id = row.dataset.id;
     row.querySelector('[data-admin]').onclick = async () => {
-      const email = prompt('E-mail do administrador desta igreja:');
+      const email = await ask('E-mail do administrador desta igreja:', { input: 'email', ok: 'Salvar', placeholder: 'nome@exemplo.com' });
       if (!email) return;
       const { error } = await sb.rpc('set_church_admin', { p_church: id, p_email: email.trim(), p_name: null });
       if (error) return toast(errorText(error), 'error');
@@ -858,7 +902,7 @@ async function viewPlatform(ctx) {
     };
     row.querySelector('[data-active]').onclick = async (e) => {
       const active = e.currentTarget.dataset.active === 'true';
-      if (!active && !confirm('Desativar esta igreja? Ninguém mais acessa o app dela até você reativar.')) return;
+      if (!active && !await ask('Desativar esta igreja? Ninguém mais acessa o app dela até você reativar.')) return;
       const { error } = await sb.rpc('set_church_active', { p_church: id, p_active: active });
       if (error) return toast(errorText(error), 'error');
       render();
@@ -918,7 +962,7 @@ function viewInvite(m) {
     maybeSuggestInstall(c);
   };
   document.getElementById('decline').onclick = async () => {
-    if (!confirm(`Tirar o seu e-mail do cadastro de ${c.name}?`)) return;
+    if (!await ask(`Tirar o seu e-mail do cadastro de ${c.name}?`)) return;
     const { error } = await sb.rpc('respond_to_church', { p_church: c.id, p_accept: false });
     if (error) return toast(errorText(error), 'error');
     toast('Pronto. Seu e-mail saiu do cadastro desta igreja.');
@@ -1167,7 +1211,7 @@ async function viewMyData() {
 
   const leaveBtn = document.getElementById('leave');
   leaveBtn?.addEventListener('click', async () => {
-    if (!confirm(`Sair da ${state.church.name}? O seu cadastro nesta igreja será apagado.`)) return;
+    if (!await ask(`Sair da ${state.church.name}? O seu cadastro nesta igreja será apagado.`)) return;
     leaveBtn.disabled = true;
     try {
       if (here.consent_at) await removeMemberPhotos(state.church.id, here.id);
@@ -1195,7 +1239,7 @@ async function viewMyData() {
       if (error) throw error;
       clearBootCache();
       await sb.auth.signOut({ scope: 'local' });
-      alert('Sua conta foi excluída.');
+      await ask('Sua conta foi excluída.', { readonly: true });
       location.href = ROOT_URL;
     } catch (err) {
       toast(errorText(err), 'error');
@@ -2034,7 +2078,7 @@ async function viewMemberForm(ctx, id) {
   });
 
   document.getElementById('unlink')?.addEventListener('click', async () => {
-    if (!confirm(`Desligar a conta de ${m.name} do app? O cadastro continua, mas a pessoa perde o acesso até entrar de novo e aceitar o convite.`)) return;
+    if (!await ask(`Desligar a conta de ${m.name} do app? O cadastro continua, mas a pessoa perde o acesso até entrar de novo e aceitar o convite.`)) return;
     const { error } = await sb.rpc('unlink_member_account', { p_member: m.id });
     if (error) return toast(errorText(error), 'error');
     forgetMembers();
@@ -2043,7 +2087,7 @@ async function viewMemberForm(ctx, id) {
   });
 
   document.getElementById('delete')?.addEventListener('click', async () => {
-    if (!confirm(`Excluir o cadastro de ${m.name}? Os dados e a foto são apagados e não dá para desfazer.`)) return;
+    if (!await ask(`Excluir o cadastro de ${m.name}? Os dados e a foto são apagados e não dá para desfazer.`)) return;
     try {
       await removeMemberPhotos(state.church.id, m.id);
       const { data, error } = await sb.from('members').delete().eq('id', m.id).select('id');
@@ -2483,7 +2527,7 @@ async function viewOffer() {
       await navigator.clipboard.writeText(text);
       toast(done);
     } catch {
-      prompt('Copie:', text);
+      await ask('O celular não deixou copiar sozinho. Toque e segure no texto abaixo para copiar:', { input: 'text', value: text, readonly: true });
     }
   };
   document.getElementById('offer-amount').addEventListener('input', draw);
@@ -2738,7 +2782,7 @@ function drawEvent(ctx, ev) {
   };
   if (ev.registration && regsOn()) mountRegistration(ctx, ev);
   document.getElementById('delete')?.addEventListener('click', async () => {
-    if (!confirm(ev.repeat_weekly ? `Excluir "${ev.title}" e todas as repetições?` : `Excluir "${ev.title}"?`)) return;
+    if (!await ask(ev.repeat_weekly ? `Excluir "${ev.title}" e todas as repetições?` : `Excluir "${ev.title}"?`)) return;
     const { data, error: err } = await sb.from('events').delete().eq('id', ev.id).select('id');
     if (err || !data.length) return toast(err ? errorText(err) : 'Você não tem permissão para excluir.', 'error');
     screenForget('agenda');
@@ -2818,7 +2862,15 @@ function drawRegistration(ctx, box, ev, row) {
   box.querySelector('[data-reg]')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     const joining = btn.dataset.reg === 'in';
-    if (!joining && !confirm(row.my_status === 'confirmada' ? 'Cancelar a sua inscrição? A vaga passa para a próxima pessoa da fila.' : 'Sair da lista de espera?')) return;
+    const confirmed = row.my_status === 'confirmada';
+    if (
+      !joining &&
+      !(await ask(confirmed ? 'Cancelar a sua inscrição? A vaga passa para a próxima pessoa da fila.' : 'Sair da lista de espera?', {
+        ok: confirmed ? 'Cancelar inscrição' : 'Sair da lista',
+        danger: true,
+      }))
+    )
+      return;
     btn.disabled = true;
     const { data: status, error } = joining
       ? await sb.rpc('event_register', { p_event: ev.id })
@@ -2901,7 +2953,7 @@ function drawRegistrants(id, { ev, list }) {
   $view.querySelectorAll('[data-reg-id]').forEach((el) => {
     el.querySelector('[data-remove]').onclick = async () => {
       const name = el.querySelector('strong').textContent;
-      if (!confirm(`Tirar ${name} da lista? A pessoa recebe um aviso, e a vaga passa para a lista de espera.`)) return;
+      if (!await ask(`Tirar ${name} da lista? A pessoa recebe um aviso, e a vaga passa para a lista de espera.`)) return;
       const { error } = await sb.rpc('event_registration_remove', { p_registration: el.dataset.regId });
       if (error) return toast(errorText(error), 'error');
       screenForget(`inscritos:${id}`);
@@ -3116,7 +3168,7 @@ function drawAnnouncements(all) {
     </div>`;
   $view.querySelectorAll('[data-delete]').forEach((b) => {
     b.onclick = async () => {
-      if (!confirm('Excluir este aviso?')) return;
+      if (!await ask('Excluir este aviso?')) return;
       const { data, error: err } = await sb.from('announcements').delete().eq('id', b.dataset.delete).select('id');
       if (err || !data.length) return toast(err ? errorText(err) : 'Você não tem permissão para excluir.', 'error');
       screenForget('avisos');
@@ -3362,7 +3414,7 @@ function drawMyPrayers(rows) {
   });
   $view.querySelectorAll('[data-delete]').forEach((b) => {
     b.onclick = async () => {
-      if (!confirm('Apagar este pedido? Ele sai também do mural.')) return;
+      if (!await ask('Apagar este pedido? Ele sai também do mural.')) return;
       const { error: err } = await sb.from('prayer_requests').delete().eq('id', b.dataset.delete);
       if (err) return toast(errorText(err), 'error');
       screenForget('meus-pedidos');
@@ -3472,8 +3524,8 @@ function drawModeration(tab, rows, people) {
     card.querySelector('[data-cared]')?.addEventListener('click', (e) =>
       update(card, { cared_at: e.currentTarget.dataset.cared ? new Date().toISOString() : null }, 'Pronto.'),
     );
-    card.querySelector('[data-remove]')?.addEventListener('click', () => {
-      if (!confirm('Tirar este pedido do mural? Quem pediu continua vendo em "Meus pedidos".')) return;
+    card.querySelector('[data-remove]')?.addEventListener('click', async () => {
+      if (!await ask('Tirar este pedido do mural? Quem pediu continua vendo em "Meus pedidos".')) return;
       update(card, { status: 'recusado' }, 'Pedido tirado do mural.');
     });
   });
@@ -3676,7 +3728,7 @@ function drawVisitor(v) {
     navigate('/visitantes');
   });
   document.getElementById('to-member')?.addEventListener('click', async () => {
-    if (!confirm(`Cadastrar ${v.name} como membro da igreja? O nome, o WhatsApp e o e-mail vão para o cadastro de membros.`)) return;
+    if (!await ask(`Cadastrar ${v.name} como membro da igreja? O nome, o WhatsApp e o e-mail vão para o cadastro de membros.`)) return;
     const { data: memberId, error } = await sb.rpc('visitor_to_member', { p_visitor: v.id });
     if (error) return toast(errorText(error), 'error');
     screenForget('visitantes');
@@ -3685,7 +3737,7 @@ function drawVisitor(v) {
     navigate(`/membros/${memberId}`);
   });
   document.getElementById('delete')?.addEventListener('click', async () => {
-    if (!confirm(`Apagar o cadastro de ${v.name}? Não dá para desfazer.`)) return;
+    if (!await ask(`Apagar o cadastro de ${v.name}? Não dá para desfazer.`)) return;
     const { data, error } = await sb.from('visitors').delete().eq('id', v.id).select('id');
     if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
     screenForget('visitantes');
@@ -3888,7 +3940,7 @@ function drawDevotional(d) {
   const del = document.getElementById('delete');
   if (del)
     del.onclick = async () => {
-      if (!confirm('Excluir este devocional?')) return;
+      if (!await ask('Excluir este devocional?')) return;
       const { data, error } = await sb.from('devotionals').delete().eq('id', d.id).select('id');
       if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para excluir.', 'error');
       if (d.image_path) await sb.storage.from('igrejas').remove([d.image_path]);
@@ -4258,7 +4310,7 @@ function drawReadingPlan(data, id) {
     toast(remind.checked ? 'Lembrete ligado.' : 'Lembrete desligado.');
   });
   document.getElementById('leave-plan')?.addEventListener('click', async () => {
-    if (!confirm('Sair do plano? Os dias que você marcou como lidos serão apagados.')) return;
+    if (!await ask('Sair do plano? Os dias que você marcou como lidos serão apagados.')) return;
     const { error } = await sb.from('reading_plan_members').delete().eq('plan_id', p.id).eq('user_id', state.user.id);
     if (error) return toast(errorText(error), 'error');
     screenForget('leitura');
@@ -4279,7 +4331,7 @@ function drawReadingPlan(data, id) {
     render();
   });
   document.getElementById('delete-plan')?.addEventListener('click', async () => {
-    if (!confirm('Excluir o plano? O progresso de todos que estão lendo será apagado.')) return;
+    if (!await ask('Excluir o plano? O progresso de todos que estão lendo será apagado.')) return;
     const { data: rows, error } = await sb.from('reading_plans').delete().eq('id', p.id).select('id');
     if (error || !rows.length) return toast(error ? errorText(error) : 'Você não tem permissão para excluir.', 'error');
     screenForget('leitura');
@@ -4536,7 +4588,7 @@ async function viewCellForm(ctx, id) {
     navigate(`/celulas/${data.id}`);
   });
   document.getElementById('delete')?.addEventListener('click', async () => {
-    if (!confirm(`Excluir a célula "${c.name}"? O histórico de encontros e presenças também é apagado. Para guardar o histórico, prefira desmarcar "Célula ativa".`)) return;
+    if (!await ask(`Excluir a célula "${c.name}"? O histórico de encontros e presenças também é apagado. Para guardar o histórico, prefira desmarcar "Célula ativa".`)) return;
     const { data, error } = await sb.from('cells').delete().eq('id', id).select('id');
     if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para excluir.', 'error');
     forgetCell(id);
@@ -4667,7 +4719,7 @@ function drawCell(id, { c, roster, manage, meetings }, photos) {
     });
     row.querySelector('[data-remove]')?.addEventListener('click', async () => {
       const name = row.querySelector('strong').textContent;
-      if (!confirm(`Tirar ${name} da célula? As presenças dela continuam no histórico.`)) return;
+      if (!await ask(`Tirar ${name} da célula? As presenças dela continuam no histórico.`)) return;
       const { data, error } = await sb.from('cell_members').delete().eq('cell_id', id).eq('member_id', memberId).select('member_id');
       if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
       forgetCell(id);
@@ -4783,7 +4835,7 @@ async function viewCellMeeting(ctx, id) {
     navigate(`/celulas/${id}`);
   });
   document.getElementById('delete')?.addEventListener('click', async () => {
-    if (!confirm('Apagar este encontro e a lista de presença dele?')) return;
+    if (!await ask('Apagar este encontro e a lista de presença dele?')) return;
     const { error } = await sb.from('cell_meetings').delete().eq('id', meeting.id);
     if (error) return toast(errorText(error), 'error');
     forgetCell(id);
@@ -4939,9 +4991,13 @@ function drawSchedules(data) {
       drawSchedules(data);
     };
     card.querySelector('[data-confirm]')?.addEventListener('click', (e) => answer(true, null, e.currentTarget));
-    card.querySelector('[data-swap]')?.addEventListener('click', (e) => {
+    card.querySelector('[data-swap]')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;
-      const reason = prompt('Pedir troca: o líder do ministério recebe o pedido. Quer dizer o motivo? (opcional)');
+      const reason = await ask('Pedir troca: o líder do ministério recebe o pedido. Quer dizer o motivo? (opcional)', {
+        input: 'text',
+        ok: 'Pedir troca',
+        placeholder: 'Motivo (opcional)',
+      });
       if (reason === null) return;
       answer(false, reason.trim().slice(0, 200), btn);
     });
@@ -5037,7 +5093,7 @@ async function viewMinistryForm(ctx, id) {
     navigate(`/ministerios/${data.id}`);
   });
   document.getElementById('delete')?.addEventListener('click', async () => {
-    if (!confirm(`Excluir o ministério "${mi.name}"? A equipe e todas as escalas dele também são apagadas. Para guardar o histórico, prefira desmarcar "Ministério ativo".`)) return;
+    if (!await ask(`Excluir o ministério "${mi.name}"? A equipe e todas as escalas dele também são apagadas. Para guardar o histórico, prefira desmarcar "Ministério ativo".`)) return;
     const { data, error } = await sb.from('ministries').delete().eq('id', id).select('id');
     if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para excluir.', 'error');
     forgetMinistry(id);
@@ -5154,7 +5210,7 @@ function drawMinistry(id, { mi, roster, schedules, manage }, photos) {
     });
     row.querySelector('[data-remove]')?.addEventListener('click', async () => {
       const name = row.querySelector('strong').textContent;
-      if (!confirm(`Tirar ${name} da equipe? A pessoa também sai das próximas escalas deste ministério.`)) return;
+      if (!await ask(`Tirar ${name} da equipe? A pessoa também sai das próximas escalas deste ministério.`)) return;
       const { data, error } = await sb.from('ministry_members').delete().eq('ministry_id', id).eq('member_id', memberId).select('member_id');
       if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
       forgetMinistry(id);
@@ -5277,7 +5333,7 @@ async function viewScheduleForm(ctx, id, scheduleId) {
     navigate(`/ministerios/${id}`);
   });
   document.getElementById('delete')?.addEventListener('click', async () => {
-    if (!confirm('Apagar esta escala? Quem estava nela não recebe aviso; se preciso, avise a equipe.')) return;
+    if (!await ask('Apagar esta escala? Quem estava nela não recebe aviso; se preciso, avise a equipe.')) return;
     const { data, error } = await sb.from('schedules').delete().eq('id', s.id).select('id');
     if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
     forgetMinistry(id);
@@ -5492,7 +5548,7 @@ async function viewChildForm(ctx, id) {
     navigate(back);
   });
   document.getElementById('delete')?.addEventListener('click', async () => {
-    if (!confirm(`Excluir o cadastro de ${c.name}? O histórico de entradas também é apagado.`)) return;
+    if (!await ask(`Excluir o cadastro de ${c.name}? O histórico de entradas também é apagado.`)) return;
     const { data, error } = await sb.from('children').delete().eq('id', id).select('id');
     if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para excluir.', 'error');
     forget();
@@ -5817,7 +5873,7 @@ function drawKidRooms(rooms) {
   });
   $view.querySelectorAll('[data-del]').forEach((b) => {
     b.onclick = async () => {
-      if (!confirm('Apagar esta sala? As entradas antigas continuam no histórico.')) return;
+      if (!await ask('Apagar esta sala? As entradas antigas continuam no histórico.')) return;
       const { data, error } = await sb.from('kids_rooms').delete().eq('id', b.dataset.del).select('id');
       if (error || !data.length) return toast(error ? errorText(error) : 'Você não tem permissão para isso.', 'error');
       done('Sala apagada.');
@@ -5904,7 +5960,7 @@ function drawCard(ctx, m, photos) {
     }
   };
   document.getElementById('card-rotate').onclick = async () => {
-    if (!confirm('Gerar um novo QR Code? O anterior (e as imagens salvas com ele) deixa de valer.')) return;
+    if (!await ask('Gerar um novo QR Code? O anterior (e as imagens salvas com ele) deixa de valer.')) return;
     const { data: token, error } = await sb.rpc('rotate_card_token', { p_church: c.id });
     if (error) return toast(errorText(error), 'error');
     Object.assign(m, { card_token: token, card_token_at: new Date().toISOString() });
@@ -6568,7 +6624,11 @@ function drawGalleryPhoto(ctx, albumId, photoId, { album, photos }, urls) {
     }
   };
   document.getElementById('takedown').onclick = async () => {
-    const reason = prompt('Pedir para tirar esta foto: quem publica a galeria recebe o pedido. Quer dizer o motivo? (opcional)');
+    const reason = await ask('Pedir para tirar esta foto: quem publica a galeria recebe o pedido. Quer dizer o motivo? (opcional)', {
+      input: 'text',
+      ok: 'Enviar pedido',
+      placeholder: 'Motivo (opcional)',
+    });
     if (reason === null) return;
     const { data, error } = await sb.rpc('gallery_request_removal', { p_photo: p.id, p_reason: reason.trim().slice(0, 300) });
     if (error) return toast(errorText(error), 'error');
@@ -6582,7 +6642,7 @@ function drawGalleryPhoto(ctx, albumId, photoId, { album, photos }, urls) {
     render();
   });
   document.getElementById('delete')?.addEventListener('click', async () => {
-    if (!confirm('Apagar esta foto? Não dá para desfazer.')) return;
+    if (!await ask('Apagar esta foto? Não dá para desfazer.')) return;
     try {
       await removeGalleryFiles([p]);
       const { data, error } = await sb.from('gallery_photos').delete().eq('id', p.id).select('id');
@@ -6635,7 +6695,7 @@ async function viewAlbumForm(ctx, id) {
     navigate(`/galeria/${data.id}`);
   });
   document.getElementById('delete')?.addEventListener('click', async () => {
-    if (!confirm(`Apagar o álbum "${a.title}" e as ${photos.length} fotos? Não dá para desfazer.`)) return;
+    if (!await ask(`Apagar o álbum "${a.title}" e as ${photos.length} fotos? Não dá para desfazer.`)) return;
     try {
       await removeGalleryFiles(photos);
       const { data, error } = await sb.from('gallery_albums').delete().eq('id', id).select('id');
@@ -7135,13 +7195,15 @@ function drawConversation(ctx, id, data, photos) {
     toast(done);
     render();
   };
-  menu.querySelector('[data-block]')?.addEventListener('click', () => {
-    if (confirm('Bloquear esta conversa? Ninguém mais escreve nela até você desbloquear.')) act('chat_block', { p_conv: id, p_block: true }, 'Conversa bloqueada.');
+  menu.querySelector('[data-block]')?.addEventListener('click', async () => {
+    if (await ask('Bloquear esta conversa? Ninguém mais escreve nela até você desbloquear.')) act('chat_block', { p_conv: id, p_block: true }, 'Conversa bloqueada.');
   });
   menu.querySelector('[data-unblock]')?.addEventListener('click', () => act('chat_block', { p_conv: id, p_block: false }, 'Conversa desbloqueada.'));
-  menu.querySelector('[data-report]').addEventListener('click', () => {
-    const reason = prompt(
+  menu.querySelector('[data-report]').addEventListener('click', async () => {
+    menu.open = false;
+    const reason = await ask(
       'Denunciar: a conversa é bloqueada e o administrador da igreja recebe um aviso com os nomes e o motivo. As mensagens não são mostradas a ele. Qual o motivo?',
+      { input: 'text', ok: 'Denunciar', placeholder: 'Motivo' },
     );
     if (reason === null) return;
     act('chat_report', { p_conv: id, p_reason: reason.trim().slice(0, 500) }, 'Denúncia enviada. A conversa foi bloqueada.');
@@ -7149,7 +7211,7 @@ function drawConversation(ctx, id, data, photos) {
   // O mesmo que arrastar na lista, para quem usa teclado ou leitor de tela.
   menu.querySelector('[data-hide]').addEventListener('click', async () => {
     menu.open = false;
-    if (!confirm('Apagar esta conversa? Ela some só para você; a outra pessoa continua vendo.')) return;
+    if (!await ask('Apagar esta conversa? Ela some só para você; a outra pessoa continua vendo.')) return;
     if (await hideConversation(id)) navigate('/chat');
   });
 }
@@ -7557,7 +7619,7 @@ async function viewNotifications(ctx) {
 
   // Apaga as que já estavam lidas antes desta visita (as novas de agora ficam).
   clearBtn.onclick = async () => {
-    if (!confirm('Apagar as notificações que você já tinha lido?')) return;
+    if (!await ask('Apagar as notificações que você já tinha lido?')) return;
     let q = sb.from('notifications').delete().eq('church_id', state.church.id).lt('read_at', openedAt);
     if (filter) q = q.in('kind', NOTIF_GROUPS[filter].kinds);
     const { error: err } = await q;

@@ -186,7 +186,10 @@ export function pickLocation({ lat, lng, address, near }) {
       if (!navigator.geolocation) return;
       navigator.geolocation.getCurrentPosition(
         (pos) => place({ lat: pos.coords.latitude, lng: pos.coords.longitude }, 18),
-        () => alert('Não foi possível pegar a sua localização. Libere a localização para este site ou toque no mapa.'),
+        () => {
+          results.hidden = false;
+          results.innerHTML = '<p class="hint warn">Não foi possível pegar a sua localização. Libere a localização para este site ou toque no mapa.</p>';
+        },
         { enableHighAccuracy: true, timeout: 15000 },
       );
     };

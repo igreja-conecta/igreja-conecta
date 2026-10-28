@@ -1,6 +1,6 @@
 // Chat nas telas, com contas da igreja Teste A (Android): membro e líder conversando em tempo real.
 import { test, expect } from '@playwright/test';
-import { SUPABASE_URL, ANON_KEY, rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations } from './helpers.mjs';
+import { SUPABASE_URL, ANON_KEY, rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations, answer } from './helpers.mjs';
 
 // Nada pode ser bloqueado pela regra de segurança das páginas (CSP).
 test.beforeEach(async ({ page }) => watchCsp(page));
@@ -180,8 +180,22 @@ test('arrastar a conversa para a esquerda apaga só para mim, com Desfazer; o me
   await page.locator('.chat-swipe', { hasText: 'Líder da A' }).locator('.chat-row').click();
   await expect(page.locator('.chat-head')).toContainText('Líder da A');
   await page.getByLabel('Mais opções').click();
-  page.once('dialog', (d) => d.accept());
+  // A pergunta é do app, com o nome da igreja no topo (não a janela do navegador com o endereço).
+  page.once('dialog', () => {
+    throw new Error('Apareceu a janela do navegador');
+  });
   await page.getByRole('button', { name: 'Apagar conversa' }).click();
+  const ask = page.getByRole('dialog');
+  await expect(ask.getByRole('heading', { name: 'Igreja Teste A' })).toBeVisible();
+  await expect(ask).toContainText('Ela some só para você');
+  // Cancelar não apaga.
+  await ask.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.chat-head')).toContainText('Líder da A');
+  await page.getByLabel('Mais opções').click();
+  await page.getByRole('button', { name: 'Apagar conversa' }).click();
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'Apagar' })).toBeVisible();
+  await answer(page);
   await expect(page).toHaveURL(/#\/chat$/);
   await expect(page.locator('#toast')).toContainText('Conversa apagada.');
   await expect(page.locator('.chat-swipe', { hasText: 'Líder da A' })).toHaveCount(0);
