@@ -1261,7 +1261,7 @@ function helpTopics() {
     ...(features('chat')
       ? [[
           'Chat',
-          `<p>Toque no ícone de conversa no topo (ou em <a href="#/chat">Menu &gt; Conversas</a>) e em <em>${isLeaderRole(myRole()) ? 'Nova conversa' : 'Falar com a liderança'}</em>. ${
+          `<p>Toque no ícone de conversa no topo (ou em <a href="#/chat">Menu &gt; Conversas</a>) e no botão <strong>+</strong>, embaixo à direita: aparece a lista de quem você pode chamar (dá para buscar pelo nome). ${
             isLeaderRole(myRole())
               ? 'Você pode escrever para qualquer pessoa da igreja que recebe mensagens.'
               : features('chat_membros')
@@ -6741,7 +6741,6 @@ function drawChats(rows, photos) {
   $view.innerHTML = `
     <div class="page chat-page">
       <h1>Conversas</h1>
-      <div class="actions-row"><a class="btn primary" href="#/chat/nova">${icon.plus} ${leader ? 'Nova conversa' : 'Falar com a liderança'}</a></div>
       ${
         rows.length
           ? `<div class="chat-list">${rows
@@ -6758,71 +6757,81 @@ function drawChats(rows, photos) {
               )
               .join('')}</div>`
           : `<div class="empty"><h2>Nenhuma conversa ainda</h2><p>${
-              leader ? 'Toque em <strong>Nova conversa</strong> para escrever para alguém da igreja.' : 'Toque em <strong>Falar com a liderança</strong> para escrever para um pastor, líder ou para a secretaria.'
+              leader ? 'Toque no <strong>+</strong> para escrever para alguém da igreja.' : 'Toque no <strong>+</strong> para escrever para um pastor, um líder ou a secretaria.'
             }</p></div>`
       }
       <p class="hint">As conversas são só entre as duas pessoas: ninguém mais lê, nem a liderança da igreja.</p>
+      <a class="fab" href="#/chat/nova" aria-label="${leader ? 'Nova conversa' : 'Falar com a liderança'}" title="${leader ? 'Nova conversa' : 'Falar com a liderança'}">${icon.plus}</a>
     </div>`;
 }
 
 // Escolher com quem conversar: a liderança que recebe mensagens e, com busca, outras pessoas.
+// Todos com quem a pessoa pode conversar (a liderança chama qualquer membro; o membro chama a
+// liderança e, se a igreja ligou, os outros membros). A regra fica no banco.
 async function loadChatContacts() {
-  const { data, error } = await sb.rpc('chat_contacts', { p_church: state.church.id });
+  const { data, error } = await sb.rpc('chat_contacts', { p_church: state.church.id, p_all: true });
   if (error) throw error;
   return data;
 }
 
 async function viewChatNew(ctx) {
   if (!requireChat('/chat/nova')) return;
-  await screenShow(ctx, 'chat-contatos', loadChatContacts, (rows) => drawChatNew(ctx, rows));
+  await screenShowWithPhotos(ctx, 'chat-contatos', loadChatContacts, (rows) => rows.map((p) => p.photo_path), (rows, photos) =>
+    drawChatNew(ctx, rows, photos),
+  );
 }
 
-function drawChatNew(ctx, leaders) {
+function drawChatNew(ctx, people, photos) {
   const leader = isLeaderRole(myRole());
-  const canSearch = leader || featureOn('chat_membros');
+  // A busca e o texto digitado continuam ao redesenhar (fotos que chegaram, banco que respondeu).
+  const typed = document.getElementById('chat-search')?.q.value || '';
   const row = (p) => `
-    <button type="button" class="menu-row" data-start="${p.member_id}">${avatar(p.name, null)}<span>${esc(p.name)}<small class="hint"> · ${esc(ROLES[p.role])}</small></span>${icon.chevron}</button>`;
+    <button type="button" class="menu-row chat-person" data-start="${p.member_id}" data-name="${esc(fold(p.name))}">
+      ${avatar(p.name, p.photo_path && photos[miniOf(p.photo_path)])}<span>${esc(p.name)}<small class="hint"> · ${esc(ROLES[p.role])}</small></span>${icon.chevron}
+    </button>`;
+  const leaders = people.filter((p) => isLeaderRole(p.role));
+  const members = people.filter((p) => !isLeaderRole(p.role));
+  const section = (title, list) =>
+    list.length ? `<section class="chat-people"><h2 class="notif-day">${title}</h2><div class="list">${list.map(row).join('')}</div></section>` : '';
   $view.innerHTML = `
     <div class="page chat-page">
       <a href="#/chat" class="back">← Conversas</a>
       <h1>${leader ? 'Nova conversa' : 'Falar com a liderança'}</h1>
+      <form id="chat-search" class="form"><label class="search">${icon.search}<input name="q" type="search" placeholder="Buscar pelo nome" aria-label="Buscar pessoa" autocomplete="off" value="${esc(typed)}"></label></form>
       ${
-        canSearch
-          ? `<form id="chat-search" class="form"><label>${leader ? 'Buscar qualquer pessoa da igreja' : 'Buscar pessoa da igreja'}<input name="q" type="search" placeholder="Digite o nome" autocomplete="off"></label></form>
-             <div id="chat-found" class="list"></div>`
-          : ''
+        people.length
+          ? `${section('Liderança', leaders)}${section('Membros', members)}
+             <p class="hint center" id="chat-none" hidden>Ninguém com esse nome (ou a pessoa não recebe mensagens).</p>`
+          : '<div class="empty"><p>Ninguém está recebendo mensagens agora.</p></div>'
       }
-      <h2>Liderança</h2>
-      <div class="list" id="chat-leaders">${leaders.map(row).join('') || '<div class="empty"><p>Ninguém da liderança está recebendo mensagens agora.</p></div>'}</div>
     </div>`;
-  const bind = (root) =>
-    root.querySelectorAll('[data-start]').forEach((b) => {
-      b.onclick = async () => {
-        b.disabled = true;
-        const { data: id, error } = await sb.rpc('start_conversation', { p_church: state.church.id, p_member: b.dataset.start });
-        b.disabled = false;
-        if (error) return toast(errorText(error), 'error');
-        navigate(`/chat/${id}`);
-      };
-    });
-  bind($view);
-  const form = document.getElementById('chat-search');
-  if (!form) return;
-  const found = document.getElementById('chat-found');
-  let timer;
-  form.addEventListener('submit', (e) => e.preventDefault());
-  form.q.addEventListener('input', () => {
-    clearTimeout(timer);
-    timer = setTimeout(async () => {
-      const term = form.q.value.trim();
-      if (term.length < 2) return (found.innerHTML = '');
-      const { data } = await sb.rpc('chat_contacts', { p_church: state.church.id, p_search: term });
-      if (!ctx.alive() || form.q.value.trim() !== term) return;
-      found.innerHTML = data?.length ? data.map(row).join('') : '<p class="hint">Ninguém encontrado (ou a pessoa não recebe mensagens).</p>';
-      bind(found);
-    }, 250);
+  $view.querySelectorAll('[data-start]').forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      const { data: id, error } = await sb.rpc('start_conversation', { p_church: state.church.id, p_member: b.dataset.start });
+      b.disabled = false;
+      if (error) return toast(errorText(error), 'error');
+      navigate(`/chat/${id}`);
+    };
   });
+  // Busca no aparelho: filtra a lista enquanto digita (sem acento e sem diferença de maiúsculas).
+  const form = document.getElementById('chat-search');
+  const filter = () => {
+    const term = fold(form.q.value.trim());
+    let shown = 0;
+    $view.querySelectorAll('.chat-person').forEach((b) => {
+      b.hidden = !!term && !b.dataset.name.includes(term);
+      if (!b.hidden) shown++;
+    });
+    $view.querySelectorAll('.chat-people').forEach((s) => (s.hidden = !s.querySelector('.chat-person:not([hidden])')));
+    const none = document.getElementById('chat-none');
+    if (none) none.hidden = shown > 0;
+  };
+  form.addEventListener('submit', (e) => e.preventDefault());
+  form.q.addEventListener('input', filter);
+  if (typed) filter();
 }
+
 
 async function loadConversation(id) {
   const [info, msgs] = await Promise.all([

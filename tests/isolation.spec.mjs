@@ -1786,3 +1786,19 @@ test.describe('Notificação do chat (022)', () => {
     expect(await (await targets('membro-a', secret, msg.id)).json()).toEqual([]);
   });
 });
+
+test.describe('Chat: lista de contatos (024)', () => {
+  test('a lista toda respeita as regras: a liderança vê os membros; o membro, só a liderança; a outra igreja, nada', async () => {
+    const all = async (who) => (await (await rpc(who, 'chat_contacts', { p_church: church.a, p_all: true })).json()).map((p) => p.name);
+    expect(await all('lider-a')).toContain('Membro da A');
+    const member = await all('membro-a');
+    expect(member).toContain('Líder da A');
+    expect(member).not.toContain('Fulano da A'); // sem conta no app
+    const roles = (await (await rpc('membro-a', 'chat_contacts', { p_church: church.a, p_all: true })).json()).map((p) => p.role);
+    expect(roles.every((r) => ['admin', 'secretaria', 'lider'].includes(r))).toBe(true);
+    for (const who of ['adm-b', 'sem-igreja']) expect(await all(who), who).toEqual([]);
+    // A busca antiga (sem p_all) continua igual.
+    const search = await (await rpc('lider-a', 'chat_contacts', { p_church: church.a, p_search: 'membro' })).json();
+    expect(search.map((p) => p.name)).toContain('Membro da A');
+  });
+});
