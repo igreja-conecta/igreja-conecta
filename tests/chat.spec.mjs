@@ -26,7 +26,7 @@ test.afterAll(async () => {
   if (!api) return;
   // Se o teste de apagar parou no meio, a conversa do membro com a líder volta para ele.
   const h = { headers: as['membro-a'].headers };
-  const [lider] = await (await api.get(rest('members?select=id,church_id&name=eq.Líder da A'), h)).json();
+  const [lider] = await (await api.get(rest('members?select=id,church_id&name=eq.Líder da A'), { headers: as['lider-a'].headers })).json();
   if (lider) {
     const conv = await (await api.post(rest('rpc/start_conversation'), { ...h, data: { p_church: lider.church_id, p_member: lider.id } })).json().catch(() => null);
     if (typeof conv === 'string') await api.post(rest('rpc/hide_conversation'), { ...h, data: { p_conv: conv, p_hide: false } });
@@ -187,4 +187,22 @@ test('arrastar a conversa para a esquerda apaga só para mim, com Desfazer; o me
   await expect(page.locator('.chat-swipe', { hasText: 'Líder da A' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Desfazer' }).click();
   await expect(page.locator('.chat-swipe', { hasText: 'Líder da A' })).toBeVisible();
+});
+
+test('numa conversa sem mensagens, o campo de escrever fica embaixo, logo acima das abas', async ({ page }) => {
+  // A conversa apagada abre vazia (só o que chegar depois): o caso da conversa nova.
+  const h = { headers: as['membro-a'].headers };
+  const [lider] = await (await api.get(rest('members?select=id,church_id&name=eq.Líder da A'), { headers: as['lider-a'].headers })).json();
+  const conv = await (await api.post(rest('rpc/start_conversation'), { ...h, data: { p_church: lider.church_id, p_member: lider.id } })).json();
+  await api.post(rest('rpc/hide_conversation'), { ...h, data: { p_conv: conv } });
+  try {
+    await openLoggedIn(page, as['membro-a'].session, `/i/teste-a/#/chat/${conv}`);
+    await expect(page.getByLabel('Mensagem')).toBeVisible();
+    await expect(page.locator('.msg')).toHaveCount(0);
+    const form = await page.locator('#chat-form').boundingBox();
+    const tabbar = await page.locator('#tabbar').boundingBox();
+    expect(Math.abs(form.y + form.height - tabbar.y)).toBeLessThan(4);
+  } finally {
+    await api.post(rest('rpc/hide_conversation'), { ...h, data: { p_conv: conv, p_hide: false } });
+  }
 });
