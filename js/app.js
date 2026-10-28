@@ -3,6 +3,7 @@ import { CONFIG } from './config.js';
 import {
   esc, slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone,
   ROLES, isLeaderRole, FEATURES, fold, fmtDate, fmtMoney, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
+  parseFinanceCsv, financeKey, FINANCE_CSV_TEMPLATE, FINANCE_CSV_HEADER, FIN_KIND_CSV,
   renderMessage, firstName, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
 } from './util.js';
 import { resizeImage, resizeLogo, makeIconSet, resizeForGallery } from './images.js';
@@ -658,6 +659,7 @@ const churchRoutes = [
   [/^\/financeiro$/, viewFinance],
   [/^\/financeiro\/novo$/, viewFinanceEntry],
   [/^\/financeiro\/config$/, viewFinanceConfig],
+  [/^\/financeiro\/importar$/, viewFinanceImport],
   [/^\/financeiro\/([0-9a-f-]{36})$/, viewFinanceEntry],
   [/^\/prestacao$/, viewAccountability],
   [/^\/prestacao\/(\d{4}-\d{2})$/, viewAccountabilityMonth],
@@ -1496,7 +1498,8 @@ function helpTopics() {
       ? [[
           'Financeiro (tesouraria)',
           `<p>O administrador marca quem cuida do dinheiro: no cadastro da pessoa, em <a href="#/membros">Membros</a>, marque <strong>Tesouraria</strong>. Só o administrador e a tesouraria veem o <a href="#/financeiro">Menu &gt; Financeiro</a>.</p>
-           <p>Lá, toque no botão <strong>+</strong>, embaixo à direita, para lançar uma <strong>entrada</strong> (dízimos, ofertas…), uma <strong>saída</strong> (aluguel, luz…) ou uma <strong>transferência</strong> entre contas (ex.: o dinheiro do culto depositado no banco). As setas trocam o mês; a tela mostra os totais e o saldo de cada conta. Arraste um lançamento para a esquerda para apagar.</p>
+           <p>Lá, toque no botão <strong>+</strong>, embaixo à direita, e em <em>Novo lançamento</em> para lançar uma <strong>entrada</strong> (dízimos, ofertas…), uma <strong>saída</strong> (aluguel, luz…) ou uma <strong>transferência</strong> entre contas (ex.: o dinheiro do culto depositado no banco). As setas trocam o mês; a tela mostra os totais e o saldo de cada conta. Arraste um lançamento para a esquerda para apagar.</p>
+           <p>Para lançar muita coisa de uma vez, toque no <strong>+</strong> e em <a href="#/financeiro/importar">Importar planilha</a>: baixe o modelo, preencha no Excel ou no Google Planilhas e salve como CSV. O app mostra os erros de cada linha antes de gravar e pula o que já foi lançado (importar de novo não duplica). <em>Baixar planilha do mês</em> traz os lançamentos no mesmo formato, para o contador.</p>
            <p>Em <em>Contas e categorias</em>, mude os nomes, crie outras e informe o <strong>saldo inicial</strong> de cada conta (o que ela tinha antes do primeiro lançamento). O app só registra: o dinheiro não passa por ele.</p>
            <p>No fim do mês, toque em <strong>Fechar e publicar o mês</strong> (dá para deixar um recado, como "reforma do telhado concluída"). Os lançamentos do mês ficam travados e todos os membros recebem um aviso para ver a <a href="#/prestacao">Prestação de contas</a>: só os totais por categoria, nunca os lançamentos nem as descrições. Antes de fechar, toque em <em>Prévia</em> para ver como vai ficar. Para corrigir depois, toque em <em>Reabrir o mês</em>: ele sai da prestação até você fechar de novo.</p>`,
         ]]
@@ -2195,6 +2198,20 @@ function downloadFile(name, text, type) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// Linhas → CSV com ";" (Excel em português). Texto que começa com = + - @ ganha um apóstrofo,
+// para o Excel não tratar como fórmula.
+const csvText = (rows) =>
+  rows
+    .map((line) =>
+      line
+        .map((v) => {
+          const s = String(v ?? '');
+          return `"${(/^[=+\-@]/.test(s) ? `'${s}` : s).replaceAll('"', '""')}"`;
+        })
+        .join(';'),
+    )
+    .join('\r\n');
 
 const IMPORT_MAX = 1000;
 
@@ -6581,9 +6598,37 @@ function drawFinance(key, d) {
           ? 'Os membros veem os totais deste mês em Menu &gt; Prestação de contas. Para corrigir um lançamento, reabra o mês: ele sai da prestação até você fechar de novo.'
           : 'Ao fechar, os lançamentos do mês ficam travados e os membros recebem um aviso para ver os totais por categoria (nunca os lançamentos nem as descrições).'
       }</p>
+      <h2>Planilhas</h2>
+      <div class="actions-row">
+        <button type="button" class="btn" id="fin-csv" ${d.entries.length ? '' : 'disabled'}>${icon.upload} Baixar planilha do mês</button>
+        <a class="btn" href="#/financeiro/importar">Importar planilha</a>
+      </div>
       <p><a class="btn" href="#/financeiro/config">Contas e categorias</a></p>
-      ${closed ? '' : fab(`#/financeiro/novo?mes=${key}`, 'Novo lançamento')}
+      ${
+        closed
+          ? ''
+          : fabMenu('Adicionar lançamentos', [
+              [`#/financeiro/novo?mes=${key}`, 'Novo lançamento'],
+              ['#/financeiro/importar', 'Importar planilha'],
+            ])
+      }
     </div>`;
+
+  // Planilha do mês no mesmo formato do modelo de importar (abre no Excel; serve para o contador).
+  document.getElementById('fin-csv').onclick = () => {
+    const lines = [...d.entries]
+      .reverse()
+      .map((e) => [
+        fmtDate(e.entry_date),
+        FIN_KIND_CSV[e.kind],
+        fmtMoney(e.amount_cents).replace(/R\$\s?/, ''),
+        cat[e.category_id]?.name,
+        acc[e.account_id]?.name,
+        acc[e.to_account_id]?.name,
+        e.description,
+      ]);
+    downloadFile(`financeiro-${slugify(state.church.name)}-${key}.csv`, csvText([FINANCE_CSV_HEADER, ...lines]), 'text/csv;charset=utf-8');
+  };
 
   // Fechar e publicar (com um recado opcional) e reabrir: só a tesouraria, conferido no banco.
   const changed = (msg) => {
@@ -6853,6 +6898,137 @@ function drawFinanceConfig(ctx, d) {
       save(sb.from(table(type)).update({ active: !x.active }).eq('id', x.id));
     }),
   );
+}
+
+// Importar lançamentos de uma planilha (mesmo formato do modelo e da planilha do mês). O app
+// confere tudo antes; o banco grava todas as linhas de uma vez (ou nenhuma) e confere de novo.
+async function viewFinanceImport(ctx) {
+  if (!requireTreasury('/financeiro/importar')) return;
+  await screenShow(ctx, 'financeiro-base', loadFinanceBase, (d) => drawFinanceImport(ctx, d));
+}
+
+function drawFinanceImport(ctx, d) {
+  const names = (list) => list.filter((x) => x.active).map((x) => esc(x.name)).join(', ');
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/financeiro" class="back">← Financeiro</a>
+      <h1>Importar planilha</h1>
+      <div class="card">
+        <p>Use uma planilha com as colunas <strong>data</strong>, <strong>tipo</strong> (entrada, saída ou transferência), <strong>valor</strong>, <strong>categoria</strong>, <strong>conta</strong>, <strong>conta_destino</strong> (só na transferência) e <strong>descricao</strong> na primeira linha.</p>
+        <p class="hint">No Excel ou no Google Planilhas, salve como <strong>CSV</strong>. Datas como 05/10/2026 e valores como 1.250,00. Uma linha igual a um lançamento que já existe é pulada: importar a mesma planilha de novo não duplica nada.</p>
+        <p class="hint"><strong>Contas:</strong> ${names(d.accounts)}.<br><strong>Categorias de entrada:</strong> ${names(d.categories.filter((c) => c.kind === 'entrada'))}.<br><strong>Categorias de saída:</strong> ${names(d.categories.filter((c) => c.kind === 'saida'))}.<br>Escreva os nomes como aqui (maiúsculas e acentos não importam). Para usar outro nome, crie antes em <a href="#/financeiro/config">Contas e categorias</a>.</p>
+        <div class="actions-row">
+          <button class="btn small" id="template">Baixar modelo</button>
+          <label class="btn primary small">Escolher arquivo CSV<input type="file" id="file" accept=".csv,text/csv,text/plain" hidden></label>
+        </div>
+      </div>
+      <div id="preview"></div>
+    </div>`;
+
+  document.getElementById('template').onclick = () => downloadFile('modelo-financeiro.csv', FINANCE_CSV_TEMPLATE, 'text/csv;charset=utf-8');
+
+  document.getElementById('file').addEventListener('change', async (ev) => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const box = document.getElementById('preview');
+    box.innerHTML = '<div class="loading">Conferindo…</div>';
+    try {
+      const text = await readTextFile(file);
+      const first = parseFinanceCsv(text, d);
+      if (first.error) {
+        box.innerHTML = `<div class="notice warn-box">${esc(first.error)}</div>`;
+        return;
+      }
+      // Meses fechados e lançamentos que já existem nos dias da planilha.
+      const days = first.rows.map((r) => r.entry_date).filter(Boolean).sort();
+      const existing = new Map();
+      const closedMonths = new Set();
+      if (days.length) {
+        const [e, m] = await Promise.all([
+          sb
+            .from('fin_entries')
+            .select('kind, entry_date, amount_cents, account_id, to_account_id, category_id, description')
+            .eq('church_id', state.church.id)
+            .is('deleted_at', null)
+            .gte('entry_date', days[0])
+            .lte('entry_date', days.at(-1))
+            .limit(10000),
+          sb.from('fin_months').select('month').eq('church_id', state.church.id).not('closed_at', 'is', null),
+        ]);
+        if (e.error) throw e.error;
+        if (m.error) throw m.error;
+        for (const x of e.data) existing.set(financeKey(x), (existing.get(financeKey(x)) || 0) + 1);
+        for (const x of m.data) closedMonths.add(x.month.slice(0, 7));
+      }
+      if (!ctx.alive()) return;
+      drawImportPreview(box, parseFinanceCsv(text, { ...d, existing, closedMonths }).rows);
+    } catch (err) {
+      box.innerHTML = `<div class="notice warn-box">${esc(errorText(err))}</div>`;
+    }
+  });
+}
+
+function drawImportPreview(box, rows) {
+  const ok = rows.filter((r) => !r.errors.length && !r.skip);
+  const bad = rows.filter((r) => r.errors.length);
+  const skipped = rows.filter((r) => r.skip);
+  const total = (kind) => ok.filter((r) => r.kind === kind).reduce((s, r) => s + r.amount_cents, 0);
+  const tooMany = ok.length > IMPORT_MAX;
+  box.innerHTML = `
+    <div class="card">
+      <h2>${ok.length} ${ok.length === 1 ? 'lançamento pronto' : 'lançamentos prontos'} para importar</h2>
+      ${ok.length ? `<p>Entradas: <strong>${fmtMoney(total('entrada'))}</strong> · Saídas: <strong>${fmtMoney(total('saida'))}</strong></p>` : ''}
+      ${skipped.length ? `<p class="hint">${skipped.length} ${skipped.length === 1 ? 'linha pulada: já foi lançada' : 'linhas puladas: já foram lançadas'}.</p>` : ''}
+      ${bad.length ? `<p class="hint warn">${bad.length} ${bad.length === 1 ? 'linha com erro não será importada' : 'linhas com erro não serão importadas'}. Corrija na planilha e importe de novo: o que já entrou é pulado.</p>` : ''}
+      ${tooMany ? `<p class="hint warn">Até ${IMPORT_MAX} lançamentos por planilha. Divida em mais de uma.</p>` : ''}
+      <div class="table-wrap">
+        <table class="preview-table">
+          <thead><tr><th>Linha</th><th>Situação</th><th>Data</th><th>Tipo</th><th>Valor</th><th>Categoria e conta</th><th>Descrição</th></tr></thead>
+          <tbody>
+            ${rows
+              .slice(0, 300)
+              .map(
+                (r) => `
+              <tr class="${r.errors.length ? 'bad' : r.skip ? 'skip' : ''}">
+                <td>${r.line}</td><td>${esc(r.errors.join(', ') || r.skip || 'ok')}</td>
+                <td>${esc(fmtDate(r.entry_date))}</td><td>${esc(FIN_KINDS[r.kind] || '')}</td>
+                <td>${r.amount_cents ? esc(fmtMoney(r.amount_cents)) : ''}</td><td>${esc(r.label)}</td><td>${esc(r.description || '')}</td>
+              </tr>`,
+              )
+              .join('')}
+          </tbody>
+        </table>
+        ${rows.length > 300 ? '<p class="hint">Mostrando as primeiras 300 linhas.</p>' : ''}
+      </div>
+      ${ok.length && !tooMany ? `<button class="btn primary big" id="do-import">Importar ${ok.length} ${ok.length === 1 ? 'lançamento' : 'lançamentos'}</button>` : ''}
+    </div>`;
+
+  document.getElementById('do-import')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Importando…';
+    // Uma gravação só: se o banco recusar uma linha, nenhuma entra.
+    const { error } = await sb.from('fin_entries').insert(
+      ok.map((r) => ({
+        church_id: state.church.id,
+        kind: r.kind,
+        entry_date: r.entry_date,
+        amount_cents: r.amount_cents,
+        account_id: r.account_id,
+        to_account_id: r.to_account_id,
+        category_id: r.category_id,
+        description: r.description,
+      })),
+    );
+    if (error) {
+      btn.disabled = false;
+      btn.textContent = `Importar ${ok.length} ${ok.length === 1 ? 'lançamento' : 'lançamentos'}`;
+      return toast(`Nada foi importado: ${errorText(error)}`, 'error');
+    }
+    forgetFinance();
+    toast(`${ok.length} ${ok.length === 1 ? 'lançamento importado' : 'lançamentos importados'}.`);
+    navigate(`/financeiro?mes=${ok.map((r) => r.entry_date).sort()[0].slice(0, 7)}`);
+  });
 }
 
 // ---------------------------------------------------------------------

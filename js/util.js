@@ -1,4 +1,5 @@
 // Funções pequenas e sem dependência do navegador (testadas em tests/units.spec.mjs).
+import { parseAmount } from './pix.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -212,6 +213,119 @@ export function parseMembersCsv(text, existingEmails = new Set(), today = new Da
     else if (email && seen.has(email)) skip = 'e-mail repetido na planilha';
     if (email) seen.add(email);
     return { line: i + 2, name, email, phone, birth_date, wedding_date, baptism_date, errors, skip };
+  });
+  return { rows };
+}
+
+// ---------------------------------------------------------------------
+// Planilha de lançamentos do financeiro (importar e baixar no mesmo formato)
+// ---------------------------------------------------------------------
+const FIN_COLUMNS = {
+  date: ['data', 'dia'],
+  kind: ['tipo'],
+  amount: ['valor', 'quantia'],
+  category: ['categoria'],
+  account: ['conta', 'da conta', 'conta origem'],
+  to_account: ['conta destino', 'para a conta', 'para conta', 'destino'],
+  description: ['descricao', 'historico', 'observacao'],
+};
+const FIN_KIND_NAMES = {
+  entrada: ['entrada', 'receita', 'e'],
+  saida: ['saida', 'despesa', 'gasto', 's'],
+  transferencia: ['transferencia', 'transf', 't'],
+};
+export const FIN_KIND_CSV = { entrada: 'entrada', saida: 'saída', transferencia: 'transferência' };
+export const FINANCE_CSV_HEADER = ['data', 'tipo', 'valor', 'categoria', 'conta', 'conta_destino', 'descricao'];
+export const FINANCE_CSV_TEMPLATE = [
+  FINANCE_CSV_HEADER.join(';'),
+  '05/10/2026;entrada;1.250,00;Dízimos;Caixa;;Culto de domingo',
+  '06/10/2026;transferência;1.000,00;;Caixa;Banco;Depósito do culto',
+  '10/10/2026;saída;800,00;Aluguel;Banco;;Aluguel de outubro',
+].join('\r\n') + '\r\n';
+
+// Dia do lançamento: "05/10/2026", "5/10/26" ou "2026-10-05" → "2026-10-05", ou null.
+export function parseDay(s) {
+  const t = String(s ?? '').trim();
+  let y, m, d;
+  let r;
+  if ((r = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) [, y, m, d] = r;
+  else if ((r = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/))) [, d, m, y] = r;
+  else return null;
+  y = Number(y) < 100 ? 2000 + Number(y) : Number(y);
+  m = Number(m);
+  d = Number(d);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d || y < 2000 || y > 2100) return null;
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+// O que identifica um lançamento repetido: mesmo dia, tipo, valor, contas, categoria e descrição.
+export const financeKey = (e) =>
+  [e.entry_date, e.kind, e.amount_cents, e.account_id, e.to_account_id || '', e.category_id || '', fold(e.description)].join('|');
+
+// Planilha → lançamentos prontos para gravar, cada um com os seus erros.
+// accounts/categories: os da igreja ({ id, name, kind }); closedMonths: Set de "2026-10" fechados;
+// existing: Map de financeKey → quantos já estão no banco (essas linhas são puladas, uma a uma).
+export function parseFinanceCsv(text, { accounts = [], categories = [], closedMonths = new Set(), existing = new Map() } = {}) {
+  const [header = [], ...lines] = parseCsv(text);
+  const index = {};
+  header.forEach((h, i) => {
+    const name = fold(h).replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+    const key = Object.keys(FIN_COLUMNS).find((k) => FIN_COLUMNS[k].includes(name));
+    if (key && index[key] === undefined) index[key] = i;
+  });
+  const missing = ['date', 'kind', 'amount', 'account'].filter((k) => index[k] === undefined);
+  if (missing.length) return { error: 'A primeira linha precisa das colunas data, tipo, valor e conta (baixe o modelo).', rows: [] };
+
+  const byName = (list, name) => list.find((x) => fold(x.name) === fold(name));
+  const left = new Map(existing);
+  const rows = lines.map((cells, i) => {
+    const get = (k) => (index[k] === undefined ? '' : String(cells[index[k]] ?? '').trim());
+    const errors = [];
+    const entry_date = parseDay(get('date'));
+    if (!entry_date) errors.push('data inválida');
+    else if (closedMonths.has(entry_date.slice(0, 7))) errors.push('mês fechado');
+    const kind = Object.keys(FIN_KIND_NAMES).find((k) => FIN_KIND_NAMES[k].includes(fold(get('kind'))));
+    if (!kind) errors.push('tipo inválido (entrada, saída ou transferência)');
+    const reais = parseAmount(get('amount'));
+    if (!reais) errors.push('valor inválido');
+    const account = byName(accounts, get('account'));
+    if (!get('account')) errors.push('falta a conta');
+    else if (!account) errors.push(`conta "${get('account')}" não existe`);
+    let to = null;
+    let category = null;
+    if (kind === 'transferencia') {
+      to = byName(accounts, get('to_account'));
+      if (!get('to_account')) errors.push('falta a conta de destino');
+      else if (!to) errors.push(`conta "${get('to_account')}" não existe`);
+      else if (account && to.id === account.id) errors.push('as duas contas são a mesma');
+    } else if (kind) {
+      category = byName(categories.filter((c) => c.kind === kind), get('category'));
+      if (!get('category')) errors.push('falta a categoria');
+      else if (!category) errors.push(`categoria de ${kind === 'entrada' ? 'entrada' : 'saída'} "${get('category')}" não existe`);
+    }
+    const description = get('description').replace(/\s+/g, ' ').slice(0, 200) || null;
+    const row = {
+      line: i + 2,
+      entry_date,
+      kind,
+      amount_cents: reais ? Math.round(reais * 100) : null,
+      account_id: account?.id || null,
+      to_account_id: to?.id || null,
+      category_id: category?.id || null,
+      description,
+      label: kind === 'transferencia' ? `${account?.name || get('account')} → ${to?.name || get('to_account')}` : `${category?.name || get('category')} · ${account?.name || get('account')}`,
+      errors,
+      skip: null,
+    };
+    if (!errors.length) {
+      const key = financeKey(row);
+      if (left.get(key) > 0) {
+        row.skip = 'já lançado';
+        left.set(key, left.get(key) - 1);
+      }
+    }
+    return row;
   });
   return { rows };
 }

@@ -2,6 +2,7 @@
 // vê os totais, edita e apaga arrastando, com Desfazer; fecha e publica um mês antigo e o membro vê
 // só os totais na Prestação de contas. Quem não é da tesouraria não vê o Financeiro.
 // Os lançamentos do teste levam a marca "UI fin" na descrição e ficam marcados como apagados no fim.
+import { readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
 import { rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations, answer } from './helpers.mjs';
 
@@ -45,6 +46,17 @@ test.afterAll(async () => {
 
 // "R$ 1.234,56" → 123456
 const cents = (text) => Math.round(Number(text.replace(/[^\d,-]/g, '').replace(',', '.')) * 100);
+// O "+" abre o menu: Novo lançamento ou Importar planilha.
+async function newEntry(page) {
+  await page.getByLabel('Adicionar lançamentos').click();
+  await page.getByRole('link', { name: 'Novo lançamento' }).click();
+}
+const downloaded = async (page, click) => {
+  const wait = page.waitForEvent('download');
+  await click();
+  const file = await wait;
+  return { name: file.suggestedFilename(), text: readFileSync(await file.path(), 'utf8') };
+};
 
 test('a tesouraria lança, vê os totais, edita e apaga arrastando, com Desfazer', async ({ page }) => {
   await openLoggedIn(page, admin.session, '/i/teste-a/#/menu');
@@ -56,7 +68,7 @@ test('a tesouraria lança, vê os totais, edita e apaga arrastando, com Desfazer
   const outBefore = cents(await tile('Saídas').innerText());
 
   // Entrada (o tipo que já vem marcado).
-  await page.getByRole('link', { name: 'Novo lançamento' }).click();
+  await newEntry(page);
   await expect(page.getByRole('heading', { name: 'Novo lançamento' })).toBeVisible();
   await page.getByLabel('Valor (R$)').fill('1.234,56');
   await page.getByLabel('Categoria').selectOption({ label: 'Ofertas' });
@@ -68,7 +80,7 @@ test('a tesouraria lança, vê os totais, edita e apaga arrastando, com Desfazer
   await expect.poll(async () => cents(await tile('Entradas').innerText())).toBe(inBefore + 123456);
 
   // Saída: as categorias mudam para as de saída.
-  await page.getByRole('link', { name: 'Novo lançamento' }).click();
+  await newEntry(page);
   await page.getByLabel('Saída').check();
   await expect(page.getByLabel('Categoria').locator('option', { hasText: 'Aluguel' })).toHaveCount(1);
   await expect(page.getByLabel('Categoria').locator('option', { hasText: 'Dízimos' })).toHaveCount(0);
@@ -81,7 +93,7 @@ test('a tesouraria lança, vê os totais, edita e apaga arrastando, com Desfazer
   await expect.poll(async () => cents(await tile('Saídas').innerText())).toBe(outBefore + 5000);
 
   // Transferência: escolhe as duas contas e não tem categoria; não entra nas entradas nem nas saídas.
-  await page.getByRole('link', { name: 'Novo lançamento' }).click();
+  await newEntry(page);
   await page.getByLabel('Transferência').check();
   await expect(page.getByLabel('Categoria')).toBeHidden();
   await expect(page.getByLabel('Para a conta')).toBeVisible();
@@ -125,7 +137,7 @@ test('a tesouraria fecha e publica o mês; o membro vê só os totais; reabrir t
   await openLoggedIn(page, admin.session, `/i/teste-a/#/financeiro?mes=${MONTH}`);
   await expect(page.locator('.month-nav')).toContainText('março de 2002');
   const add = async (kind, value, category, text) => {
-    await page.getByRole('link', { name: 'Novo lançamento' }).click();
+    await newEntry(page);
     await page.getByLabel(kind).check();
     await expect(page.getByLabel('Data')).toHaveValue(`${MONTH}-31`); // mês passado: o último dia
     await page.getByLabel('Valor (R$)').fill(value);
@@ -147,7 +159,7 @@ test('a tesouraria fecha e publica o mês; o membro vê só os totais; reabrir t
   await answer(page, `Recado ${TAG}`);
   await expect(page.locator('#toast')).toContainText('Mês fechado e publicado.');
   await expect(page.getByRole('button', { name: 'Reabrir o mês' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Novo lançamento' })).toHaveCount(0);
+  await expect(page.getByLabel('Adicionar lançamentos')).toHaveCount(0);
   await expect(page.locator('.swipe')).toHaveCount(0);
 
   // O membro vê o mês publicado, com os totais por categoria e o recado, sem os lançamentos.
@@ -166,10 +178,55 @@ test('a tesouraria fecha e publica o mês; o membro vê só os totais; reabrir t
   await page.getByRole('button', { name: 'Reabrir o mês' }).click();
   await answer(page);
   await expect(page.locator('#toast')).toContainText('Mês reaberto.');
-  await expect(page.getByRole('link', { name: 'Novo lançamento' })).toBeVisible();
+  await expect(page.getByLabel('Adicionar lançamentos')).toBeVisible();
   await member.reload();
   await expect(member.getByRole('heading', { name: 'Prestação de contas não publicada' })).toBeVisible();
   await member.context().close();
+});
+
+test('importa uma planilha (com erros por linha, sem duplicar) e baixa a planilha do mês', async ({ page }) => {
+  await openLoggedIn(page, admin.session, '/i/teste-a/#/financeiro?mes=2003-05');
+  await page.getByLabel('Adicionar lançamentos').click();
+  await page.locator('.fab-options').getByRole('link', { name: 'Importar planilha' }).click();
+  await expect(page.getByRole('heading', { name: 'Importar planilha' })).toBeVisible();
+  await expect(page.locator('.card')).toContainText('Dízimos');
+
+  const model = await downloaded(page, () => page.getByRole('button', { name: 'Baixar modelo' }).click());
+  expect(model.name).toBe('modelo-financeiro.csv');
+  expect(model.text.replace(/^﻿/, '')).toMatch(/^data;tipo;valor;categoria;conta;conta_destino;descricao\r\n/);
+
+  // Maiúsculas e acentos não importam; categoria que não existe e data inválida viram erro na linha.
+  const csv = [
+    'data;tipo;valor;categoria;conta;conta_destino;descricao',
+    `10/05/2003;entrada;200,00;dizimos;caixa;;${TAG} imp1`,
+    `11/05/2003;Saida;50;Aluguel;Banco;;${TAG} imp2`,
+    `12/05/2003;transferência;30;;Caixa;Banco;${TAG} imp3`,
+    `13/05/2003;saída;10;Cantina;Caixa;;${TAG} imp4`,
+    `31/02/2003;entrada;10;Ofertas;Caixa;;${TAG} imp5`,
+  ].join('\r\n');
+  const choose = () => page.locator('#file').setInputFiles({ name: 'lancamentos.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+  await choose();
+  await expect(page.getByRole('heading', { name: '3 lançamentos prontos para importar' })).toBeVisible();
+  await expect(page.locator('.preview-table tr', { hasText: 'imp4' })).toContainText('categoria de saída "Cantina" não existe');
+  await expect(page.locator('.preview-table tr', { hasText: 'imp5' })).toContainText('data inválida');
+  await page.getByRole('button', { name: 'Importar 3 lançamentos' }).click();
+  await expect(page.locator('#toast')).toContainText('3 lançamentos importados.');
+  await expect(page).toHaveURL(/mes=2003-05/);
+  await expect(page.locator('.fin-row', { hasText: `${TAG} imp1` })).toContainText(/\+ R\$\s200,00/);
+  await expect(page.locator('.fin-row', { hasText: `${TAG} imp3` })).toContainText('Caixa → Banco');
+
+  // A planilha do mês sai no mesmo formato do modelo.
+  const month = await downloaded(page, () => page.getByRole('button', { name: 'Baixar planilha do mês' }).click());
+  expect(month.name).toMatch(/^financeiro-.*-2003-05\.csv$/);
+  expect(month.text).toContain(`"10/05/2003";"entrada";"200,00";"Dízimos";"Caixa";"";"${TAG} imp1"`);
+  expect(month.text).toContain(`"12/05/2003";"transferência";"30,00";"";"Caixa";"Banco";"${TAG} imp3"`);
+
+  // A mesma planilha de novo: nada é duplicado.
+  await page.getByRole('link', { name: 'Importar planilha' }).click();
+  await choose();
+  await expect(page.getByRole('heading', { name: '0 lançamentos prontos para importar' })).toBeVisible();
+  await expect(page.locator('.card').last()).toContainText('3 linhas puladas: já foram lançadas.');
+  await expect(page.getByRole('button', { name: /^Importar \d/ })).toHaveCount(0);
 });
 
 test('quem não é da tesouraria não vê o Financeiro', async ({ page }) => {
