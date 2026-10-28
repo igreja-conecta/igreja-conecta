@@ -282,6 +282,9 @@ function toast(msg, kind = '') {
   toastTimer = setTimeout(() => (el.hidden = true), kind === 'error' ? 6000 : 3500);
 }
 
+// Botão redondo com "+" no canto inferior direito, para criar algo na tela (conversa, evento, aviso).
+const fab = (href, label) => `<a class="fab" href="${href}" aria-label="${esc(label)}" title="${esc(label)}">${icon.plus}</a>`;
+
 const navigate = (path) => {
   if (location.hash === `#${path}`) render();
   else location.hash = path;
@@ -1378,7 +1381,7 @@ function helpTopics() {
     ...(features('agenda')
       ? [[
           'Criar eventos e cultos',
-          `<p>Na <a href="#/agenda">Agenda</a>, toque em <em>Novo evento</em>. Para os cultos fixos, marque <strong>Repetir toda semana</strong> (e, se quiser, até quando).</p>
+          `<p>Na <a href="#/agenda">Agenda</a>, toque no botão <strong>+</strong>, embaixo à direita. Para os cultos fixos, marque <strong>Repetir toda semana</strong> (e, se quiser, até quando).</p>
            <p>Em <strong>Marcar no mapa</strong>, busque o endereço ou toque no ponto exato: quem abrir o evento vê o mapa e tem os botões de rota pelo Google Maps e pelo Waze. O mesmo vale para o local das células e o endereço da igreja.</p>
            ${features('inscricoes') ? '<p>Num evento que não se repete, marque <strong>Abrir inscrições</strong> e, se quiser, o número de vagas, o prazo e a lista de espera. Na página do evento, <em>Ver inscritos</em> mostra os confirmados e a fila, com telefone e e-mail, e baixa a planilha. Se você tirar alguém, a pessoa recebe um aviso e o primeiro da fila entra no lugar.</p>' : ''}
            <p>Escolha o <strong>lembrete</strong>: os membros com notificação ativada recebem 1 hora, 2 horas, 3 horas ou 1 dia antes. Editar ou excluir um evento que se repete vale para todas as semanas.</p>`,
@@ -1387,7 +1390,7 @@ function helpTopics() {
     ...(features('avisos')
       ? [[
           'Publicar avisos',
-          `<p>Em <a href="#/avisos">Avisos</a>, toque em <em>Novo aviso</em>. Você pode <strong>fixar no topo</strong> e escolher <strong>até quando</strong> ele aparece (depois some para os membros, mas a liderança continua vendo).</p>
+          `<p>Em <a href="#/avisos">Avisos</a>, toque no botão <strong>+</strong>, embaixo à direita. Você pode <strong>fixar no topo</strong> e escolher <strong>até quando</strong> ele aparece (depois some para os membros, mas a liderança continua vendo).</p>
            <p>Marque <strong>Mandar notificação para os membros</strong> só nos avisos importantes. Isso só pode ser escolhido ao publicar.</p>`,
         ]]
       : []),
@@ -2608,7 +2611,6 @@ function drawAgenda(all) {
   $view.innerHTML = `
     <div class="page">
       <h1>Agenda</h1>
-      ${isLeaderRole(myRole()) ? `<div class="actions-row"><a class="btn primary" href="#/agenda/novo">${icon.plus} Novo evento</a></div>` : ''}
       ${
         rows.length
           ? [...byDay]
@@ -2624,6 +2626,7 @@ function drawAgenda(all) {
               .join('')
           : `<div class="empty"><p>Nenhum evento nos próximos 3 meses.</p></div>`
       }
+      ${isLeaderRole(myRole()) ? fab('#/agenda/novo', 'Novo evento') : ''}
     </div>`;
 }
 
@@ -3071,7 +3074,6 @@ function drawAnnouncements(all) {
   $view.innerHTML = `
     <div class="page">
       <h1>Avisos</h1>
-      ${leader ? `<div class="actions-row"><a class="btn primary" href="#/avisos/novo">${icon.plus} Novo aviso</a></div>` : ''}
       ${
         rows.length
           ? rows
@@ -3092,6 +3094,7 @@ function drawAnnouncements(all) {
               .join('')
           : `<div class="empty"><p>Nenhum aviso por enquanto.</p></div>`
       }
+      ${leader ? fab('#/avisos/novo', 'Novo aviso') : ''}
     </div>`;
   $view.querySelectorAll('[data-delete]').forEach((b) => {
     b.onclick = async () => {
@@ -6761,7 +6764,7 @@ function drawChats(rows, photos) {
             }</p></div>`
       }
       <p class="hint">As conversas são só entre as duas pessoas: ninguém mais lê, nem a liderança da igreja.</p>
-      <a class="fab" href="#/chat/nova" aria-label="${leader ? 'Nova conversa' : 'Falar com a liderança'}" title="${leader ? 'Nova conversa' : 'Falar com a liderança'}">${icon.plus}</a>
+      ${fab('#/chat/nova', leader ? 'Nova conversa' : 'Falar com a liderança')}
     </div>`;
 }
 

@@ -202,3 +202,20 @@ test('Meu cadastro, a ficha do membro e editar evento e aviso também abrem na h
   await page.locator('.announcement', { hasText: `Aviso ${tag}` }).getByRole('link', { name: 'Editar' }).click();
   await expect(page.getByLabel('Título')).toHaveValue(`Aviso ${tag}`, fast);
 });
+
+test('o botão + de novo evento e de novo aviso aparece só para a liderança', async ({ page }) => {
+  await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/agenda');
+  await page.getByRole('link', { name: 'Novo evento' }).click();
+  await expect(page.getByRole('heading', { name: 'Novo evento' })).toBeVisible();
+  await page.evaluate(() => (location.hash = '/avisos'));
+  await page.getByRole('link', { name: 'Novo aviso' }).click();
+  await expect(page.getByRole('heading', { name: 'Novo aviso' })).toBeVisible();
+
+  const member = await page.context().newPage();
+  await openLoggedIn(member, as['membro-a'].session, '/i/teste-a/#/agenda');
+  await expect(member.getByRole('heading', { name: 'Agenda' })).toBeVisible();
+  await expect(member.locator('.fab')).toHaveCount(0);
+  await member.evaluate(() => (location.hash = '/avisos'));
+  await expect(member.getByRole('heading', { name: 'Avisos' })).toBeVisible();
+  await expect(member.locator('.fab')).toHaveCount(0);
+});
