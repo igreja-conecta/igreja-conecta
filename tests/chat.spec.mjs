@@ -22,7 +22,17 @@ test.beforeAll(async ({ playwright }) => {
   for (const u of ['lider-a', 'membro-a', 'adm-b']) as[u] = await loginAs(api, u);
 });
 
-test.afterAll(async () => api?.dispose());
+test.afterAll(async () => {
+  if (!api) return;
+  // Se o teste de apagar parou no meio, a conversa do membro com a líder volta para ele.
+  const h = { headers: as['membro-a'].headers };
+  const [lider] = await (await api.get(rest('members?select=id,church_id&name=eq.Líder da A'), h)).json();
+  if (lider) {
+    const conv = await (await api.post(rest('rpc/start_conversation'), { ...h, data: { p_church: lider.church_id, p_member: lider.id } })).json().catch(() => null);
+    if (typeof conv === 'string') await api.post(rest('rpc/hide_conversation'), { ...h, data: { p_conv: conv, p_hide: false } });
+  }
+  await api.dispose();
+});
 
 test('o membro escreve para a liderança e a líder responde, em tempo real', async ({ page, browser }) => {
   await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/');
@@ -138,4 +148,43 @@ test('o botão + abre a lista de quem dá para chamar, com busca', async ({ page
   await expect(member.getByRole('heading', { name: 'Liderança', exact: true })).toBeVisible();
   await expect(member.getByRole('heading', { name: 'Membros', exact: true })).toHaveCount(0);
   await expect(member.locator('.chat-person', { hasText: 'Líder da A' })).toBeVisible();
+});
+
+test('arrastar a conversa para a esquerda apaga só para mim, com Desfazer; o menu ⋯ também apaga', async ({ page }) => {
+  await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/chat');
+  const wrap = page.locator('.chat-swipe', { hasText: 'Líder da A' });
+  await expect(wrap).toBeVisible();
+  await expect(page.getByText('Arraste uma conversa para a esquerda para apagar.')).toBeVisible();
+
+  // Arrasto curto: a linha volta ao lugar e nada é apagado.
+  const drag = async (fraction) => {
+    const box = await wrap.locator('.chat-row').boundingBox();
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width * 0.9, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * (0.9 - fraction), y, { steps: 12 });
+    await page.mouse.up();
+  };
+  await drag(0.15);
+  await expect(wrap).toBeVisible();
+  await expect(page).toHaveURL(/#\/chat$/); // soltar depois de arrastar não abre a conversa
+
+  // Arrasto longo: apaga, com Desfazer.
+  await drag(0.7);
+  await expect(page.locator('#toast')).toContainText('Conversa apagada.');
+  await expect(wrap).toBeHidden();
+  await page.getByRole('button', { name: 'Desfazer' }).click();
+  await expect(page.locator('.chat-swipe', { hasText: 'Líder da A' })).toBeVisible();
+
+  // Pelo menu da conversa (para quem usa teclado ou leitor de tela).
+  await page.locator('.chat-swipe', { hasText: 'Líder da A' }).locator('.chat-row').click();
+  await expect(page.locator('.chat-head')).toContainText('Líder da A');
+  await page.getByLabel('Mais opções').click();
+  page.once('dialog', (d) => d.accept());
+  await page.getByRole('button', { name: 'Apagar conversa' }).click();
+  await expect(page).toHaveURL(/#\/chat$/);
+  await expect(page.locator('#toast')).toContainText('Conversa apagada.');
+  await expect(page.locator('.chat-swipe', { hasText: 'Líder da A' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Desfazer' }).click();
+  await expect(page.locator('.chat-swipe', { hasText: 'Líder da A' })).toBeVisible();
 });

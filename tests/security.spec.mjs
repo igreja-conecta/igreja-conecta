@@ -294,6 +294,7 @@ test.describe('Banco: visitante sem login (chat)', () => {
       chat_contacts: { p_church: UUID },
       chat_block: { p_conv: UUID, p_block: true },
       chat_report: { p_conv: UUID },
+      hide_conversation: { p_conv: UUID },
     };
     for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
     for (const fn of ['chat_message_guard', 'chat_message_after']) expect((await rpc(request, fn)).ok(), fn).toBe(false);

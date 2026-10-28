@@ -273,13 +273,25 @@ function prefetchScreens() {
 // Utilidades da tela
 // ---------------------------------------------------------------------
 let toastTimer;
-function toast(msg, kind = '') {
+// action (opcional): { label, run } vira um botão no aviso, como "Desfazer".
+function toast(msg, kind = '', action = null) {
   const el = document.getElementById('toast');
   el.textContent = msg;
+  if (action) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-action';
+    btn.textContent = action.label;
+    btn.onclick = () => {
+      el.hidden = true;
+      action.run();
+    };
+    el.append(' ', btn);
+  }
   el.className = `toast ${kind}`;
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.hidden = true), kind === 'error' ? 6000 : 3500);
+  toastTimer = setTimeout(() => (el.hidden = true), kind === 'error' ? 6000 : action ? 6000 : 3500);
 }
 
 // Botão redondo com "+" no canto inferior direito, para criar algo na tela (conversa, evento, aviso).
@@ -337,6 +349,7 @@ const icon = {
   chevron: '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>',
   users: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.3a6.5 6.5 0 0 1 3.5 5.7"/></svg>',
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
   qr: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2M20 14v.01M14 20h.01M17 17v3h3M20 17v.01"/></svg>',
   upload: '<svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v4h16v-4"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 5 5"/></svg>',
@@ -1279,6 +1292,7 @@ function helpTopics() {
                 : 'Você escreve para um pastor, um líder ou a secretaria.'
           } O número no ícone mostra as conversas com mensagem nova.</p>
            <p><strong>Só as duas pessoas leem a conversa</strong>: nem a liderança da igreja nem o administrador do app. Se alguém incomodar, toque em ⋯ para <em>Bloquear</em> ou <em>Denunciar</em> (o administrador da igreja recebe os nomes e o motivo, nunca as mensagens).</p>
+           <p>Para <strong>apagar uma conversa</strong>, arraste-a para a esquerda na lista (ou toque em ⋯ e em <em>Apagar conversa</em>). Ela some só para você: a outra pessoa continua vendo. Se chegar mensagem nova, a conversa volta só com o que é novo. Logo depois de apagar, dá para tocar em <em>Desfazer</em>.</p>
            <p>Com as notificações ativadas, chega um aviso no celular a cada mensagem nova. O aviso mostra só quem escreveu, nunca o texto (a tela do celular bloqueado pode ser vista por outras pessoas).</p>
            <p>Não quer receber mensagens? Desligue <em>Receber mensagens pelo chat</em> em <a href="#/perfil">Meu cadastro</a>.</p>`,
         ]]
@@ -6752,17 +6766,21 @@ function drawChats(rows, photos) {
       <h1>Conversas</h1>
       ${
         rows.length
-          ? `<div class="chat-list">${rows
+          ? `<p class="hint chat-swipe-hint">Arraste uma conversa para a esquerda para apagar.</p>
+             <div class="chat-list">${rows
               .map(
                 (c) => `
-          <a class="chat-row ${c.unread ? 'unread' : ''}" href="#/chat/${c.id}">
-            ${avatar(c.other_name, c.other_photo && photos[miniOf(c.other_photo)])}
-            <span class="chat-text">
-              <strong>${esc(c.other_name)}</strong>
-              <span class="chat-last">${c.blocked ? '🚫 Conversa bloqueada' : `${c.last_mine ? 'Você: ' : ''}${esc(c.last_message || '')}`}</span>
-            </span>
-            <time datetime="${esc(c.last_message_at)}">${esc(notifTime(c.last_message_at))}</time>
-          </a>`,
+          <div class="chat-swipe" data-id="${c.id}">
+            <span class="chat-swipe-bg" aria-hidden="true">${icon.trash} Apagar</span>
+            <a class="chat-row ${c.unread ? 'unread' : ''}" href="#/chat/${c.id}" draggable="false">
+              ${avatar(c.other_name, c.other_photo && photos[miniOf(c.other_photo)])}
+              <span class="chat-text">
+                <strong>${esc(c.other_name)}</strong>
+                <span class="chat-last">${c.blocked ? '🚫 Conversa bloqueada' : `${c.last_mine ? 'Você: ' : ''}${esc(c.last_message || '')}`}</span>
+              </span>
+              <time datetime="${esc(c.last_message_at)}">${esc(notifTime(c.last_message_at))}</time>
+            </a>
+          </div>`,
               )
               .join('')}</div>`
           : `<div class="empty"><h2>Nenhuma conversa ainda</h2><p>${
@@ -6772,6 +6790,90 @@ function drawChats(rows, photos) {
       <p class="hint">As conversas são só entre as duas pessoas: ninguém mais lê, nem a liderança da igreja.</p>
       ${fab('#/chat/nova', leader ? 'Nova conversa' : 'Falar com a liderança')}
     </div>`;
+  const list = $view.querySelector('.chat-list');
+  if (list) swipeToDelete(list, (wrap) => hideConversation(wrap.dataset.id));
+}
+
+// Apaga a conversa só para quem apagou (a regra fica no banco: hide_conversation, SQL 025),
+// com "Desfazer" no aviso. Devolve false se o banco recusou.
+async function hideConversation(id) {
+  const { error } = await sb.rpc('hide_conversation', { p_conv: id });
+  if (error) {
+    toast(errorText(error), 'error');
+    return false;
+  }
+  const forget = () => {
+    screenForget('chat');
+    screenForget(`conversa:${id}`);
+  };
+  forget();
+  refreshChatUnread();
+  toast('Conversa apagada.', '', {
+    label: 'Desfazer',
+    run: async () => {
+      const { error: undo } = await sb.rpc('hide_conversation', { p_conv: id, p_hide: false });
+      if (undo) return toast(errorText(undo), 'error');
+      forget();
+      refreshChatUnread();
+      if (location.hash === '#/chat') render();
+    },
+  });
+  return true;
+}
+
+// Arrastar para a esquerda: passando de 35% da largura, onDelete(wrap) apaga (devolve true;
+// com false a linha volta ao lugar). A rolagem vertical continua normal.
+function swipeToDelete(list, onDelete) {
+  let row = null;
+  let startX = 0;
+  let startY = 0;
+  let dx = 0;
+  let dragging = false;
+  list.addEventListener('pointerdown', (e) => {
+    row = e.button === 0 ? e.target.closest('.chat-row') : null;
+    startX = e.clientX;
+    startY = e.clientY;
+    dx = 0;
+    dragging = false;
+  });
+  list.addEventListener('pointermove', (e) => {
+    if (!row) return;
+    const x = e.clientX - startX;
+    const y = e.clientY - startY;
+    if (!dragging) {
+      if (Math.abs(y) > 10 && Math.abs(y) > Math.abs(x)) return void (row = null); // está rolando a lista
+      if (x > -10) return;
+      dragging = true;
+      row.setPointerCapture(e.pointerId);
+      row.classList.add('dragging');
+    }
+    dx = Math.min(0, x);
+    row.style.transform = `translateX(${dx}px)`;
+  });
+  const end = async () => {
+    if (!row) return;
+    const r = row;
+    row = null;
+    r.classList.remove('dragging');
+    if (!dragging) return;
+    setTimeout(() => (dragging = false)); // depois do clique que o soltar dispara
+    if (-dx < r.offsetWidth * 0.35) return void (r.style.transform = '');
+    const wrap = r.closest('.chat-swipe');
+    r.style.transform = 'translateX(-100%)';
+    wrap.classList.add('removing');
+    if (await onDelete(wrap)) {
+      wrap.hidden = true;
+      // Apagou a última: mostra a tela vazia.
+      if (!list.querySelector('.chat-swipe:not([hidden])') && location.hash === '#/chat') render();
+    } else {
+      wrap.classList.remove('removing');
+      r.style.transform = '';
+    }
+  };
+  list.addEventListener('pointerup', end);
+  list.addEventListener('pointercancel', end);
+  // Soltar depois de arrastar não abre a conversa.
+  list.addEventListener('click', (e) => dragging && e.preventDefault(), true);
 }
 
 // Escolher com quem conversar: a liderança que recebe mensagens e, com busca, outras pessoas.
@@ -6923,6 +7025,7 @@ function drawConversation(ctx, id, data, photos) {
                 : '<button type="button" data-block>Bloquear conversa</button>'
             }
             <button type="button" data-report>Denunciar</button>
+            <button type="button" data-hide>Apagar conversa</button>
           </div>
         </details>
       </div>
@@ -7042,6 +7145,12 @@ function drawConversation(ctx, id, data, photos) {
     );
     if (reason === null) return;
     act('chat_report', { p_conv: id, p_reason: reason.trim().slice(0, 500) }, 'Denúncia enviada. A conversa foi bloqueada.');
+  });
+  // O mesmo que arrastar na lista, para quem usa teclado ou leitor de tela.
+  menu.querySelector('[data-hide]').addEventListener('click', async () => {
+    menu.open = false;
+    if (!confirm('Apagar esta conversa? Ela some só para você; a outra pessoa continua vendo.')) return;
+    if (await hideConversation(id)) navigate('/chat');
   });
 }
 
