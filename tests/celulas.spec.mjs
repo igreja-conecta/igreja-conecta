@@ -34,6 +34,8 @@ test('a líder cria a célula, coloca os participantes e escolhe o líder', asyn
   await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/menu');
   await page.getByRole('link', { name: 'Células' }).click();
   await expect(page.getByRole('heading', { name: 'Membros sem célula', exact: false })).toBeVisible();
+  // A liderança cria pelo botão redondo "+".
+  await expect(page.locator('.fab')).toHaveAttribute('href', '#/celulas/nova');
   await page.getByRole('link', { name: 'Nova célula' }).click();
   await page.getByLabel('Nome').fill(name);
   await page.getByLabel('Dia da semana').selectOption({ label: 'quarta' });
@@ -58,7 +60,9 @@ test('a líder cria a célula, coloca os participantes e escolhe o líder', asyn
 test('o membro que lidera a célula registra o encontro com a presença', async ({ page }) => {
   const [cell] = await (await api.get(rest(`cells?select=id&name=eq.${encodeURIComponent(name)}`), { headers: as['lider-a'].headers })).json();
   await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/menu');
-  await expect(page.getByRole('link', { name: 'Minha célula' })).toBeVisible();
+  await page.getByRole('link', { name: 'Minha célula' }).click();
+  await expect(page.locator('.page h1')).toBeVisible();
+  await expect(page.locator('.fab')).toHaveCount(0); // o membro não cria células
   await page.evaluate((id) => (location.hash = `/celulas/${id}`), cell.id);
   await expect(page.getByRole('heading', { name })).toBeVisible();
   await expect(page.getByRole('combobox')).toHaveCount(0); // o papel na célula é escolhido pela liderança

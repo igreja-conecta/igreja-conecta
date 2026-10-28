@@ -1418,7 +1418,7 @@ function helpTopics() {
     ...(features('celulas')
       ? [[
           'Organizar as células',
-          `<p>Em <a href="#/celulas">Menu &gt; Células</a>, toque em <em>Nova célula</em> e preencha o nome, o dia, o horário e o local. Depois, abra a célula e coloque os participantes buscando pelo nome. Ao lado de cada pessoa, escolha quem é <strong>Líder</strong> ou <strong>Auxiliar</strong>: qualquer pessoa do cadastro pode liderar uma célula, mesmo sem outro papel na igreja.</p>
+          `<p>Em <a href="#/celulas">Menu &gt; Células</a>, toque no botão <strong>+</strong>, embaixo à direita, e preencha o nome, o dia, o horário e o local. Depois, abra a célula e coloque os participantes buscando pelo nome. Ao lado de cada pessoa, escolha quem é <strong>Líder</strong> ou <strong>Auxiliar</strong>: qualquer pessoa do cadastro pode liderar uma célula, mesmo sem outro papel na igreja.</p>
            <p>A lista de células mostra o número de participantes e a <strong>frequência</strong> (a média de presença nos 4 últimos encontros). Embaixo ficam os <strong>membros sem célula</strong>, para encaminhar. Quando uma célula encerrar, desmarque <em>Célula ativa</em> na edição: o histórico fica guardado.</p>`,
         ]]
       : []),
@@ -4424,7 +4424,6 @@ function drawCells(ctx, { cells, meetings, people }) {
   $view.innerHTML = `
     <div class="page">
       <h1>Células</h1>
-      <div class="actions-row"><a class="btn primary" href="#/celulas/nova">${icon.plus} Nova célula</a></div>
       ${
         cells.length
           ? `<div class="list">${cells
@@ -4443,7 +4442,7 @@ function drawCells(ctx, { cells, meetings, people }) {
               })
               .join('')}</div>
              <p class="hint">Frequência: média de presença nos 4 últimos encontros (dos últimos 60 dias).</p>`
-          : '<div class="empty"><p>Nenhuma célula ainda. Crie a primeira.</p></div>'
+          : '<div class="empty"><p>Nenhuma célula ainda. Toque no <strong>+</strong> para criar a primeira.</p></div>'
       }
       <section class="card">
         <h2>${icon.users} Membros sem célula (${without.length})</h2>
@@ -4453,6 +4452,7 @@ function drawCells(ctx, { cells, meetings, people }) {
             : '<p>Todos os membros ativos estão em alguma célula.</p>'
         }
       </section>
+      ${fab('#/celulas/nova', 'Nova célula')}
     </div>`;
 }
 
