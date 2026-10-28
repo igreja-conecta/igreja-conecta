@@ -5,6 +5,8 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 10_000 },
   retries: process.env.CI ? 1 : 0,
+  // No máximo 2 arquivos de teste ao mesmo tempo, em qualquer máquina: o banco gratuito tem pouca memória.
+  workers: 2,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   globalSetup: './tests/global-setup.mjs',
   use: {
