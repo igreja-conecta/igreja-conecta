@@ -20,10 +20,11 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Um envio novo no mesmo PR cancela a rodada anterior: nunca duas rodadas pesando no banco juntas.
+    # Uma fila só para o projeto todo: as rodadas usam as mesmas contas de teste e o mesmo banco,
+    # então a próxima espera a anterior terminar (duas juntas se atrapalham e pesam no banco).
     concurrency:
-      group: testes-${{ github.ref }}
-      cancel-in-progress: true
+      group: testes
+      cancel-in-progress: false
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble
     steps:
