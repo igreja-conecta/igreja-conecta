@@ -3,7 +3,7 @@
 // Contas: supabase/002_igrejas_de_teste.sql + supabase/usuarios-de-teste.local.sql.
 import { readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
-import { SUPABASE_URL, ANON_KEY, rest, configured, testPassword, loginAs, assertCleanTestChurches } from './helpers.mjs';
+import { SUPABASE_URL, ANON_KEY, rest, configured, testPassword, loginAs, testEmail, assertCleanTestChurches } from './helpers.mjs';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -46,6 +46,10 @@ test.beforeAll(async ({ playwright }) => {
   const rows = await (await api.get(rest('churches?select=id,slug&slug=in.(teste-a,teste-b)'), { headers: as['adm-a'].headers })).json();
   church.a = rows.find((r) => r.slug === 'teste-a').id;
   church.b = rows.find((r) => r.slug === 'teste-b').id;
+  // A conta sem-igreja entra na Teste A só durante alguns testes. Se uma rodada parou no meio
+  // (banco fora do ar, rodada cancelada), ela ficou lá: tira antes de começar.
+  for (const who of ['adm-a', 'adm-b'])
+    await api.delete(rest(`members?email=eq.${encodeURIComponent(testEmail('sem-igreja'))}`), { headers: as[who].headers });
 });
 
 test.afterAll(async () => {
@@ -1583,7 +1587,9 @@ test.describe('Galeria de fotos (020)', () => {
     expect(mine.pedidos_para_tirar_fotos_da_galeria.map((r) => r.motivo)).toContain('Apareço nela');
   });
 
+  // Pesado (cerca de 300 pedidos ao banco): só roda quando pedido, com TESTES_PESADOS=1.
   test('o limite de 300 fotos por igreja é conferido no banco', async () => {
+    test.skip(!process.env.TESTES_PESADOS, 'Teste pesado: rode com TESTES_PESADOS=1');
     test.setTimeout(180_000);
     const made = await album('adm-b', church.b, `${tag} limite`);
     expect(made.ok(), await made.text()).toBe(true);
