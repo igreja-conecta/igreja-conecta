@@ -7124,41 +7124,81 @@ function drawAccountabilityMonth(key, r) {
   const sum = (kind) => items(kind).reduce((s, c) => s + c.cents, 0);
   const inC = sum('entrada');
   const outC = sum('saida');
-  const table = (kind, empty) => {
+  const result = inC - outC;
+  const day = (iso) => new Date(iso).toLocaleDateString('pt-BR');
+  const logo = state.church.logo_url;
+  // Cada categoria com uma barra do tamanho da sua parte no total (legível também em preto e branco).
+  const column = (kind, title, empty) => {
     const total = sum(kind);
-    return items(kind).length
-      ? `<div class="fin-balances">${items(kind)
-          .map((c) => `<div><span>${esc(c.name)} <small>${Math.round((c.cents / total) * 100)}%</small></span><strong>${fmtMoney(c.cents)}</strong></div>`)
-          .join('')}<div class="total"><span>Total</span><strong>${fmtMoney(total)}</strong></div></div>`
-      : `<p class="hint">${empty}</p>`;
+    const of = kind === 'entrada' ? 'das entradas' : 'das saídas';
+    return `
+      <section class="acc-col ${kind}">
+        <h2>${title}</h2>
+        ${
+          items(kind).length
+            ? `${items(kind)
+                .map((c) => {
+                  const pct = Math.round((c.cents / total) * 100);
+                  return `
+            <div class="acc-cat">
+              <div class="acc-cat-row"><span>${esc(c.name)}</span><strong>${fmtMoney(c.cents)}</strong></div>
+              <div class="acc-bar" aria-hidden="true"><i style="--w:${Math.max(pct, 1)}%"></i></div>
+              <small>${pct}% ${of}</small>
+            </div>`;
+                })
+                .join('')}
+             <div class="acc-col-total"><span>Total</span><strong>${fmtMoney(total)}</strong></div>`
+            : `<p class="hint">${empty}</p>`
+        }
+      </section>`;
   };
   $view.innerHTML = `
-    <div class="page">
+    <div class="page acc-page">
       <a href="#/prestacao" class="back no-print">← Prestação de contas</a>
-      <h1>${esc(state.church.name)}: ${finMonthLabel(key)}</h1>
-      ${
-        r.published_at
-          ? `<p class="hint">Publicada pela tesouraria em ${esc(new Date(r.published_at).toLocaleDateString('pt-BR'))}.</p>`
-          : '<p class="notice">Prévia: este mês ainda não foi publicado. Só a tesouraria vê.</p>'
-      }
-      ${r.note ? `<div class="notice"><strong>Recado da tesouraria</strong><p>${esc(r.note)}</p></div>` : ''}
-      <div class="stat-grid">
-        <div class="stat-tile"><span class="stat-label">Entradas</span><strong class="fin-amount entrada">${fmtMoney(inC)}</strong></div>
-        <div class="stat-tile"><span class="stat-label">Saídas</span><strong class="fin-amount saida">${fmtMoney(outC)}</strong></div>
-        <div class="stat-tile"><span class="stat-label">Resultado do mês</span><strong>${fmtMoney(inC - outC)}</strong></div>
+      ${r.published_at ? '' : '<p class="notice no-print">Prévia: este mês ainda não foi publicado. Só a tesouraria vê.</p>'}
+      <article class="acc-sheet">
+        <header class="acc-head">
+          ${logo ? `<img class="acc-logo" src="${esc(logo)}" alt="" width="56" height="56">` : ''}
+          <div>
+            <p class="acc-church">${esc(state.church.name)}</p>
+            <h1>Prestação de contas <span>${finMonthLabel(key)}</span></h1>
+            <p class="acc-sub">${r.published_at ? `Publicada pela tesouraria em ${esc(day(r.published_at))}` : 'Prévia: ainda não publicada'}</p>
+          </div>
+        </header>
+        <div class="acc-totals">
+          <div class="acc-total entrada"><span>Entradas</span><strong>${fmtMoney(inC)}</strong></div>
+          <div class="acc-total saida"><span>Saídas</span><strong>${fmtMoney(outC)}</strong></div>
+          <div class="acc-total ${result < 0 ? 'neg' : 'pos'}"><span>Resultado</span><strong>${fmtMoney(result)}</strong></div>
+        </div>
+        <div class="acc-balance">
+          <span>Saldo no início do mês<strong>${fmtMoney(r.opening_cents)}</strong></span>
+          <span class="acc-arrow" aria-hidden="true">→</span>
+          <span>Saldo no fim do mês<strong>${fmtMoney(r.opening_cents + result)}</strong></span>
+        </div>
+        <div class="acc-cols">
+          ${column('entrada', 'Entradas', 'Nenhuma entrada neste mês.')}
+          ${column('saida', 'Saídas', 'Nenhuma saída neste mês.')}
+        </div>
+        ${r.note ? `<blockquote class="acc-note"><strong>Recado da tesouraria</strong><p>${esc(r.note)}</p></blockquote>` : ''}
+        <p class="acc-privacy">Só os totais por categoria. Os dízimos e as ofertas não identificam quem deu.</p>
+        <div class="acc-signs">
+          <div><span class="acc-line"></span>Tesouraria<small>Data: ____/____/________</small></div>
+          <div><span class="acc-line"></span>Pastor(a) responsável<small>Data: ____/____/________</small></div>
+        </div>
+        <footer class="acc-foot">Gerado pelo app da ${esc(state.church.name)} em ${esc(day(Date.now()))}.</footer>
+      </article>
+      <div class="acc-actions no-print">
+        <button type="button" class="btn primary big" id="print">${icon.print} Imprimir ou salvar PDF</button>
+        <p class="hint">Sai numa folha A4, com espaço para as assinaturas. No celular, escolha <strong>Salvar como PDF</strong> para mandar no grupo da igreja.</p>
       </div>
-      <div class="fin-balances">
-        <div><span>Saldo no início do mês</span><strong>${fmtMoney(r.opening_cents)}</strong></div>
-        <div class="total"><span>Saldo no fim do mês</span><strong>${fmtMoney(r.opening_cents + inC - outC)}</strong></div>
-      </div>
-      <h2>Entradas</h2>
-      ${table('entrada', 'Nenhuma entrada neste mês.')}
-      <h2>Saídas</h2>
-      ${table('saida', 'Nenhuma saída neste mês.')}
-      <p class="hint">A prestação de contas mostra só os totais por categoria. Os dízimos e as ofertas não identificam quem deu.</p>
-      <button type="button" class="btn no-print" id="print">${icon.print} Imprimir</button>
     </div>`;
-  document.getElementById('print').onclick = () => window.print();
+  // O título da página vira o nome do PDF salvo.
+  document.getElementById('print').onclick = () => {
+    const title = document.title;
+    document.title = `Prestação de contas - ${state.church.name} - ${finMonthLabel(key)}`;
+    window.addEventListener('afterprint', () => (document.title = title), { once: true });
+    window.print();
+  };
 }
 
 // ---------------------------------------------------------------------
