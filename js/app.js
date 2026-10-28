@@ -1315,7 +1315,7 @@ function helpTopics() {
     ...(features('oracao')
       ? [[
           'Pedidos de oração',
-          `<p>Em <a href="#/oracao">Pedidos de oração</a>, toque em <em>Fazer um pedido</em> e escolha para quem vai:</p>
+          `<p>Em <a href="#/oracao">Pedidos de oração</a>, toque no botão <strong>+</strong>, embaixo à direita, e escolha para quem vai:</p>
            <ul class="bullets">
              <li><strong>Só para os pastores:</strong> só o pastor (administrador) e os líderes leem. A secretaria não vê.</li>
              <li><strong>Para a igreja orar junto:</strong> vai para o mural depois da aprovação da liderança e fica lá por 30 dias. Se quiser, marque <em>Não mostrar meu nome</em> (a liderança continua vendo quem enviou).</li>
@@ -3210,7 +3210,6 @@ function drawPrayerWall(rows) {
     <div class="page">
       <h1>Pedidos de oração</h1>
       ${prayerTabs('/oracao')}
-      <div class="actions-row"><a class="btn primary" href="#/oracao/novo">${icon.plus} Fazer um pedido</a></div>
       ${
         rows.length
           ? rows
@@ -3228,6 +3227,7 @@ function drawPrayerWall(rows) {
               .join('')
           : `<div class="empty"><p>Nenhum pedido no mural agora. Os pedidos aprovados ficam aqui por 30 dias.</p></div>`
       }
+      ${fab('#/oracao/novo', 'Fazer um pedido')}
     </div>`;
   $view.querySelectorAll('[data-pray]').forEach((b) => {
     b.onclick = async () => {
@@ -3308,7 +3308,6 @@ function drawMyPrayers(rows) {
     <div class="page">
       <h1>Pedidos de oração</h1>
       ${prayerTabs('/oracao/meus')}
-      <div class="actions-row"><a class="btn primary" href="#/oracao/novo">${icon.plus} Fazer um pedido</a></div>
       ${
         rows.length
           ? rows
@@ -3329,8 +3328,9 @@ function drawMyPrayers(rows) {
             </article>`,
               )
               .join('')
-          : `<div class="empty"><p>Você ainda não fez nenhum pedido.</p></div>`
+          : `<div class="empty"><p>Você ainda não fez nenhum pedido. Toque no <strong>+</strong> para fazer o primeiro.</p></div>`
       }
+      ${fab('#/oracao/novo', 'Fazer um pedido')}
     </div>`;
   $view.querySelectorAll('[data-answered]').forEach((b) => {
     b.onclick = async () => {

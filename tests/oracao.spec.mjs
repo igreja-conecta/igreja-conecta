@@ -33,6 +33,8 @@ test('o membro pede oração para a igreja, sem o nome, e acompanha em "Meus ped
   await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/menu');
   await page.getByRole('link', { name: 'Pedidos de oração' }).click();
   await expect(page.getByRole('link', { name: 'Moderação' })).toHaveCount(0);
+  // Todo membro pede oração pelo botão redondo "+".
+  await expect(page.locator('.fab')).toHaveAttribute('href', '#/oracao/novo');
   await page.getByRole('link', { name: 'Fazer um pedido' }).click();
   await page.getByLabel('Seu pedido').fill(`Pela saúde da minha mãe ${tag}`);
   await expect(page.getByLabel('Não mostrar meu nome')).toBeHidden();

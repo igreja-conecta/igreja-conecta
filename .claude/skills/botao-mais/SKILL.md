@@ -6,7 +6,7 @@ description: Regras do botão redondo com "+" (canto inferior direito) para cria
 # Botão redondo com "+"
 
 Pedido do usuário: a ação de **criar** de uma tela de lista fica num **botão redondo com "+"** no
-canto inferior direito, como em apps de celular (já usado em Conversas, Agenda, Avisos, Devocional, Galeria, Células, Ministérios e Membros). Ele não
+canto inferior direito, como em apps de celular (já usado em Conversas, Agenda, Avisos, Devocional, Galeria, Células, Ministérios, Membros e Pedidos de oração). Ele não
 ocupa espaço no topo da tela e fica sempre ao alcance do polegar.
 
 ## Como usar
@@ -27,7 +27,7 @@ $view.innerHTML = `
 - `href`: a tela de criar (o mesmo destino do botão antigo).
 - `label`: o que o botão faz, por extenso ("Novo evento", "Nova conversa"). Vira o `aria-label` e o
   `title`: é o que o leitor de tela fala e o que os testes procuram (`getByRole('link', { name })`).
-- **Só para quem pode criar** (ex.: `isLeaderRole(myRole())`, `galleryTeam()`). A regra de verdade
+- **Só para quem pode criar** (ex.: `isLeaderRole(myRole())`, `galleryTeam()`; em Pedidos de oração todo membro pode, então o botão aparece para todos). A regra de verdade
   continua no banco; o botão escondido só evita oferecer o que vai dar erro.
 - **Um botão por tela**, só para a ação principal. Ações de um item (editar, apagar) continuam no item.
 - Não use o botão em formulários nem em telas de detalhe com várias ações: lá vale o botão normal.
