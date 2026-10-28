@@ -307,3 +307,26 @@ test.describe('Banco: visitante sem login (notificação do chat)', () => {
     expect((await rpc(request, 'chat_push_new_message')).ok()).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (financeiro)', () => {
+  test('não lê nem grava lançamentos, contas e meses; não chama as funções', async ({ request }) => {
+    for (const table of ['fin_accounts', 'fin_categories', 'fin_entries', 'fin_months']) {
+      const res = await request.get(rest(`${table}?select=*`), { headers });
+      if (res.ok()) expect(await res.json(), table).toEqual([]);
+    }
+    expect((await request.post(rest('fin_entries'), { headers, data: { church_id: UUID, kind: 'entrada', amount_cents: 100, account_id: UUID } })).ok()).toBe(false);
+    const calls = {
+      finance_on: { p_church: UUID },
+      is_treasury: { p_church: UUID },
+      set_treasury: { p_member: UUID, p_on: true },
+      finance_setup: { p_church: UUID },
+      finance_balances: { p_church: UUID, p_until: '2026-01-31' },
+      finance_report: { p_church: UUID, p_month: '2026-01-01' },
+      finance_published: { p_church: UUID },
+      finance_close_month: { p_church: UUID, p_month: '2026-01-01' },
+      finance_reopen_month: { p_church: UUID, p_month: '2026-01-01' },
+    };
+    for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
+    for (const fn of ['fin_entries_guard', 'members_treasury_guard']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
+  });
+});

@@ -2,7 +2,7 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import { CONFIG } from './config.js';
 import {
   esc, slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone,
-  ROLES, isLeaderRole, FEATURES, fold, fmtDate, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
+  ROLES, isLeaderRole, FEATURES, fold, fmtDate, fmtMoney, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
   renderMessage, firstName, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
 } from './util.js';
 import { resizeImage, resizeLogo, makeIconSet, resizeForGallery } from './images.js';
@@ -60,6 +60,8 @@ const messageLinks = () =>
 const offerReady = () => featureOn('pix') && !!state.church?.pix_key;
 // Tela Visitantes: a liderança e a equipe do ministério que recebe os avisos (ex.: Acolhimento).
 const visitorTeam = () => featureOn('visitantes') && (isLeaderRole(myRole()) || (isActiveMember() && !!myMember().visitor_team));
+// Financeiro: o administrador e quem ele marcou como tesouraria.
+const treasury = () => featureOn('financeiro') && isActiveMember() && (myRole() === 'admin' || !!myMember().treasury);
 
 // ---------------------------------------------------------------------
 // Telas que abrem na hora: guarda (na memória e no aparelho) o que veio do banco da última
@@ -70,7 +72,7 @@ const SCREEN_PREFIX = 'tela:';
 const screenMem = new Map();
 const screenLoading = new Map();
 // Telas com dados sensíveis de outras pessoas: guardadas só na memória, nunca gravadas no aparelho.
-const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:|infantil$|chat$|conversa:)/;
+const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:|infantil$|chat$|conversa:|financeiro)/;
 const screenKey = (name) => `${SCREEN_PREFIX}${state.user?.id}:${state.church?.id}:${name}`;
 
 function screenCached(name) {
@@ -370,6 +372,7 @@ function errorText(err) {
   if (/ministries_visitors_idx/i.test(msg)) return 'Outro ministério já recebe os avisos de visitantes. Desmarque nele primeiro.';
   if (/ministries_kids_idx/i.test(msg)) return 'Outro ministério já faz o check-in das crianças. Desmarque nele primeiro.';
   if (/ministries_gallery_idx/i.test(msg)) return 'Outro ministério já publica na galeria. Desmarque nele primeiro.';
+  if (/fin_categories_name_idx/i.test(msg)) return 'Já existe uma categoria com esse nome.';
   if (/exceeded the maximum allowed size|Payload too large/i.test(msg)) return 'A foto ficou grande demais mesmo reduzida. Tente outra foto.';
   if (/row-level security|permission denied/i.test(msg)) return 'Você não tem permissão para isso.';
   if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return 'Sem conexão. Confira sua internet e tente de novo.';
@@ -411,6 +414,7 @@ const icon = {
   sun: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12H5M19 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>',
   moon: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
   chat: '<svg viewBox="0 0 24 24"><path d="M4 5.5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>',
+  wallet: '<svg viewBox="0 0 24 24"><path d="M4 7.5a2 2 0 0 1 2-2h12v3"/><rect x="4" y="8.5" width="16" height="11" rx="2"/><path d="M15.5 14h.01"/></svg>',
   send: '<svg viewBox="0 0 24 24"><path d="m4 12 16-7.5-6 15-2.5-6z"/><path d="m11.5 13.5 8.5-9"/></svg>',
   book: '<svg viewBox="0 0 24 24"><path d="M5 19.5V5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2 2 2 0 0 0 2 2h12v-4"/><path d="M12 6.5v6M9.5 8.8h5"/></svg>',
 };
@@ -544,7 +548,7 @@ async function loadMemberships() {
   const [mem, pa] = await Promise.all([
     sb
       .from('members')
-      .select('id, role, consent_at, name, visitor_team, kids_team, gallery_team, church:churches(id, slug, name, logo_url, primary_color)')
+      .select('id, role, consent_at, name, treasury, visitor_team, kids_team, gallery_team, church:churches(id, slug, name, logo_url, primary_color)')
       .eq('user_id', state.user.id)
       .eq('status', 'ativo'),
     sb.rpc('is_platform_admin'),
@@ -651,6 +655,10 @@ const churchRoutes = [
   [/^\/chat\/nova$/, viewChatNew],
   [/^\/chat\/([0-9a-f-]{36})$/, viewConversation],
   [/^\/relatorios$/, viewReports],
+  [/^\/financeiro$/, viewFinance],
+  [/^\/financeiro\/novo$/, viewFinanceEntry],
+  [/^\/financeiro\/config$/, viewFinanceConfig],
+  [/^\/financeiro\/([0-9a-f-]{36})$/, viewFinanceEntry],
   [/^\/galeria$/, viewGallery],
   [/^\/galeria\/novo$/, viewAlbumForm],
   [/^\/galeria\/([0-9a-f-]{36})$/, viewAlbum],
@@ -1113,6 +1121,7 @@ async function viewMenu() {
         <a class="menu-row" href="#/perfil">${icon.user}<span>Meu cadastro</span>${icon.chevron}</a>
         ${isLeaderRole(m.role) ? `<a class="menu-row" href="#/membros">${icon.users}<span>Membros</span>${icon.chevron}</a>` : ''}
         ${featureOn('relatorios') && isLeaderRole(m.role) ? `<a class="menu-row" href="#/relatorios">${icon.chart}<span>Relatórios</span>${icon.chevron}</a>` : ''}
+        ${treasury() ? `<a class="menu-row" href="#/financeiro">${icon.wallet}<span>Financeiro</span>${icon.chevron}</a>` : ''}
         ${admin ? `<a class="menu-row" href="#/config">${icon.gear}<span>Configurar a igreja</span>${icon.chevron}</a>` : ''}
         ${state.memberships.length > 1 || state.platformAdmin ? `<a class="menu-row" href="${esc(ROOT_URL)}">${icon.swap}<span>Trocar de igreja</span>${icon.chevron}</a>` : ''}
         ${datesOn() ? `<a class="menu-row" href="#/aniversariantes">${icon.cake}<span>Aniversariantes do mês</span>${icon.chevron}</a>` : ''}
@@ -1473,6 +1482,14 @@ function helpTopics() {
           '<p>Em <a href="#/relatorios">Menu &gt; Relatórios</a>, escolha o período (3, 6 ou 12 meses, ou o ano) e veja os números da igreja: membros (novos por mês, faixa etária, quem usa o app), visitantes e quantos viraram membros, frequência das células, crianças no infantil, confirmações nas escalas, inscrições nos eventos e a participação no app. Cada parte tem <em>Baixar planilha</em>, que abre no Excel ou no Google Planilhas.</p><p>O relatório mostra só totais. <em>Lista de membros completa</em> baixa o cadastro de todos (nome, contato, nascimento, papel e situação): guarde a planilha com cuidado, porque tem dados pessoais.</p>',
         ]]
       : []),
+    ...(features('financeiro')
+      ? [[
+          'Financeiro (tesouraria)',
+          `<p>O administrador marca quem cuida do dinheiro: no cadastro da pessoa, em <a href="#/membros">Membros</a>, marque <strong>Tesouraria</strong>. Só o administrador e a tesouraria veem o <a href="#/financeiro">Menu &gt; Financeiro</a>.</p>
+           <p>Lá, toque no botão <strong>+</strong>, embaixo à direita, para lançar uma <strong>entrada</strong> (dízimos, ofertas…), uma <strong>saída</strong> (aluguel, luz…) ou uma <strong>transferência</strong> entre contas (ex.: o dinheiro do culto depositado no banco). As setas trocam o mês; a tela mostra os totais e o saldo de cada conta. Arraste um lançamento para a esquerda para apagar.</p>
+           <p>Em <em>Contas e categorias</em>, mude os nomes, crie outras e informe o <strong>saldo inicial</strong> de cada conta (o que ela tinha antes do primeiro lançamento). O app só registra: o dinheiro não passa por ele.</p>`,
+        ]]
+      : []),
     ...(features('escalas')
       ? [[
           'Organizar os ministérios',
@@ -1521,7 +1538,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, a galeria de fotos, o chat (e se os membros conversam entre si), o cadastro de visitantes e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, a galeria de fotos, o chat (e se os membros conversam entre si), o cadastro de visitantes o financeiro com a prestação de contas e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -1881,7 +1898,7 @@ function accountStatus(m) {
   return { cls: '', label: 'Sem e-mail' };
 }
 
-const MEMBER_COLUMNS = 'id, church_id, name, email, phone, birth_date, role, status, user_id, consent_at, photo_path, show_birthday, show_phone, wedding_date, baptism_date, show_wedding, show_baptism, member_since';
+const MEMBER_COLUMNS = 'id, church_id, name, email, phone, birth_date, role, status, treasury, user_id, consent_at, photo_path, show_birthday, show_phone, wedding_date, baptism_date, show_wedding, show_baptism, member_since';
 
 async function viewMembers(ctx) {
   if (!requireLeader('/membros')) return;
@@ -2053,6 +2070,12 @@ async function viewMemberForm(ctx, id) {
         ${admin ? '' : '<small class="hint">Só o administrador muda o papel.</small>'}
       </label>
       ${
+        admin && featureOn('financeiro')
+          ? `<label class="check"><input type="checkbox" name="treasury" ${m.treasury ? 'checked' : ''}> Tesouraria
+              <small class="hint">Lança as entradas e as saídas no Financeiro e publica a prestação de contas.</small></label>`
+          : ''
+      }
+      ${
         isNew
           ? `<label class="check"><input type="checkbox" name="consent" required> A pessoa concordou em ter estes dados no app da igreja.</label>`
           : `<label>Situação
@@ -2101,6 +2124,11 @@ async function viewMemberForm(ctx, id) {
         ? await sb.from('members').insert({ ...row, id: memberId, church_id: state.church.id })
         : await sb.from('members').update(row).eq('id', m.id);
       if (error) throw error;
+      // Tesouraria: só o administrador marca (no banco, por set_treasury).
+      if (form.treasury && form.treasury.checked !== !!m.treasury) {
+        const { error: err } = await sb.rpc('set_treasury', { p_member: memberId, p_on: form.treasury.checked });
+        if (err) throw err;
+      }
       forgetMembers();
       toast(isNew ? 'Membro cadastrado.' : 'Cadastro salvo.');
       // Mudou o próprio papel ou a própria situação: recarrega o que a pessoa pode ver.
@@ -6378,6 +6406,393 @@ function drawReport(p, r) {
     downloadFile(`membros-${slugify(state.church.name)}-${isoLocal(new Date())}.csv`, toCsv(rows), 'text/csv;charset=utf-8');
     toast('Planilha baixada.');
   };
+}
+
+// ---------------------------------------------------------------------
+// Financeiro da tesouraria: lançamentos, saldos, contas e categorias. O app só registra (o
+// dinheiro não passa por ele). Valores em centavos. As regras ficam no banco (026_financeiro.sql)
+// e as telas, só na memória (PRIVATE_SCREENS).
+// ---------------------------------------------------------------------
+const FIN_KINDS = { entrada: 'Entrada', saida: 'Saída', transferencia: 'Transferência' };
+const monthKey = (d = new Date()) => isoLocal(d).slice(0, 7); // "2026-10"
+const monthOf = (key) => key.split('-').map(Number);
+const finMonthLabel = (key) => `${MONTHS[monthOf(key)[1] - 1]} de ${monthOf(key)[0]}`;
+const monthShift = (key, n) => monthKey(new Date(monthOf(key)[0], monthOf(key)[1] - 1 + n, 1));
+const monthEnd = (key) => isoLocal(new Date(monthOf(key)[0], monthOf(key)[1], 0));
+const monthParam = (ctx) => (/^\d{4}-\d{2}$/.test(ctx.params.get('mes') || '') ? ctx.params.get('mes') : monthKey());
+
+// Depois de lançar ou mudar contas: todas as telas do financeiro esperam o banco de novo.
+function forgetFinance() {
+  const prefix = screenKey('financeiro');
+  for (const key of [...screenMem.keys()]) {
+    if (!key.startsWith(prefix)) continue;
+    screenMem.delete(key);
+    screenLoading.delete(key);
+  }
+}
+
+function requireTreasury(next) {
+  if (!requireMemberFeature(next, 'financeiro')) return false;
+  if (treasury()) return true;
+  $view.innerHTML = `<div class="empty"><h2>Só para a tesouraria</h2><p>Peça ao administrador da igreja para marcar você como tesouraria no seu cadastro.</p><a class="btn" href="#/">Voltar</a></div>`;
+  return false;
+}
+
+// Contas e categorias. Na primeira vez, o banco cria as mais comuns (finance_setup).
+async function loadFinanceBase() {
+  const church = state.church.id;
+  const get = async () => {
+    const [a, c] = await Promise.all([
+      sb.from('fin_accounts').select('id, name, opening_cents, active').eq('church_id', church).order('created_at'),
+      sb.from('fin_categories').select('id, kind, name, active').eq('church_id', church).order('name'),
+    ]);
+    if (a.error) throw a.error;
+    if (c.error) throw c.error;
+    return { accounts: a.data, categories: c.data };
+  };
+  const base = await get();
+  if (base.accounts.length && base.categories.length) return base;
+  const { error } = await sb.rpc('finance_setup', { p_church: church });
+  if (error) throw error;
+  return get();
+}
+
+async function loadFinanceMonth(key) {
+  const church = state.church.id;
+  const [base, e, b, m] = await Promise.all([
+    loadFinanceBase(),
+    sb
+      .from('fin_entries')
+      .select('id, kind, entry_date, amount_cents, account_id, to_account_id, category_id, description')
+      .eq('church_id', church)
+      .is('deleted_at', null)
+      .gte('entry_date', `${key}-01`)
+      .lte('entry_date', monthEnd(key))
+      .order('entry_date', { ascending: false })
+      .order('created_at', { ascending: false }),
+    sb.rpc('finance_balances', { p_church: church, p_until: monthEnd(key) }),
+    sb.from('fin_months').select('closed_at').eq('church_id', church).eq('month', `${key}-01`).maybeSingle(),
+  ]);
+  for (const r of [e, b, m]) if (r.error) throw r.error;
+  return {
+    ...base,
+    entries: e.data,
+    balances: Object.fromEntries(b.data.map((x) => [x.account_id, x.balance_cents])),
+    closed_at: m.data?.closed_at || null,
+  };
+}
+
+// Quanto um lançamento muda o saldo de cada conta (sign = -1 desfaz).
+function applyEntry(balances, e, sign) {
+  const add = (id, v) => id && (balances[id] = (balances[id] || 0) + sign * v);
+  if (e.kind === 'entrada') add(e.account_id, e.amount_cents);
+  else if (e.kind === 'saida') add(e.account_id, -e.amount_cents);
+  else {
+    add(e.account_id, -e.amount_cents);
+    add(e.to_account_id, e.amount_cents);
+  }
+}
+
+async function viewFinance(ctx) {
+  const key = monthParam(ctx);
+  if (!requireTreasury('/financeiro')) return;
+  await screenShow(ctx, `financeiro:${key}`, () => loadFinanceMonth(key), (d) => drawFinance(key, d));
+}
+
+function drawFinance(key, d) {
+  const acc = Object.fromEntries(d.accounts.map((a) => [a.id, a]));
+  const cat = Object.fromEntries(d.categories.map((c) => [c.id, c]));
+  const total = (kind) => d.entries.filter((e) => e.kind === kind).reduce((s, e) => s + e.amount_cents, 0);
+  const balance = (a) => d.balances[a.id] ?? a.opening_cents;
+  const accounts = d.accounts.filter((a) => a.active || balance(a));
+  const closed = !!d.closed_at;
+  const sign = { entrada: '+ ', saida: '− ', transferencia: '' };
+  const row = (e) => {
+    const title = e.kind === 'transferencia' ? `${acc[e.account_id]?.name} → ${acc[e.to_account_id]?.name}` : cat[e.category_id]?.name;
+    const sub = e.description || (e.kind === 'transferencia' ? 'Transferência entre contas' : acc[e.account_id]?.name);
+    const link = `
+          <a class="fin-row ${closed ? '' : 'swipe-row'}" href="#/financeiro/${e.id}?mes=${key}" draggable="false">
+            <span class="fin-day">${e.entry_date.slice(8)}</span>
+            <span class="fin-text"><strong>${esc(title || '')}</strong><small>${esc(sub || '')}</small></span>
+            <strong class="fin-amount ${e.kind}">${sign[e.kind]}${fmtMoney(e.amount_cents)}</strong>
+          </a>`;
+    return closed
+      ? link
+      : `<div class="swipe" data-id="${e.id}"><span class="swipe-bg" aria-hidden="true">${icon.trash} Apagar</span>${link}</div>`;
+  };
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Financeiro</h1>
+      <nav class="month-nav" aria-label="Mês">
+        <a class="btn small" href="#/financeiro?mes=${monthShift(key, -1)}" aria-label="Mês anterior">‹</a>
+        <strong>${finMonthLabel(key)}</strong>
+        <a class="btn small" href="#/financeiro?mes=${monthShift(key, 1)}" aria-label="Próximo mês">›</a>
+      </nav>
+      ${closed ? `<p class="notice">Mês fechado em ${esc(new Date(d.closed_at).toLocaleDateString('pt-BR'))}: os lançamentos dele não mudam mais.</p>` : ''}
+      <div class="stat-grid">
+        <div class="stat-tile"><span class="stat-label">Entradas</span><strong class="fin-amount entrada">${fmtMoney(total('entrada'))}</strong></div>
+        <div class="stat-tile"><span class="stat-label">Saídas</span><strong class="fin-amount saida">${fmtMoney(total('saida'))}</strong></div>
+        <div class="stat-tile"><span class="stat-label">Resultado do mês</span><strong>${fmtMoney(total('entrada') - total('saida'))}</strong></div>
+      </div>
+      <h2>Saldo em ${fmtDate(monthEnd(key))}</h2>
+      <div class="fin-balances">
+        ${accounts.map((a) => `<div><span>${esc(a.name)}</span><strong>${fmtMoney(balance(a))}</strong></div>`).join('')}
+        <div class="total"><span>Total</span><strong>${fmtMoney(accounts.reduce((s, a) => s + balance(a), 0))}</strong></div>
+      </div>
+      <h2>Lançamentos</h2>
+      ${
+        d.entries.length
+          ? `${closed ? '' : '<p class="hint swipe-hint">Arraste um lançamento para a esquerda para apagar.</p>'}
+             <div class="list" id="fin-entries">${d.entries.map(row).join('')}</div>`
+          : `<div class="empty"><p>Nenhum lançamento neste mês.${closed ? '' : ' Toque no <strong>+</strong> para lançar uma entrada, uma saída ou uma transferência.'}</p></div>`
+      }
+      <p><a class="btn" href="#/financeiro/config">Contas e categorias</a></p>
+      ${closed ? '' : fab(`#/financeiro/novo?mes=${key}`, 'Novo lançamento')}
+    </div>`;
+
+  const list = document.getElementById('fin-entries');
+  if (!list || closed) return;
+  // Apagado fica guardado no banco (deleted_at): o "Desfazer" só limpa a data.
+  const name = `financeiro:${key}`;
+  const setDeleted = async (e, at) => {
+    const { data, error } = await sb.from('fin_entries').update({ deleted_at: at }).eq('id', e.id).select('id');
+    if (error) throw error;
+    if (!data.length) throw new Error('Você não tem permissão para isso.');
+    const now = screenCached(name) || d;
+    const balances = { ...now.balances };
+    applyEntry(balances, e, at ? -1 : 1);
+    const entries = at ? now.entries.filter((x) => x.id !== e.id) : [...now.entries, e].sort((a, b) => b.entry_date.localeCompare(a.entry_date));
+    const next = { ...now, entries, balances };
+    screenUpdate(name, next);
+    screenForget(`financeiro-lanc:${e.id}`);
+    if (location.hash.startsWith('#/financeiro?') || location.hash === '#/financeiro') drawFinance(key, next);
+  };
+  swipeLeft(list, async (wrap) => {
+    const e = d.entries.find((x) => x.id === wrap.dataset.id);
+    try {
+      await setDeleted(e, new Date().toISOString());
+    } catch (err) {
+      toast(errorText(err), 'error');
+      return false;
+    }
+    toast('Lançamento apagado.', '', { label: 'Desfazer', run: () => setDeleted(e, null).catch((err) => toast(errorText(err), 'error')) });
+    return true;
+  });
+}
+
+// Um lançamento (com as contas e as categorias para o formulário) e se o mês dele está fechado.
+async function loadFinanceEntry(id) {
+  const base = await loadFinanceBase();
+  if (!id) return base;
+  const { data: entry, error } = await sb
+    .from('fin_entries')
+    .select('id, kind, entry_date, amount_cents, account_id, to_account_id, category_id, description')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error) throw error;
+  if (!entry) return { ...base, entry: null };
+  const { data: month, error: err } = await sb
+    .from('fin_months')
+    .select('closed_at')
+    .eq('church_id', state.church.id)
+    .eq('month', `${entry.entry_date.slice(0, 7)}-01`)
+    .maybeSingle();
+  if (err) throw err;
+  return { ...base, entry, closed_at: month?.closed_at || null };
+}
+
+async function viewFinanceEntry(ctx, id) {
+  const key = monthParam(ctx);
+  if (!requireTreasury(id ? `/financeiro/${id}` : '/financeiro/novo')) return;
+  const name = id ? `financeiro-lanc:${id}` : 'financeiro-base';
+  // Vindo da lista do mês: já tem tudo o que o formulário precisa.
+  const month = screenCached(`financeiro:${key}`);
+  const fromList = id && month?.entries.find((e) => e.id === id);
+  if (month && !screenCached(name) && (!id || fromList)) {
+    screenUpdate(name, { accounts: month.accounts, categories: month.categories, ...(id ? { entry: fromList, closed_at: month.closed_at } : {}) });
+  }
+  await screenShow(ctx, name, () => loadFinanceEntry(id), (d) => drawFinanceEntry(key, id, d));
+}
+
+function drawFinanceEntry(key, id, d) {
+  const e = id ? d.entry : null;
+  if (id && !e) {
+    $view.innerHTML = `<div class="empty"><h2>Lançamento não encontrado</h2><p>Ele pode ter sido apagado.</p><a class="btn" href="#/financeiro?mes=${key}">Voltar</a></div>`;
+    return;
+  }
+  const closed = !!d.closed_at;
+  const today = isoLocal(new Date());
+  const day = e?.entry_date || (key === monthKey() ? today : key < monthKey() ? monthEnd(key) : `${key}-01`);
+  const options = (list, selected) =>
+    list.map((x) => `<option value="${x.id}" ${x.id === selected ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+  const accounts = d.accounts.filter((a) => a.active || a.id === e?.account_id || a.id === e?.to_account_id);
+  $view.innerHTML = `
+    <form id="fin-entry" class="form page">
+      <a href="#/financeiro?mes=${key}" class="back">← Financeiro</a>
+      <h1>${id ? 'Lançamento' : 'Novo lançamento'}</h1>
+      ${closed ? '<p class="notice">Este mês está fechado: o lançamento não pode mudar.</p>' : ''}
+      <fieldset>
+        <legend>Tipo</legend>
+        ${Object.entries(FIN_KINDS)
+          .map(([k, label]) => `<label class="check"><input type="radio" name="kind" value="${k}" ${k === (e?.kind || 'entrada') ? 'checked' : ''}> ${label}</label>`)
+          .join('')}
+      </fieldset>
+      <label>Data<input name="entry_date" type="date" required min="2000-01-01" value="${esc(day)}"></label>
+      <label>Valor (R$)<input name="amount" required inputmode="decimal" placeholder="0,00" autocomplete="off"
+        value="${e ? esc(fmtMoney(e.amount_cents).replace(/R\$\s?/, '')) : ''}"></label>
+      <label><span id="account-label">Conta</span><select name="account_id" required>${options(accounts, e?.account_id)}</select></label>
+      <label id="to-box">Para a conta<select name="to_account_id">${options(accounts, e?.to_account_id || accounts[1]?.id)}</select></label>
+      <label id="category-box">Categoria<select name="category_id"></select></label>
+      <label>Descrição (opcional)<input name="description" maxlength="200" value="${esc(e?.description || '')}" placeholder="Ex.: culto de domingo, conta de luz"></label>
+      ${closed ? '' : `<button class="btn primary big">${id ? 'Salvar' : 'Lançar'}</button>`}
+      ${id && !closed ? '<button type="button" class="btn danger-outline" id="delete">Apagar lançamento</button>' : ''}
+    </form>`;
+
+  const form = document.getElementById('fin-entry');
+  if (closed) form.querySelectorAll('input, select').forEach((el) => (el.disabled = true));
+  const kind = () => form.querySelector('[name=kind]:checked').value;
+  const sync = () => {
+    const transfer = kind() === 'transferencia';
+    document.getElementById('to-box').hidden = !transfer;
+    document.getElementById('category-box').hidden = transfer;
+    document.getElementById('account-label').textContent = transfer ? 'Da conta' : 'Conta';
+    form.to_account_id.required = transfer;
+    form.category_id.required = !transfer;
+    const cats = d.categories.filter((c) => c.kind === kind() && (c.active || c.id === e?.category_id));
+    form.category_id.innerHTML = options(cats, form.category_id.value || e?.category_id);
+  };
+  form.querySelectorAll('[name=kind]').forEach((r) => r.addEventListener('change', sync));
+  sync();
+
+  const done = (msg, month) => {
+    forgetFinance();
+    toast(msg);
+    navigate(`/financeiro?mes=${month}`);
+  };
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const reais = parseAmount(form.amount.value);
+    if (!reais) return toast('Confira o valor.', 'error');
+    const transfer = kind() === 'transferencia';
+    if (transfer && form.account_id.value === form.to_account_id.value) return toast('Escolha duas contas diferentes.', 'error');
+    const row = {
+      kind: kind(),
+      entry_date: form.entry_date.value,
+      amount_cents: Math.round(reais * 100),
+      account_id: form.account_id.value,
+      to_account_id: transfer ? form.to_account_id.value : null,
+      category_id: transfer ? null : form.category_id.value,
+      description: form.description.value.trim() || null,
+    };
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { data, error } = id
+      ? await sb.from('fin_entries').update(row).eq('id', id).select('id')
+      : await sb.from('fin_entries').insert({ ...row, church_id: state.church.id }).select('id');
+    if (error || !data.length) {
+      btn.disabled = false;
+      return toast(errorText(error || new Error('Você não tem permissão para isso.')), 'error');
+    }
+    done(id ? 'Lançamento salvo.' : 'Lançamento feito.', row.entry_date.slice(0, 7));
+  });
+
+  document.getElementById('delete')?.addEventListener('click', async () => {
+    if (!await ask('Apagar este lançamento? Ele sai dos totais e dos saldos.')) return;
+    const { data, error } = await sb.from('fin_entries').update({ deleted_at: new Date().toISOString() }).eq('id', id).select('id');
+    if (error || !data.length) return toast(errorText(error || new Error('Você não tem permissão para isso.')), 'error');
+    done('Lançamento apagado.', e.entry_date.slice(0, 7));
+  });
+}
+
+async function viewFinanceConfig(ctx) {
+  if (!requireTreasury('/financeiro/config')) return;
+  await screenShow(ctx, 'financeiro-base', loadFinanceBase, (d) => drawFinanceConfig(ctx, d));
+}
+
+function drawFinanceConfig(ctx, d) {
+  const item = (type, x, extra = '') => `
+    <div class="fin-config-row ${x.active ? '' : 'inactive'}">
+      <span><strong>${esc(x.name)}</strong>${extra}${x.active ? '' : '<small>Desativada</small>'}</span>
+      <button type="button" class="btn small" data-edit="${type}:${x.id}">Editar</button>
+      <button type="button" class="btn small" data-active="${type}:${x.id}">${x.active ? 'Desativar' : 'Reativar'}</button>
+    </div>`;
+  const cats = (kind) => d.categories.filter((c) => c.kind === kind).map((c) => item('categoria', c)).join('');
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/financeiro" class="back">← Financeiro</a>
+      <h1>Contas e categorias</h1>
+      <h2>Contas</h2>
+      <p class="hint">O saldo inicial é o que a conta tinha antes do primeiro lançamento no app.</p>
+      <div class="list">${d.accounts.map((a) => item('conta', a, `<small>Saldo inicial: ${fmtMoney(a.opening_cents)}</small>`)).join('')}</div>
+      <button type="button" class="btn" data-new="conta">${icon.plus} Nova conta</button>
+      <h2>Categorias de entrada</h2>
+      <div class="list">${cats('entrada')}</div>
+      <button type="button" class="btn" data-new="entrada">${icon.plus} Nova categoria de entrada</button>
+      <h2>Categorias de saída</h2>
+      <div class="list">${cats('saida')}</div>
+      <button type="button" class="btn" data-new="saida">${icon.plus} Nova categoria de saída</button>
+      <p class="hint">Desativar tira a conta ou a categoria dos novos lançamentos; os antigos continuam com ela.</p>
+    </div>`;
+
+  const table = (type) => (type === 'conta' ? 'fin_accounts' : 'fin_categories');
+  const find = (ref) => {
+    const [type, id] = ref.split(':');
+    return [type, (type === 'conta' ? d.accounts : d.categories).find((x) => x.id === id)];
+  };
+  const save = async (query) => {
+    const { data, error } = await query.select('id');
+    if (error || !data.length) return toast(errorText(error || new Error('Você não tem permissão para isso.')), 'error');
+    forgetFinance();
+    const fresh = await loadFinanceBase();
+    screenUpdate('financeiro-base', fresh);
+    if (ctx.alive()) drawFinanceConfig(ctx, fresh);
+  };
+  // Saldo inicial: aceita negativo ("-150,00").
+  const askOpening = async (cents) => {
+    const raw = await ask('Saldo inicial da conta (R$)', { input: 'text', value: fmtMoney(cents).replace(/R\$\s?/, ''), ok: 'Salvar' });
+    if (raw === null) return null;
+    const minus = /^\s*-/.test(raw);
+    const reais = parseAmount(raw.replace('-', ''));
+    if (reais === null) {
+      toast('Confira o valor.', 'error');
+      return null;
+    }
+    return (minus ? -1 : 1) * Math.round(reais * 100);
+  };
+  $view.querySelectorAll('[data-new]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const type = b.dataset.new;
+      const name = (await ask(type === 'conta' ? 'Nome da nova conta' : `Nova categoria de ${type === 'entrada' ? 'entrada' : 'saída'}`, { input: 'text', ok: 'Criar' }))?.trim();
+      if (!name) return;
+      if (type === 'conta') {
+        const opening = await askOpening(0);
+        if (opening === null) return;
+        return save(sb.from('fin_accounts').insert({ church_id: state.church.id, name, opening_cents: opening }));
+      }
+      save(sb.from('fin_categories').insert({ church_id: state.church.id, kind: type, name }));
+    }),
+  );
+  $view.querySelectorAll('[data-edit]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const [type, x] = find(b.dataset.edit);
+      const name = (await ask('Nome', { input: 'text', value: x.name, ok: 'Salvar' }))?.trim();
+      if (!name) return;
+      const patch = { name };
+      if (type === 'conta') {
+        const opening = await askOpening(x.opening_cents);
+        if (opening === null) return;
+        patch.opening_cents = opening;
+      }
+      save(sb.from(table(type)).update(patch).eq('id', x.id));
+    }),
+  );
+  $view.querySelectorAll('[data-active]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const [type, x] = find(b.dataset.active);
+      save(sb.from(table(type)).update({ active: !x.active }).eq('id', x.id));
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------

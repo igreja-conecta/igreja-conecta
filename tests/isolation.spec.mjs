@@ -1859,3 +1859,136 @@ test.describe('Apagar conversa (025)', () => {
     expect(await bodies('adm-a')).toEqual([`antes ${tag}`, `depois ${tag}`]);
   });
 });
+
+test.describe('Financeiro e prestação de contas (026)', () => {
+  // Um mês antigo, só dos testes: não mistura com os lançamentos de verdade nem com os testes de tela.
+  const MONTH = '2001-01-01';
+  const tag = `fin ${Date.now().toString(36)}`;
+  let lider;
+  let accounts;
+  let cats;
+  const entry = (who, data) =>
+    api.post(rest('fin_entries'), {
+      headers: returning(as[who].headers),
+      data: { church_id: church.a, entry_date: '2001-01-15', description: tag, ...data },
+    });
+  const setTreasury = (who, p_on) => rpc(who, 'set_treasury', { p_member: lider.id, p_on });
+  const balances = async () =>
+    Object.fromEntries(
+      (await (await rpc('adm-a', 'finance_balances', { p_church: church.a, p_until: '2001-01-31' })).json()).map((b) => [b.account_id, b.balance_cents]),
+    );
+
+  test.beforeAll(async () => {
+    [lider] = await get('adm-a', 'members?select=id&name=eq.Líder da A');
+    // Se uma rodada parou no meio, o mês ficou fechado ou a líder ficou na tesouraria.
+    await rpc('adm-a', 'finance_reopen_month', { p_church: church.a, p_month: MONTH });
+    await setTreasury('adm-a', false);
+    expect((await rpc('adm-a', 'finance_setup', { p_church: church.a })).ok()).toBe(true);
+    accounts = await get('adm-a', `fin_accounts?select=id,name&church_id=eq.${church.a}&order=created_at`);
+    cats = await get('adm-a', `fin_categories?select=id,kind,name&church_id=eq.${church.a}`);
+  });
+
+  // Nada se apaga de vez: os lançamentos do teste ficam marcados como apagados.
+  test.afterAll(async () => {
+    if (!api || !lider) return;
+    await rpc('adm-a', 'finance_reopen_month', { p_church: church.a, p_month: MONTH });
+    await api.patch(rest(`fin_entries?description=eq.${encodeURIComponent(tag)}`), {
+      headers: as['adm-a'].headers,
+      data: { deleted_at: new Date().toISOString() },
+    });
+    await setTreasury('adm-a', false);
+  });
+
+  test('só o administrador e a tesouraria leem e lançam; a outra igreja não vê nada', async () => {
+    const dizimos = cats.find((c) => c.kind === 'entrada' && c.name === 'Dízimos');
+    const saida = cats.find((c) => c.kind === 'saida');
+    expect(accounts.length).toBeGreaterThanOrEqual(2);
+    const res = await entry('adm-a', { kind: 'entrada', amount_cents: 150000, account_id: accounts[0].id, category_id: dizimos.id });
+    expect(res.ok(), await res.text()).toBe(true);
+    const [mine] = await res.json();
+    expect(mine.created_by).toBe(as['adm-a'].id);
+
+    // Sem a marca, a liderança, os membros e a outra igreja não leem nem lançam.
+    for (const who of ['lider-a', 'membro-a', 'adm-b', 'sem-igreja']) {
+      for (const table of ['fin_entries', 'fin_accounts', 'fin_categories', 'fin_months'])
+        expect(await get(who, `${table}?select=*&church_id=eq.${church.a}`), `${who} ${table}`).toEqual([]);
+      expect((await entry(who, { kind: 'entrada', amount_cents: 100, account_id: accounts[0].id, category_id: dizimos.id })).ok(), who).toBe(false);
+      expect((await rpc(who, 'finance_setup', { p_church: church.a })).ok(), who).toBe(false);
+      expect(await (await rpc(who, 'finance_balances', { p_church: church.a, p_until: '2001-01-31' })).json(), who).toEqual([]);
+    }
+    // Só o administrador marca a tesouraria (nem a própria líder, nem o administrador da outra igreja).
+    for (const who of ['lider-a', 'adm-b']) expect((await setTreasury(who, true)).ok(), who).toBe(false);
+    expect((await api.patch(rest(`members?id=eq.${lider.id}`), { headers: as['lider-a'].headers, data: { treasury: true } })).ok()).toBe(false);
+
+    // Marcada pelo administrador, a líder lança; desmarcada, perde o acesso.
+    expect((await setTreasury('adm-a', true)).ok()).toBe(true);
+    expect(await (await rpc('lider-a', 'is_treasury', { p_church: church.a })).json()).toBe(true);
+    expect((await entry('lider-a', { kind: 'saida', amount_cents: 40000, account_id: accounts[0].id, category_id: saida.id })).ok()).toBe(true);
+    expect(await get('lider-a', `fin_entries?select=id&description=eq.${encodeURIComponent(tag)}`)).toHaveLength(2);
+    expect((await setTreasury('adm-a', false)).ok()).toBe(true);
+    expect(await get('lider-a', `fin_entries?select=id&church_id=eq.${church.a}`)).toEqual([]);
+
+    // Ninguém apaga de vez, nem a tesouraria.
+    await api.delete(rest(`fin_entries?id=eq.${mine.id}`), { headers: as['adm-a'].headers });
+    expect(await get('adm-a', `fin_entries?select=id&id=eq.${mine.id}`)).toHaveLength(1);
+  });
+
+  test('conta e categoria da igreja e do tipo certo; a transferência leva de uma conta para outra', async () => {
+    const entrada = cats.find((c) => c.kind === 'entrada');
+    const saida = cats.find((c) => c.kind === 'saida');
+    const refused = async (data, label) => expect((await entry('adm-a', data)).ok(), label).toBe(false);
+    await refused({ kind: 'saida', amount_cents: 100, account_id: accounts[0].id, category_id: entrada.id }, 'saída com categoria de entrada');
+    await refused({ kind: 'saida', amount_cents: 0, account_id: accounts[0].id, category_id: saida.id }, 'valor zero');
+    await refused({ kind: 'transferencia', amount_cents: 100, account_id: accounts[0].id }, 'transferência sem destino');
+    await refused({ kind: 'transferencia', amount_cents: 100, account_id: accounts[0].id, to_account_id: accounts[0].id }, 'para a mesma conta');
+    await refused({ kind: 'transferencia', amount_cents: 100, account_id: accounts[0].id, to_account_id: accounts[1].id, category_id: saida.id }, 'transferência com categoria');
+    // Conta da outra igreja.
+    expect((await rpc('adm-b', 'finance_setup', { p_church: church.b })).ok()).toBe(true);
+    const [other] = await get('adm-b', `fin_accounts?select=id&church_id=eq.${church.b}&limit=1`);
+    await refused({ kind: 'saida', amount_cents: 100, account_id: other.id, category_id: saida.id }, 'conta da outra igreja');
+
+    const before = await balances();
+    expect((await entry('adm-a', { kind: 'transferencia', amount_cents: 2500, account_id: accounts[0].id, to_account_id: accounts[1].id })).ok()).toBe(true);
+    const after = await balances();
+    expect(after[accounts[0].id] - before[accounts[0].id]).toBe(-2500);
+    expect(after[accounts[1].id] - before[accounts[1].id]).toBe(2500);
+  });
+
+  test('mês fechado não muda; os membros veem só os totais dos meses publicados', async () => {
+    const report = (who) => rpc(who, 'finance_report', { p_church: church.a, p_month: MONTH });
+    const published = async (who) => (await (await rpc(who, 'finance_published', { p_church: church.a })).json()).map((m) => m.month);
+    const saida = cats.find((c) => c.kind === 'saida');
+    // Antes de publicar, ninguém fora da tesouraria vê; e só a tesouraria fecha.
+    for (const who of ['lider-a', 'membro-a', 'adm-b']) {
+      expect((await report(who)).ok(), who).toBe(false);
+      expect(await published(who), who).not.toContain(MONTH);
+      expect((await rpc(who, 'finance_close_month', { p_church: church.a, p_month: MONTH })).ok(), who).toBe(false);
+    }
+    const closed = await rpc('adm-a', 'finance_close_month', { p_church: church.a, p_month: MONTH, p_note: `Recado ${tag}` });
+    expect(closed.ok(), await closed.text()).toBe(true);
+
+    // Fechado: não lança nem edita.
+    expect((await entry('adm-a', { kind: 'saida', amount_cents: 100, account_id: accounts[0].id, category_id: saida.id })).ok()).toBe(false);
+    const edit = await api.patch(rest(`fin_entries?description=eq.${encodeURIComponent(tag)}`), { headers: as['adm-a'].headers, data: { amount_cents: 1 } });
+    expect(edit.ok()).toBe(false);
+
+    // O membro vê os totais por categoria e o recado, nunca os lançamentos.
+    const res = await report('membro-a');
+    expect(res.ok(), await res.text()).toBe(true);
+    const body = await res.json();
+    expect(Object.keys(body).sort()).toEqual(['categories', 'month', 'note', 'opening_cents', 'published_at']);
+    expect(body).toMatchObject({ month: MONTH, note: `Recado ${tag}` });
+    expect(body.categories).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'entrada', name: 'Dízimos' })]));
+    for (const c of body.categories) expect(Object.keys(c).sort()).toEqual(['cents', 'kind', 'name']);
+    expect(await published('membro-a')).toContain(MONTH);
+    expect((await report('adm-b')).ok()).toBe(false);
+    // Fechar de novo dá erro.
+    expect((await rpc('adm-a', 'finance_close_month', { p_church: church.a, p_month: MONTH })).ok()).toBe(false);
+
+    // Reaberto (só pela tesouraria): sai da prestação de contas e volta a aceitar mudanças.
+    expect((await rpc('membro-a', 'finance_reopen_month', { p_church: church.a, p_month: MONTH })).ok()).toBe(false);
+    expect((await rpc('adm-a', 'finance_reopen_month', { p_church: church.a, p_month: MONTH })).ok()).toBe(true);
+    expect((await report('membro-a')).ok()).toBe(false);
+    expect((await entry('adm-a', { kind: 'saida', amount_cents: 100, account_id: accounts[0].id, category_id: saida.id })).ok()).toBe(true);
+  });
+});
