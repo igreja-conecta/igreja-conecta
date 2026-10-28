@@ -284,6 +284,12 @@ function toast(msg, kind = '') {
 
 // Botão redondo com "+" no canto inferior direito, para criar algo na tela (conversa, evento, aviso).
 const fab = (href, label) => `<a class="fab" href="${href}" aria-label="${esc(label)}" title="${esc(label)}">${icon.plus}</a>`;
+// Mais de uma forma de criar na mesma tela: o "+" abre um menu com as opções ([href, texto]).
+const fabMenu = (label, items) => `
+  <details class="fab-menu">
+    <summary class="fab" aria-label="${esc(label)}" title="${esc(label)}">${icon.plus}</summary>
+    <div class="fab-options">${items.map(([href, text]) => `<a class="btn" href="${href}">${esc(text)}</a>`).join('')}</div>
+  </details>`;
 
 const navigate = (path) => {
   if (location.hash === `#${path}`) render();
@@ -1363,7 +1369,7 @@ function helpTopics() {
     ],
     [
       'Cadastrar membros',
-      `<p>Na aba <a href="#/membros">Membros</a>, toque no botão <strong>+</strong>, embaixo à direita. Só o nome é obrigatório, mas <strong>sem e-mail a pessoa não consegue entrar no app</strong>. Marque que a pessoa concordou em ter os dados no app.</p>
+      `<p>Na aba <a href="#/membros">Membros</a>, toque no botão <strong>+</strong>, embaixo à direita, e em <em>Novo membro</em>. Só o nome é obrigatório, mas <strong>sem e-mail a pessoa não consegue entrar no app</strong>. Marque que a pessoa concordou em ter os dados no app.</p>
        <p>A etiqueta de cada pessoa mostra a situação:</p>
        <ul class="bullets">
          <li><strong>Ainda não entrou:</strong> tem e-mail, mas ainda não abriu o app. Mande o endereço do app para ela.</li>
@@ -1375,7 +1381,7 @@ function helpTopics() {
     ],
     [
       'Importar uma planilha de membros',
-      `<p>Em <a href="#/membros/importar">Membros &gt; Importar planilha</a>, toque em <em>Baixar modelo</em> e preencha no Excel ou no Google Planilhas, com as colunas <strong>nome</strong>, <strong>email</strong>, <strong>telefone</strong> e <strong>nascimento</strong> (datas como 15/03/1980)${features('datas_especiais') ? '. Se quiser, acrescente <strong>casamento</strong> e <strong>batismo</strong>' : ''}.</p>
+      `<p>Em <a href="#/membros/importar">Membros &gt; + &gt; Importar planilha</a>, toque em <em>Baixar modelo</em> e preencha no Excel ou no Google Planilhas, com as colunas <strong>nome</strong>, <strong>email</strong>, <strong>telefone</strong> e <strong>nascimento</strong> (datas como 15/03/1980)${features('datas_especiais') ? '. Se quiser, acrescente <strong>casamento</strong> e <strong>batismo</strong>' : ''}.</p>
        <p>Salve como <strong>CSV</strong> e escolha o arquivo. O app mostra uma prévia antes de gravar: as linhas com erro são explicadas, e quem já tem o e-mail cadastrado é pulado.</p>`,
     ],
     ...(features('agenda')
@@ -1841,9 +1847,6 @@ async function viewMembers(ctx) {
   $view.innerHTML = `
     <div class="page">
       <h1>Membros</h1>
-      <div class="actions-row">
-        <a class="btn" href="#/membros/importar">${icon.upload} Importar planilha</a>
-      </div>
       <label class="search">${icon.search}<input type="search" id="q" placeholder="Buscar por nome, e-mail ou telefone" aria-label="Buscar membros"></label>
       <div class="chips filters">
         ${[['ativo', 'Ativos'], ['inativo', 'Inativos'], ['todos', 'Todos']]
@@ -1852,7 +1855,7 @@ async function viewMembers(ctx) {
       </div>
       <p class="hint" id="count"></p>
       <div class="list" id="members"></div>
-      ${fab('#/membros/novo', 'Novo membro')}
+      ${fabMenu('Adicionar membros', [['#/membros/novo', 'Novo membro'], ['#/membros/importar', 'Importar planilha']])}
     </div>`;
 
   const list = document.getElementById('members');
@@ -7819,6 +7822,12 @@ document.addEventListener('click', (e) => {
   if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
   location.hash = a.getAttribute('href').slice(1);
+});
+
+// O menu do botão "+" fecha ao tocar fora dele.
+document.addEventListener('click', (e) => {
+  const open = document.querySelector('.fab-menu[open]');
+  if (open && !open.contains(e.target)) open.open = false;
 });
 
 // Cada igreja tem o seu service worker, com o mesmo endereço do app instalado dela (i/<igreja>/):

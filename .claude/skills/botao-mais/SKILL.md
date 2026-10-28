@@ -30,6 +30,10 @@ $view.innerHTML = `
 - **Só para quem pode criar** (ex.: `isLeaderRole(myRole())`, `galleryTeam()`; em Pedidos de oração todo membro pode, então o botão aparece para todos). A regra de verdade
   continua no banco; o botão escondido só evita oferecer o que vai dar erro.
 - **Um botão por tela**, só para a ação principal. Ações de um item (editar, apagar) continuam no item.
+- **Mais de uma forma de criar** (ex.: Membros: Novo membro e Importar planilha): use
+  `fabMenu(label, [[href, texto], ...])`. O "+" abre um menu acima dele com as opções e vira "×";
+  tocar fora fecha. Sem script na página (é um `<details>`). No teste, abra pelo `getByLabel(label)`
+  antes de clicar na opção.
 - Não use o botão em formulários nem em telas de detalhe com várias ações: lá vale o botão normal.
 
 ## O que já vem pronto (não repita)
