@@ -82,6 +82,56 @@ test('a líder cadastra e edita um membro, mas não muda o papel nem exclui', as
   expect(saved).toEqual({ phone: '5561977776666', birth_date: '1990-05-10', role: 'membro' });
 });
 
+test('arrastar um membro para a esquerda inativa, com Desfazer; em Inativos, reativa', async ({ page }) => {
+  const status = async () => (await (await api.get(rest(`members?select=status&email=eq.${EMAIL}`), { headers: admin.headers })).json())[0].status;
+  const drag = async (wrap, fraction) => {
+    const box = await wrap.locator('.member-row').boundingBox();
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width * 0.9, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * (0.9 - fraction), y, { steps: 12 });
+    await page.mouse.up();
+  };
+
+  await openLoggedIn(page, lider.session, '/i/teste-a/#/membros');
+  await expect(page.getByText('Arraste um membro para a esquerda para inativar.')).toBeVisible();
+  // O próprio cadastro não arrasta.
+  await expect(page.locator('.member-row', { hasText: 'Líder da A' })).toBeVisible();
+  await expect(page.locator('.swipe', { hasText: 'Líder da A' })).toHaveCount(0);
+
+  await page.getByLabel('Buscar membros').fill(NAME);
+  const wrap = page.locator('.swipe', { hasText: NAME });
+  await expect(wrap).toContainText('Inativar');
+  // Arrasto curto: a linha volta ao lugar e nada muda.
+  await drag(wrap, 0.15);
+  await expect(wrap).toBeVisible();
+  await expect(page).toHaveURL(/#\/membros$/); // soltar depois de arrastar não abre o cadastro
+  expect(await status()).toBe('ativo');
+
+  // Arrasto longo: inativa, com Desfazer.
+  await drag(wrap, 0.7);
+  await expect(page.locator('#toast')).toContainText(`${NAME} foi para Inativos.`);
+  await expect(wrap).toHaveCount(0);
+  expect(await status()).toBe('inativo');
+  await page.getByRole('button', { name: 'Desfazer' }).click();
+  await expect(wrap).toBeVisible();
+  await expect.poll(status).toBe('ativo');
+
+  await drag(wrap, 0.7);
+  await expect(wrap).toHaveCount(0);
+  await expect.poll(status).toBe('inativo');
+
+  // Em Inativos, o mesmo gesto reativa.
+  await page.getByRole('link', { name: 'Inativos' }).click();
+  await expect(page.getByText('Arraste um membro para a esquerda para reativar.')).toBeVisible();
+  await page.getByLabel('Buscar membros').fill(NAME);
+  await expect(wrap).toContainText('Reativar');
+  await drag(wrap, 0.7);
+  await expect(page.locator('#toast')).toContainText(`${NAME} voltou para Ativos.`);
+  await expect(wrap).toHaveCount(0);
+  await expect.poll(status).toBe('ativo');
+});
+
 test('a líder importa uma planilha: pula o e-mail repetido e mostra os erros', async ({ page }) => {
   const csv = [
     'nome;email;telefone;nascimento',

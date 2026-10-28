@@ -152,7 +152,7 @@ test('o botão + abre a lista de quem dá para chamar, com busca', async ({ page
 
 test('arrastar a conversa para a esquerda apaga só para mim, com Desfazer; o menu ⋯ também apaga', async ({ page }) => {
   await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/chat');
-  const wrap = page.locator('.chat-swipe', { hasText: 'Líder da A' });
+  const wrap = page.locator('.swipe', { hasText: 'Líder da A' });
   await expect(wrap).toBeVisible();
   await expect(page.getByText('Arraste uma conversa para a esquerda para apagar.')).toBeVisible();
 
@@ -174,10 +174,10 @@ test('arrastar a conversa para a esquerda apaga só para mim, com Desfazer; o me
   await expect(page.locator('#toast')).toContainText('Conversa apagada.');
   await expect(wrap).toBeHidden();
   await page.getByRole('button', { name: 'Desfazer' }).click();
-  await expect(page.locator('.chat-swipe', { hasText: 'Líder da A' })).toBeVisible();
+  await expect(page.locator('.swipe', { hasText: 'Líder da A' })).toBeVisible();
 
   // Pelo menu da conversa (para quem usa teclado ou leitor de tela).
-  await page.locator('.chat-swipe', { hasText: 'Líder da A' }).locator('.chat-row').click();
+  await page.locator('.swipe', { hasText: 'Líder da A' }).locator('.chat-row').click();
   await expect(page.locator('.chat-head')).toContainText('Líder da A');
   await page.getByLabel('Mais opções').click();
   // A pergunta é do app, com o nome da igreja no topo (não a janela do navegador com o endereço).
@@ -198,9 +198,9 @@ test('arrastar a conversa para a esquerda apaga só para mim, com Desfazer; o me
   await answer(page);
   await expect(page).toHaveURL(/#\/chat$/);
   await expect(page.locator('#toast')).toContainText('Conversa apagada.');
-  await expect(page.locator('.chat-swipe', { hasText: 'Líder da A' })).toHaveCount(0);
+  await expect(page.locator('.swipe', { hasText: 'Líder da A' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Desfazer' }).click();
-  await expect(page.locator('.chat-swipe', { hasText: 'Líder da A' })).toBeVisible();
+  await expect(page.locator('.swipe', { hasText: 'Líder da A' })).toBeVisible();
 });
 
 test('numa conversa sem mensagens, o campo de escrever fica embaixo, logo acima das abas', async ({ page }) => {
