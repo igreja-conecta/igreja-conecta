@@ -721,7 +721,8 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 
 /* Financeiro (tesouraria) */
 .month-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; }
-.month-nav strong { flex: 1; text-align: center; text-transform: capitalize; }
+.month-nav strong { flex: 1; text-align: center; }
+.month-nav strong::first-letter, .acc-head h1 span::first-letter { text-transform: uppercase; }
 .month-nav .btn { width: 44px; padding: 0; font-size: 1.2rem; }
 .fin-amount { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .fin-amount.entrada { color: color-mix(in srgb, #2f9e44 75%, var(--ink)); }
@@ -744,3 +745,72 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 .menu-row.fin-month > span { display: flex; flex-direction: column; }
 .menu-row.fin-month small { color: var(--muted); font-weight: 400; }
 .fin-balances small { color: var(--muted); }
+
+/* Prestação de contas: a mesma folha na tela e no papel (A4, com assinaturas só na impressão) */
+.acc-sheet { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 18px; box-shadow: var(--shadow); }
+.acc-head { display: flex; align-items: center; gap: 14px; padding-bottom: 14px; margin-bottom: 16px; border-bottom: 3px solid var(--brand); }
+.acc-logo { flex: none; width: 56px; height: 56px; border-radius: 12px; object-fit: contain; background: #fff; }
+.acc-church { margin: 0; color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.acc-head h1 { margin: 2px 0; font-size: 1.25rem; line-height: 1.25; }
+.acc-head h1 span { display: block; color: var(--link); }
+.acc-sub { margin: 0; color: var(--muted); font-size: .82rem; }
+.acc-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+/* Celular: entradas e saídas lado a lado e o resultado embaixo, sem cortar os valores. */
+@media (max-width: 560px) { .acc-totals { grid-template-columns: 1fr 1fr; } .acc-total.pos, .acc-total.neg { grid-column: 1 / -1; } }
+.acc-total { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px; border-radius: 12px; border: 1px solid var(--line); }
+.acc-total span { color: var(--muted); font-size: .7rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.acc-total strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.acc-total.entrada { background: color-mix(in srgb, #2f9e44 10%, var(--surface)); }
+.acc-total.entrada strong { color: color-mix(in srgb, #2f9e44 75%, var(--ink)); }
+.acc-total.saida { background: color-mix(in srgb, var(--danger) 9%, var(--surface)); }
+.acc-total.saida strong, .acc-total.neg strong { color: var(--danger); }
+.acc-total.pos, .acc-total.neg { background: var(--brand-soft); }
+.acc-balance { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 12px 0 20px; padding: 10px 14px; border-radius: 12px; background: var(--bg); color: var(--muted); font-size: .8rem; }
+.acc-balance strong { display: block; color: var(--ink); font-size: 1rem; font-variant-numeric: tabular-nums; }
+.acc-balance > span:last-child { text-align: right; }
+.acc-arrow { font-size: 1.2rem; }
+.acc-cols { display: grid; grid-template-columns: 1fr; gap: 20px; }
+@media (min-width: 640px) { .acc-cols { grid-template-columns: 1fr 1fr; } }
+.acc-col h2 { margin: 0 0 4px; color: var(--muted); font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; }
+.acc-cat { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.acc-cat-row { display: flex; justify-content: space-between; gap: 10px; }
+.acc-cat-row strong, .acc-col-total strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.acc-bar { height: 6px; margin: 6px 0 2px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.acc-bar i { display: block; width: var(--w); height: 100%; border-radius: 3px; background: #2f9e44; }
+.acc-col.saida .acc-bar i { background: var(--danger); }
+.acc-cat small { color: var(--muted); font-size: .74rem; }
+.acc-col-total { display: flex; justify-content: space-between; padding-top: 8px; font-weight: 700; }
+.acc-note { margin: 20px 0 0; padding: 12px 14px; border-left: 4px solid var(--brand); border-radius: 0 12px 12px 0; background: var(--brand-soft); }
+.acc-note p { margin: 4px 0 0; white-space: pre-line; }
+.acc-privacy { margin: 14px 0 0; color: var(--muted); font-size: .78rem; }
+.acc-signs, .acc-foot { display: none; }
+.acc-actions { margin-top: 16px; text-align: center; }
+
+@page prestacao { size: A4; margin: 14mm 16mm; }
+@media print {
+  /* Sempre clara no papel, mesmo com o tema escuro no aparelho. */
+  html:root:not(#imprimir) {
+    --surface: #fff; --bg: #f3f4f8; --ink: #1b1e27; --muted: #555b6b; --line: #d6d9e2; --danger: #c92a2a;
+    --link: var(--brand); --brand-soft: color-mix(in srgb, var(--brand) 10%, #fff);
+  }
+  .acc-page { padding: 0; }
+  html:root:not(#imprimir), html:root:not(#imprimir) body { background: #fff; }
+  .acc-sheet { page: prestacao; border: 0; border-radius: 0; box-shadow: none; padding: 0; font-size: 10pt; }
+  .acc-head { padding-bottom: 3mm; margin-bottom: 4mm; }
+  .acc-balance { margin: 3mm 0 5mm; padding: 2mm 4mm; }
+  .acc-cat { padding: 1.3mm 0; }
+  .acc-bar { height: 4px; margin: 1mm 0 0.5mm; }
+  .acc-cat small { font-size: 7.5pt; }
+  .acc-note { margin-top: 5mm; padding: 2.5mm 4mm; }
+  .acc-privacy { margin-top: 3mm; font-size: 8pt; }
+  .acc-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .acc-head h1 { font-size: 16pt; }
+  .acc-total strong { font-size: 13pt; }
+  .acc-cols { grid-template-columns: 1fr 1fr; gap: 10mm; }
+  .acc-cat, .acc-note, .acc-totals { break-inside: avoid; }
+  .acc-signs { display: grid; grid-template-columns: 1fr 1fr; gap: 14mm; margin-top: 14mm; break-inside: avoid; }
+  .acc-signs > div { display: flex; flex-direction: column; align-items: center; font-weight: 600; }
+  .acc-line { width: 100%; margin-bottom: 4px; border-top: 1px solid #000; }
+  .acc-signs small { margin-top: 8px; color: var(--muted); font-weight: 400; }
+  .acc-foot { display: block; margin-top: 6mm; color: var(--muted); font-size: 8pt; text-align: center; }
+}

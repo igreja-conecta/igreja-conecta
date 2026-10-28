@@ -170,10 +170,19 @@ test('a tesouraria fecha e publica o mês; o membro vê só os totais; reabrir t
   await member.getByRole('link', { name: /março de 2002/ }).click();
   await expect(member.getByRole('heading', { name: /março de 2002/ })).toBeVisible();
   await expect(member.locator('.page')).toContainText(`Recado ${TAG}`);
-  await expect(member.locator('.fin-balances div', { hasText: 'Dízimos' })).toContainText(/R\$\s300,00/);
-  await expect(member.locator('.fin-balances div', { hasText: 'Aluguel' })).toContainText(/R\$\s100,00/);
+  await expect(member.locator('.acc-cat', { hasText: 'Dízimos' })).toContainText(/R\$\s300,00/);
+  await expect(member.locator('.acc-cat', { hasText: 'Aluguel' })).toContainText(/R\$\s100,00/);
+  await expect(member.locator('.acc-col.saida .acc-col-total')).toContainText(/R\$\s100,00/);
   await expect(member.locator('.page')).not.toContainText(`${TAG} dízimo`);
-  await expect(member.getByRole('button', { name: 'Imprimir' })).toBeVisible();
+  await expect(member.getByRole('button', { name: 'Imprimir ou salvar PDF' })).toBeVisible();
+  // Na tela, as linhas de assinatura não aparecem; na impressão, sim (e os botões somem).
+  await expect(member.locator('.acc-signs')).toBeHidden();
+  await member.emulateMedia({ media: 'print' });
+  await expect(member.locator('.acc-signs')).toContainText('Tesouraria');
+  await expect(member.locator('.acc-signs')).toContainText('Pastor(a) responsável');
+  await expect(member.locator('.acc-foot')).toBeVisible();
+  await expect(member.getByRole('button', { name: 'Imprimir ou salvar PDF' })).toBeHidden();
+  await member.emulateMedia({ media: 'screen' });
 
   // Reaberto: volta a aceitar lançamentos e sai da prestação de contas.
   await page.getByRole('button', { name: 'Reabrir o mês' }).click();
