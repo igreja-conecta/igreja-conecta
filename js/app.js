@@ -7254,18 +7254,48 @@ async function viewNotifications(ctx) {
         <button class="btn small" id="clear" hidden>Apagar as lidas</button>
       </div>
       <div id="push-offer"></div>
-      ${
-        groups.length > 1
-          ? `<div class="chips filters">
-              <a class="chip ${filter ? '' : 'active'}" href="#/notificacoes">Todas</a>
-              ${groups.map((g) => `<a class="chip ${filter === g ? 'active' : ''}" href="#/notificacoes?ver=${g}">${NOTIF_GROUPS[g].label}</a>`).join('')}
-            </div>`
-          : ''
-      }
+      ${groups.length > 1 ? '<nav class="chips filters" id="notif-filters" aria-label="Filtrar notificações"></nav>' : ''}
       <div id="notif-items"></div>
       <button class="btn" id="more" hidden>Ver mais</button>
       <p class="hint center notif-push" id="push-line"></p>
     </div>`;
+
+  // Filtros numa linha só: só os grupos que têm notificação (mais "Todas" e o escolhido), com o
+  // número de não lidas. Vêm de um resumo guardado (abre na hora) e conferido com o banco.
+  const filtersBox = document.getElementById('notif-filters');
+  const drawFilters = (rows) => {
+    if (!filtersBox) return;
+    const stat = {};
+    for (const n of rows || []) {
+      const g = notifGroup(n.kind);
+      stat[g] ??= { total: 0, unread: 0 };
+      stat[g].total++;
+      // Lida agora, ao abrir a central (read_at = openedAt): ainda conta como nova nesta visita.
+      if (!n.read_at || n.read_at >= openedAt) stat[g].unread++;
+    }
+    const shown = groups.filter((g) => g === filter || !rows || stat[g]?.total);
+    const chip = (href, label, active, count) =>
+      `<a class="chip ${active ? 'active' : ''}" href="${href}" ${active ? 'aria-current="page"' : ''}>${label}${
+        count ? `<span class="chip-count" aria-label="${count} não lidas">${count > 9 ? '9+' : count}</span>` : ''
+      }</a>`;
+    filtersBox.hidden = !filter && shown.length < 2;
+    filtersBox.innerHTML =
+      chip('#/notificacoes', 'Todas', !filter, 0) +
+      shown.map((g) => chip(`#/notificacoes?ver=${g}`, NOTIF_GROUPS[g].label, filter === g, stat[g]?.unread || 0)).join('');
+    filtersBox.querySelector('.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  };
+  if (filtersBox) {
+    const summaryName = 'notificacoes:resumo';
+    const loadSummary = async () => {
+      const { data, error } = await sb.from('notifications').select('kind, read_at').eq('church_id', state.church.id).limit(1000);
+      if (error) throw error;
+      return data;
+    };
+    drawFilters(screenCached(summaryName));
+    screenFetch(summaryName, loadSummary)
+      .then((rows) => ctx.alive() && drawFilters(rows))
+      .catch(() => {});
+  }
 
   const box = document.getElementById('notif-items');
   const moreBtn = document.getElementById('more');
