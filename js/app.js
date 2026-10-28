@@ -1436,7 +1436,7 @@ function helpTopics() {
          <li><strong>No app:</strong> tudo certo.</li>
          <li><strong>Sem e-mail:</strong> não entra no app, mas aparece na lista de membros e nos aniversariantes.</li>
        </ul>
-       <p>Quem saiu da igreja pode ficar <em>Inativo</em>: some das listas e não acessa o app, mas o cadastro fica guardado.</p>`,
+       <p>Quem saiu da igreja pode ficar <em>Inativo</em>: some das listas e não acessa o app, mas o cadastro fica guardado. Para inativar, arraste a pessoa para a esquerda na lista (ou mude a <em>Situação</em> no cadastro dela); em <em>Inativos</em>, o mesmo gesto reativa.</p>`,
     ],
     [
       'Importar uma planilha de membros',
@@ -1913,6 +1913,9 @@ async function viewMembers(ctx) {
           .join('')}
       </div>
       <p class="hint" id="count"></p>
+      <p class="hint swipe-hint" id="swipe-hint">Arraste um membro para a esquerda para ${
+        { ativo: 'inativar', inativo: 'reativar' }[filter] || 'inativar ou reativar'
+      }.</p>
       <div class="list" id="members"></div>
       ${fabMenu('Adicionar membros', [['#/membros/novo', 'Novo membro'], ['#/membros/importar', 'Importar planilha']])}
     </div>`;
@@ -1930,12 +1933,16 @@ async function viewMembers(ctx) {
     const total = members.filter((m) => filter === 'todos' || m.status === filter).length;
     document.getElementById('count').textContent =
       rows.length === total ? `${total} ${total === 1 ? 'pessoa' : 'pessoas'}` : `${rows.length} de ${total}`;
+    document.getElementById('swipe-hint').hidden = !rows.length;
     list.innerHTML = rows.length
       ? rows
           .map((m) => {
             const st = accountStatus(m);
-            return `
-          <a class="member-row ${m.status === 'inativo' ? 'inactive' : ''}" href="#/membros/${m.id}">
+            const off = m.status === 'inativo';
+            // O próprio cadastro não arrasta: inativar a si mesmo tira o acesso.
+            const me = m.user_id === state.user.id;
+            const row = `
+          <a class="member-row ${off ? 'inactive' : ''} ${me ? '' : 'swipe-row'}" href="#/membros/${m.id}" draggable="false">
             ${avatar(m.name, m.photo_path && minis[miniOf(m.photo_path)])}
             <span><strong>${esc(m.name)}</strong><small>${esc(m.email || fmtPhone(m.phone) || '')}</small></span>
             <span class="tags">
@@ -1943,11 +1950,40 @@ async function viewMembers(ctx) {
               <span class="tag ${st.cls}">${st.label}</span>
             </span>
           </a>`;
+            return me
+              ? row
+              : `<div class="swipe" data-id="${m.id}"><span class="swipe-bg ${off ? 'ok' : ''}" aria-hidden="true">${off ? 'Reativar' : 'Inativar'}</span>${row}</div>`;
           })
           .join('')
       : `<div class="empty"><p>${members.length ? 'Ninguém encontrado.' : 'Nenhum membro cadastrado ainda.'}</p></div>`;
   };
   q.addEventListener('input', draw);
+
+  // Arrastar para a esquerda inativa (ou reativa quem está inativo), com "Desfazer" no aviso.
+  // Quem pode mudar a situação, e a proteção do último admin, ficam no banco.
+  const setStatus = async (m, status) => {
+    const { data, error } = await sb.from('members').update({ status }).eq('id', m.id).select('id');
+    if (error) throw error;
+    if (!data.length) throw new Error('Você não tem permissão para mudar este cadastro.');
+    m.status = status;
+    membersCache.set(churchId, members);
+    if (ctx.alive()) draw();
+  };
+  swipeLeft(list, async (wrap) => {
+    const m = members.find((x) => x.id === wrap.dataset.id);
+    const was = m.status;
+    try {
+      await setStatus(m, was === 'ativo' ? 'inativo' : 'ativo');
+    } catch (err) {
+      toast(errorText(err), 'error');
+      return false;
+    }
+    toast(was === 'ativo' ? `${m.name} foi para Inativos.` : `${m.name} voltou para Ativos.`, '', {
+      label: 'Desfazer',
+      run: () => setStatus(m, was).catch((err) => toast(errorText(err), 'error')),
+    });
+    return true;
+  });
   draw();
   loadPhotos().catch(() => {});
 
@@ -6826,13 +6862,13 @@ function drawChats(rows, photos) {
       <h1>Conversas</h1>
       ${
         rows.length
-          ? `<p class="hint chat-swipe-hint">Arraste uma conversa para a esquerda para apagar.</p>
+          ? `<p class="hint swipe-hint">Arraste uma conversa para a esquerda para apagar.</p>
              <div class="chat-list">${rows
               .map(
                 (c) => `
-          <div class="chat-swipe" data-id="${c.id}">
-            <span class="chat-swipe-bg" aria-hidden="true">${icon.trash} Apagar</span>
-            <a class="chat-row ${c.unread ? 'unread' : ''}" href="#/chat/${c.id}" draggable="false">
+          <div class="swipe" data-id="${c.id}">
+            <span class="swipe-bg" aria-hidden="true">${icon.trash} Apagar</span>
+            <a class="chat-row swipe-row ${c.unread ? 'unread' : ''}" href="#/chat/${c.id}" draggable="false">
               ${avatar(c.other_name, c.other_photo && photos[miniOf(c.other_photo)])}
               <span class="chat-text">
                 <strong>${esc(c.other_name)}</strong>
@@ -6851,7 +6887,8 @@ function drawChats(rows, photos) {
       ${fab('#/chat/nova', leader ? 'Nova conversa' : 'Falar com a liderança')}
     </div>`;
   const list = $view.querySelector('.chat-list');
-  if (list) swipeToDelete(list, (wrap) => hideConversation(wrap.dataset.id));
+  // Apagou a última: mostra a tela vazia.
+  if (list) swipeLeft(list, (wrap) => hideConversation(wrap.dataset.id), () => location.hash === '#/chat' && render());
 }
 
 // Apaga a conversa só para quem apagou (a regra fica no banco: hide_conversation, SQL 025),
@@ -6881,16 +6918,17 @@ async function hideConversation(id) {
   return true;
 }
 
-// Arrastar para a esquerda: passando de 35% da largura, onDelete(wrap) apaga (devolve true;
-// com false a linha volta ao lugar). A rolagem vertical continua normal.
-function swipeToDelete(list, onDelete) {
+// Arrastar para a esquerda (.swipe > .swipe-row): passando de 35% da largura, onSwipe(wrap) age
+// (apaga, inativa…; devolve true, e com false a linha volta ao lugar). Se não sobrou nenhuma
+// linha, chama onEmpty. A rolagem vertical continua normal.
+function swipeLeft(list, onSwipe, onEmpty) {
   let row = null;
   let startX = 0;
   let startY = 0;
   let dx = 0;
   let dragging = false;
   list.addEventListener('pointerdown', (e) => {
-    row = e.button === 0 ? e.target.closest('.chat-row') : null;
+    row = e.button === 0 ? e.target.closest('.swipe-row') : null;
     startX = e.clientX;
     startY = e.clientY;
     dx = 0;
@@ -6918,13 +6956,12 @@ function swipeToDelete(list, onDelete) {
     if (!dragging) return;
     setTimeout(() => (dragging = false)); // depois do clique que o soltar dispara
     if (-dx < r.offsetWidth * 0.35) return void (r.style.transform = '');
-    const wrap = r.closest('.chat-swipe');
+    const wrap = r.closest('.swipe');
     r.style.transform = 'translateX(-100%)';
     wrap.classList.add('removing');
-    if (await onDelete(wrap)) {
+    if (await onSwipe(wrap)) {
       wrap.hidden = true;
-      // Apagou a última: mostra a tela vazia.
-      if (!list.querySelector('.chat-swipe:not([hidden])') && location.hash === '#/chat') render();
+      if (!list.querySelector('.swipe:not([hidden])')) onEmpty?.();
     } else {
       wrap.classList.remove('removing');
       r.style.transform = '';
@@ -6932,7 +6969,7 @@ function swipeToDelete(list, onDelete) {
   };
   list.addEventListener('pointerup', end);
   list.addEventListener('pointercancel', end);
-  // Soltar depois de arrastar não abre a conversa.
+  // Soltar depois de arrastar não abre o item.
   list.addEventListener('click', (e) => dragging && e.preventDefault(), true);
 }
 
