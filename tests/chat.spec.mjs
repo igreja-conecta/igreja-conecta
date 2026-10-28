@@ -117,7 +117,7 @@ test('o botão + abre a lista de quem dá para chamar, com busca', async ({ page
   // A líder vê a liderança e os membros.
   await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/chat');
   await page.getByRole('link', { name: 'Nova conversa' }).click();
-  await expect(page.getByRole('heading', { name: 'Membros' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Membros', exact: true })).toBeVisible();
   await expect(page.locator('.chat-person', { hasText: 'Membro da A' })).toBeVisible();
   await page.getByLabel('Buscar pessoa').fill('membro');
   await expect(page.locator('.chat-person:visible')).toHaveCount(1);
@@ -131,7 +131,7 @@ test('o botão + abre a lista de quem dá para chamar, com busca', async ({ page
   const member = await page.context().newPage();
   await openLoggedIn(member, as['membro-a'].session, '/i/teste-a/#/chat');
   await member.getByRole('link', { name: 'Falar com a liderança' }).click();
-  await expect(member.getByRole('heading', { name: 'Liderança' })).toBeVisible();
-  await expect(member.getByRole('heading', { name: 'Membros' })).toHaveCount(0);
+  await expect(member.getByRole('heading', { name: 'Liderança', exact: true })).toBeVisible();
+  await expect(member.getByRole('heading', { name: 'Membros', exact: true })).toHaveCount(0);
   await expect(member.locator('.chat-person', { hasText: 'Líder da A' })).toBeVisible();
 });
