@@ -655,3 +655,15 @@ a.notice { display: block; color: inherit; text-decoration: none; }
 /* Na central, os filtros ficam presos no topo ao rolar a lista. */
 .notif-page .chips.filters { position: sticky; top: calc(57px + env(safe-area-inset-top)); z-index: 4; background: var(--bg); padding-top: 6px; padding-bottom: 6px; margin-top: 4px; }
 @media print { .chips.filters { -webkit-mask-image: none; mask-image: none; flex-wrap: wrap; } }
+
+/* Botão redondo de ação (ex.: nova conversa), embaixo à direita, acima da barra de abas */
+.fab {
+  position: fixed; right: 16px; bottom: calc(var(--tabbar-h) + 16px + env(safe-area-inset-bottom)); z-index: 6;
+  width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--brand); color: var(--brand-ink); box-shadow: 0 4px 14px rgb(0 0 0 / .25); text-decoration: none;
+}
+.fab svg { width: 28px; height: 28px; }
+.fab:active { transform: scale(.96); }
+body:not(.has-tabbar) .fab { bottom: calc(16px + env(safe-area-inset-bottom)); }
+/* Espaço no fim da lista para o botão não cobrir a última conversa */
+.chat-page:has(.fab) { padding-bottom: 80px; }

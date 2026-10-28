@@ -112,3 +112,26 @@ test('a lista de conversas e a conversa abrem na hora, mesmo com o banco demoran
   await expect(page.locator('.chat-head')).toContainText('Líder da A', { timeout: 1000 });
   await expect(page.locator('.msg').first()).toBeVisible({ timeout: 1000 });
 });
+
+test('o botão + abre a lista de quem dá para chamar, com busca', async ({ page }) => {
+  // A líder vê a liderança e os membros.
+  await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/chat');
+  await page.getByRole('link', { name: 'Nova conversa' }).click();
+  await expect(page.getByRole('heading', { name: 'Membros', exact: true })).toBeVisible();
+  await expect(page.locator('.chat-person', { hasText: 'Membro da A' })).toBeVisible();
+  await page.getByLabel('Buscar pessoa').fill('membro');
+  await expect(page.locator('.chat-person:visible')).toHaveCount(1);
+  await page.getByLabel('Buscar pessoa').fill('ninguem-com-esse-nome');
+  await expect(page.getByText('Ninguém com esse nome')).toBeVisible();
+  await page.getByLabel('Buscar pessoa').fill('');
+  await page.locator('.chat-person', { hasText: 'Membro da A' }).click();
+  await expect(page.locator('.chat-head')).toContainText('Membro da A');
+
+  // O membro comum (chat entre membros desligado) vê só a liderança.
+  const member = await page.context().newPage();
+  await openLoggedIn(member, as['membro-a'].session, '/i/teste-a/#/chat');
+  await member.getByRole('link', { name: 'Falar com a liderança' }).click();
+  await expect(member.getByRole('heading', { name: 'Liderança', exact: true })).toBeVisible();
+  await expect(member.getByRole('heading', { name: 'Membros', exact: true })).toHaveCount(0);
+  await expect(member.locator('.chat-person', { hasText: 'Líder da A' })).toBeVisible();
+});
