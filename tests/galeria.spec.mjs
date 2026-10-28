@@ -1,7 +1,7 @@
 // Galeria de fotos nas telas, com contas da igreja Teste A (Android).
 // O que o teste cria leva uma marca no nome e é apagado no fim (fotos e álbum).
 import { test, expect } from '@playwright/test';
-import { SUPABASE_URL, rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations } from './helpers.mjs';
+import { SUPABASE_URL, rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations, answer } from './helpers.mjs';
 
 // Nada pode ser bloqueado pela regra de segurança das páginas (CSP).
 test.beforeEach(async ({ page }) => watchCsp(page));
@@ -80,11 +80,11 @@ test('o membro vê as fotos em tela cheia e pede para tirar uma', async ({ page 
   await expect.poll(() => img.evaluate((el) => el.naturalWidth)).toBeGreaterThan(0);
   await page.getByRole('link', { name: 'Próxima foto' }).click();
   await expect(page.getByText('2 de 2')).toBeVisible();
-  page.once('dialog', (d) => d.accept('Apareço nela'));
   await page.getByRole('button', { name: 'Pedir para tirar esta foto' }).click();
+  await answer(page, 'Apareço nela');
   await expect(page.getByText('Pedido enviado. Obrigado por avisar.')).toBeVisible();
-  page.once('dialog', (d) => d.accept(''));
   await page.getByRole('button', { name: 'Pedir para tirar esta foto' }).click();
+  await answer(page, '');
   await expect(page.getByText('Você já pediu para tirar esta foto.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Apagar foto' })).toHaveCount(0);
 });
@@ -102,8 +102,8 @@ test('a liderança recebe o pedido e apaga a foto', async ({ page }) => {
   await expect(page.getByText('2 de 2')).toBeVisible();
   await page.getByRole('button', { name: 'Usar como capa' }).click();
   await expect(page.getByText('Capa do álbum trocada.')).toBeVisible();
-  page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Apagar foto' }).click();
+  await answer(page);
   await expect(page.getByText('Foto apagada.')).toBeVisible();
   await expect(page.getByText('1 de 1')).toBeVisible();
   expect((await album()).gallery_photos).toHaveLength(1);

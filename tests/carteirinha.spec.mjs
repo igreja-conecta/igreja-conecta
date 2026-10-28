@@ -1,6 +1,6 @@
 // Carteirinha digital nas telas, com contas da igreja Teste A (Android).
 import { test, expect } from '@playwright/test';
-import { rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations } from './helpers.mjs';
+import { rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations, answer } from './helpers.mjs';
 
 // Nada pode ser bloqueado pela regra de segurança das páginas (CSP).
 test.beforeEach(async ({ page }) => watchCsp(page));
@@ -64,8 +64,8 @@ test('quem lê o QR Code, sem conta, vê "Membro ativo" e só o que está na car
 test('gerar um novo QR Code invalida o anterior', async ({ page }) => {
   const { card_token: old } = await myCard();
   await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/carteirinha');
-  page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Gerar novo QR Code' }).click();
+  await answer(page);
   await expect(page.getByText('Novo QR Code gerado.')).toBeVisible();
   const { card_token: fresh } = await myCard();
   expect(fresh).not.toBe(old);

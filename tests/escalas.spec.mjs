@@ -1,7 +1,7 @@
 // Ministérios e escalas nas telas, com contas da igreja Teste A (Android).
 // O que o teste cria leva uma marca no nome e é apagado no fim.
 import { test, expect } from '@playwright/test';
-import { rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations } from './helpers.mjs';
+import { rest, configured, testPassword, loginAs, openLoggedIn, watchCsp, cspViolations, answer } from './helpers.mjs';
 
 // Nada pode ser bloqueado pela regra de segurança das páginas (CSP).
 test.beforeEach(async ({ page }) => watchCsp(page));
@@ -78,8 +78,8 @@ test('o voluntário vê a escala no Início, confirma e depois pede troca', asyn
   await expect(page.locator('.fab')).toHaveCount(0);
   await mine.getByRole('button', { name: 'Confirmo' }).click();
   await expect(mine).toContainText('Confirmado');
-  page.once('dialog', (d) => d.accept('Viagem'));
   await mine.getByRole('button', { name: 'Pedir troca' }).click();
+  await answer(page, 'Viagem');
   await expect(mine).toContainText('Pediu troca');
   await expect(mine).toContainText('Motivo: Viagem');
   // Continua assim ao abrir de novo (veio do banco).

@@ -303,3 +303,11 @@ test('horários usam as listas de hora e minutos, não a janela de horas do celu
   // No Android, a janela do <input type="time"> corta o botão "Definir" com letra grande.
   expect(app).not.toMatch(/type="(time|datetime-local)"/);
 });
+
+test('perguntas usam a janela do app (ask), não a do navegador, que mostra o endereço do site', async () => {
+  const { readFileSync, readdirSync } = await import('node:fs');
+  for (const file of readdirSync(new URL('../js/', import.meta.url)).filter((f) => f.endsWith('.js'))) {
+    const code = readFileSync(new URL(`../js/${file}`, import.meta.url), 'utf8');
+    expect(code.match(/(?<![.\w])(confirm|prompt|alert)\(/g), file).toBeNull();
+  }
+});
