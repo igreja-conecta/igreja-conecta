@@ -161,6 +161,7 @@ test('a tesouraria fecha e publica o mês; o membro vê só os totais; reabrir t
   await expect(page.getByRole('button', { name: 'Reabrir o mês' })).toBeVisible();
   await expect(page.getByLabel('Adicionar lançamentos')).toHaveCount(0);
   await expect(page.locator('.swipe')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Apagar os lançamentos do mês' })).toHaveCount(0);
 
   // O membro vê o mês publicado, com os totais por categoria e o recado, sem os lançamentos.
   const member = await (await browser.newContext({ ...test.info().project.use, baseURL: 'http://localhost:4173/' })).newPage();
@@ -227,6 +228,20 @@ test('importa uma planilha (com erros por linha, sem duplicar) e baixa a planilh
   await expect(page.getByRole('heading', { name: '0 lançamentos prontos para importar' })).toBeVisible();
   await expect(page.locator('.card').last()).toContainText('3 linhas puladas: já foram lançadas.');
   await expect(page.getByRole('button', { name: /^Importar \d/ })).toHaveCount(0);
+
+  // Apagar o mês inteiro, com Desfazer.
+  await page.goto(`/i/teste-a/#/financeiro?mes=2003-05`);
+  await expect(page.locator('.fin-row', { hasText: `${TAG} imp1` })).toBeVisible();
+  const count = await page.locator('.fin-row').count();
+  await page.getByRole('button', { name: 'Apagar os lançamentos do mês' }).click();
+  await expect(page.locator('dialog.ask')).toContainText(`Apagar os ${count} lançamentos de maio de 2003?`);
+  await answer(page);
+  await expect(page.locator('#toast')).toContainText(`${count} lançamentos apagados.`);
+  await expect(page.getByText('Nenhum lançamento neste mês.')).toBeVisible();
+  await expect(page.locator('.stat-tile', { hasText: 'Entradas' })).toContainText(/R\$\s0,00/);
+  await page.getByRole('button', { name: 'Desfazer' }).click();
+  await expect(page.locator('.fin-row')).toHaveCount(count);
+  await expect(page.locator('.fin-row', { hasText: `${TAG} imp1` })).toBeVisible();
 });
 
 test('quem não é da tesouraria não vê o Financeiro', async ({ page }) => {
