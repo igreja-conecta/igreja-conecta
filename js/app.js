@@ -1427,7 +1427,7 @@ function helpTopics() {
           'Escrever o devocional e criar planos de leitura',
           `${
             isPastoral()
-              ? `<p>Em <a href="#/devocional">Devocional</a>, toque em <em>Novo devocional</em>. Escolha o dia em que ele aparece (um por dia), o título, o versículo-base e a mensagem; a imagem é opcional. Dá para deixar vários prontos: os <strong>agendados</strong> só aparecem para os membros no dia marcado. Marque <em>Avisar os membros às 7h</em> para mandar a notificação.</p>`
+              ? `<p>Em <a href="#/devocional">Devocional</a>, toque no botão <strong>+</strong>, embaixo à direita. Escolha o dia em que ele aparece (um por dia), o título, o versículo-base e a mensagem; a imagem é opcional. Dá para deixar vários prontos: os <strong>agendados</strong> só aparecem para os membros no dia marcado. Marque <em>Avisar os membros às 7h</em> para mandar a notificação.</p>`
               : '<p>Os devocionais são escritos pelo pastor (administrador) e pelos líderes.</p>'
           }
            <p>Em <a href="#/leitura">Plano de leitura</a>, toque em <em>Novo plano</em>, escolha um dos planos prontos e a data de início: todos leem a mesma parte no mesmo dia. Dentro do plano, a liderança vê quantas pessoas estão lendo e o progresso médio (nunca o de uma pessoa), muda a data de início ou encerra o plano.</p>
@@ -3788,7 +3788,6 @@ function drawDevotionals(all) {
     <div class="page">
       <h1>Devocional</h1>
       ${devotionalTabs('/devocional')}
-      ${pastor ? `<div class="actions-row"><a class="btn primary" href="#/devocional/novo">${icon.plus} Novo devocional</a></div>` : ''}
       ${
         current
           ? `<a class="card devotional-today" href="#/devocional/${current.id}">
@@ -3807,6 +3806,7 @@ function drawDevotionals(all) {
           : ''
       }
       ${older.length ? `<section class="card"><h2>Anteriores</h2><div class="list">${older.map((d) => row(d, fmtDayMonth(`${d.publish_date}T12:00`))).join('')}</div></section>` : ''}
+      ${pastor ? fab('#/devocional/novo', 'Novo devocional') : ''}
     </div>`;
 }
 

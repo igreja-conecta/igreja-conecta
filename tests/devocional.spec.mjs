@@ -43,6 +43,8 @@ test.afterAll(async () => {
 test('o líder escreve o devocional de hoje, com o versículo e o link da Bíblia', async ({ page }) => {
   await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/menu');
   await page.getByRole('link', { name: 'Devocional', exact: true }).click();
+  // A liderança cria pelo botão redondo "+".
+  await expect(page.locator('.fab')).toHaveAttribute('href', '#/devocional/novo');
   await page.getByRole('link', { name: 'Novo devocional' }).click();
   await expect(page.getByLabel('Dia em que aparece')).toHaveValue(today);
   await page.getByLabel('Título').fill(`Descanso em Deus ${tag}`);
@@ -78,6 +80,7 @@ test('o membro vê o devocional no Início e toca em Amém; não escreve devocio
   await expect(amen).toHaveText('🙏 Amém · 1');
   await page.getByRole('link', { name: '← Devocional' }).click();
   await expect(page.getByRole('link', { name: 'Novo devocional' })).toHaveCount(0);
+  await expect(page.locator('.fab')).toHaveCount(0);
   await expect(page.locator('.devotional-today')).toContainText(tag);
 });
 
