@@ -1302,7 +1302,7 @@ function helpTopics() {
     ...(features('infantil')
       ? [[
           'Ministério infantil (check-in)',
-          `<p>Em <a href="#/filhos">Menu &gt; Meus filhos</a>, cadastre os seus filhos com a data de nascimento e, se houver, as alergias e os cuidados. Só você, a equipe do infantil e a liderança veem.</p>
+          `<p>Em <a href="#/filhos">Menu &gt; Meus filhos</a>, toque no botão <strong>+</strong>, embaixo à direita, e cadastre os seus filhos com a data de nascimento e, se houver, as alergias e os cuidados. Só você, a equipe do infantil e a liderança veem.</p>
            <p>No culto, a equipe faz a entrada e você recebe no app um <strong>código de retirada</strong> de 4 letras e números (ele também aparece no Início). Para buscar a criança, mostre o código: sem ele, a equipe não libera. Você recebe um aviso na entrada e na retirada.</p>${
              kidsTeam()
                ? `<p><strong>Se você é da equipe do infantil:</strong> em <a href="#/infantil">Menu &gt; Check-in infantil</a>, busque a criança e toque em <em>Entrada</em>; confira a sala (sugerida pela idade) e imprima as etiquetas, uma para a criança e outra com o código para o responsável. Sem impressora, escreva o código num adesivo. Na saída, toque em <em>Retirada por código</em> e digite o código que o responsável mostrar. Crianças de quem não usa o app são cadastradas na hora, em <em>Cadastrar criança</em>.</p>`
@@ -5360,7 +5360,6 @@ function drawMyKids({ kids, checkins }) {
     <div class="page">
       <h1>Meus filhos</h1>
       <p class="hint">Cadastre os seus filhos para o check-in do ministério infantil. Na entrada, você recebe aqui o código para buscar.</p>
-      <div class="actions-row"><a class="btn primary" href="#/filhos/novo">${icon.plus} Cadastrar filho</a></div>
       ${
         kids.length
           ? kids
@@ -5385,8 +5384,9 @@ function drawMyKids({ kids, checkins }) {
           </section>`;
               })
               .join('')
-          : '<div class="empty"><p>Nenhum filho cadastrado.</p></div>'
+          : '<div class="empty"><p>Nenhum filho cadastrado. Toque no <strong>+</strong> para cadastrar.</p></div>'
       }
+      ${fab('#/filhos/novo', 'Cadastrar filho')}
     </div>`;
 }
 
