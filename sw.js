@@ -7,6 +7,8 @@
 // qualquer mudança de código gera uma versão nova sozinha.
 const CACHE = 'igreja-conecta-v11';
 const ANDROID = /android/i.test(self.navigator.userAgent);
+// Service worker de uma igreja (escopo i/<igreja>/, o mesmo do app instalado) ou da raiz do site.
+const CHURCH_SCOPE = /\/i\/[a-z0-9-]+\/$/.test(new URL(self.registration.scope).pathname);
 const SHELL = [
   './',
   'index.html',
@@ -106,9 +108,12 @@ self.addEventListener('push', (e) => {
       if (viewing) return;
       return self.registration.showNotification(msg.title || 'Igreja Conecta', {
         body: msg.body || '',
-        // No Android o ícone grande aparece à direita, repetindo a logo que já fica à esquerda.
-        icon: ANDROID ? undefined : msg.icon || 'icons/icon-192.png',
-        badge: 'icons/badge-96.png',
+        // No Android o ícone grande aparece à direita: sem imagem, o Chrome desenha uma bola com a letra
+        // do site ("I"); uma imagem transparente não mostra nada (como no Desapega). O ícone da igreja já aparece à esquerda.
+        icon: ANDROID ? 'icons/vazio.png' : msg.icon || 'icons/icon-192.png',
+        // Ícone da barra de notificações (ao lado do relógio): o da igreja, gerado da logo e publicado
+        // em i/<igreja>/; na raiz do site, o padrão.
+        badge: CHURCH_SCOPE ? new URL('badge-96.png', self.registration.scope).href : 'icons/badge-96.png',
         image: msg.image,
         tag: msg.tag,
         renotify: !!msg.tag, // mensagem nova da mesma conversa toca de novo

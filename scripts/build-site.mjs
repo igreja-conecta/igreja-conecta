@@ -9,7 +9,7 @@ import { inkOn } from '../js/util.js';
 
 const OUT = '_site';
 const STATIC = ['index.html', '404.html', 'privacidade.html', 'termos.html', 'manifest.webmanifest', 'sw.js', 'css', 'js', 'icons'];
-const ICONS = ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
+const ICONS = ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'badge-96.png'];
 
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT);
@@ -104,6 +104,6 @@ for (const c of churches) {
     .replace('<span id="app-name">Igreja Conecta</span>', `<span id="app-name">${esc(c.name)}</span>`)
     .replace('</head>', `  <style>:root { --brand: ${c.primary_color}; --brand-ink: ${inkOn(c.primary_color)}; }</style>\n</head>`);
   writeFileSync(`${dir}/index.html`, page);
-  console.log(`i/${c.slug}/ ${own === ICONS.length ? 'com ícones da igreja' : 'com ícones padrão'}`);
+  console.log(`i/${c.slug}/ ${own >= 4 ? 'com ícones da igreja' : 'com ícones padrão'}`);
 }
 console.log(`Geradas ${churches.length} pastas de igrejas.`);

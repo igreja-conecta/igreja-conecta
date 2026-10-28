@@ -2347,16 +2347,28 @@ async function viewSettings(ctx) {
         privacy_text: form.privacy_text.value.trim() || null,
       };
 
-      // Logo nova ou fundo do ícone diferente: gera os ícones do app de novo.
+      // Logo nova ou fundo do ícone diferente: gera os ícones do app de novo. Igreja que ainda não
+      // tem o ícone da barra de notificações (criado depois): gera a partir da logo que já existe e
+      // grava a logo de novo, para o site ser publicado com o ícone novo.
       let source = logoFile;
-      if (!source && c.logo_url && patch.icon_background !== c.icon_background) {
-        const res = await fetch(c.logo_url);
-        if (res.ok) source = await res.blob();
+      let refresh = false;
+      if (!source && c.logo_url) {
+        const iconsUrl = `${CONFIG.SUPABASE_URL}/storage/v1/object/public/igrejas/${c.id}/icons/badge-96.png`;
+        const needsBadge = await fetch(iconsUrl, { method: 'HEAD', cache: 'no-store' })
+          .then((r) => !r.ok)
+          .catch(() => false);
+        if (patch.icon_background !== c.icon_background || needsBadge) {
+          const res = await fetch(c.logo_url);
+          if (res.ok) {
+            source = await res.blob();
+            refresh = needsBadge;
+          }
+        }
       }
       if (source) {
         const bucket = sb.storage.from('igrejas');
-        if (logoFile) {
-          const logo = await resizeLogo(logoFile);
+        if (logoFile || refresh) {
+          const logo = await resizeLogo(source);
           const ext = logo.type === 'image/png' ? 'png' : 'webp';
           const path = `${c.id}/logo-${Date.now()}.${ext}`;
           const up = await bucket.upload(path, logo, { contentType: logo.type, cacheControl: '31536000' });
@@ -2364,6 +2376,11 @@ async function viewSettings(ctx) {
           patch.logo_url = bucket.getPublicUrl(path).data.publicUrl;
         }
         const icons = await makeIconSet(source, patch.icon_background);
+        // Logo que não vira um desenho (ex.: foto): o ícone da barra de notificações fica o padrão do app.
+        if (!icons['badge-96.png']) {
+          const res = await fetch('icons/badge-96.png');
+          if (res.ok) icons['badge-96.png'] = await res.blob();
+        }
         for (const [name, blob] of Object.entries(icons)) {
           const up = await bucket.upload(`${c.id}/icons/${name}`, blob, { contentType: 'image/png', cacheControl: '300', upsert: true });
           if (up.error) throw up.error;
@@ -2375,7 +2392,7 @@ async function viewSettings(ctx) {
 
       // A logo antiga não é mais usada.
       const oldPath = c.logo_url?.split('/object/public/igrejas/')[1];
-      if (logoFile && oldPath) await sb.storage.from('igrejas').remove([decodeURIComponent(oldPath)]);
+      if ((logoFile || refresh) && oldPath) await sb.storage.from('igrejas').remove([decodeURIComponent(oldPath)]);
 
       state.church = saved;
       saveBootCache();
