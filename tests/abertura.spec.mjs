@@ -73,9 +73,12 @@ test.describe('com o service worker', () => {
     // Espera o service worker guardar os arquivos do app.
     await page.evaluate(() => navigator.serviceWorker.ready);
 
+    // O service worker da igreja tem o mesmo endereço do app instalado dela (os avisos saem pelo app).
+    expect(await page.evaluate(async () => (await navigator.serviceWorker.ready).scope)).toMatch(/\/i\/teste-a\/$/);
+
     // Sem internet, os arquivos do app saem do aparelho.
     await context.setOffline(true);
-    await page.goto('/#/');
+    await page.goto('/i/teste-a/#/');
     await expect(page.locator('#brand-logo')).toBeVisible();
     await expect(page.locator('.topbar')).toBeVisible();
   });
