@@ -95,8 +95,9 @@ test('ninguém entra no canal particular de outra pessoa', async ({ page }) => {
   expect(got.intruso).toEqual([]);
 });
 
-test('a lista de conversas abre na hora, mesmo com o banco demorando', async ({ page }) => {
-  const prefetched = page.waitForResponse(/rpc\/my_conversations/);
+test('a lista de conversas e a conversa abrem na hora, mesmo com o banco demorando', async ({ page }) => {
+  // O Início busca a lista e as mensagens das conversas recentes (só na memória).
+  const prefetched = page.waitForResponse((r) => r.url().includes('/rest/v1/messages?') && r.url().includes('conversation_id=in.'));
   await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/');
   await prefetched;
   await page.waitForLoadState('networkidle');
@@ -105,5 +106,9 @@ test('a lista de conversas abre na hora, mesmo com o banco demorando', async ({ 
     await route.continue().catch(() => {});
   });
   await page.locator('#chat-link').click();
-  await expect(page.locator('.chat-row', { hasText: 'Líder da A' })).toBeVisible({ timeout: 1000 });
+  const row = page.locator('.chat-row', { hasText: 'Líder da A' });
+  await expect(row).toBeVisible({ timeout: 1000 });
+  await row.click();
+  await expect(page.locator('.chat-head')).toContainText('Líder da A', { timeout: 1000 });
+  await expect(page.locator('.msg').first()).toBeVisible({ timeout: 1000 });
 });

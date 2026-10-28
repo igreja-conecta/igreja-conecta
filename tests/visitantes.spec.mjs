@@ -63,3 +63,21 @@ test('a liderança vê o visitante, chama no WhatsApp e registra o acompanhament
   await expect(page.locator('#visitor-qr svg')).toBeVisible();
   await expect(page.locator('.visitor-qr code')).toHaveText(/\/i\/teste-a\/#\/visitante$/);
 });
+
+test('Visitantes abre na hora para a liderança, mesmo com o banco demorando', async ({ page }) => {
+  // O Início busca os visitantes em segundo plano (só na memória, nunca gravados no aparelho).
+  const prefetched = page.waitForResponse((r) => r.url().includes('/rest/v1/visitors?'));
+  await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/');
+  await prefetched;
+  await page.waitForLoadState('networkidle');
+  await page.route('**/rest/v1/**', async (route) => {
+    await new Promise((r) => setTimeout(r, 4000));
+    await route.continue().catch(() => {});
+  });
+  await page.locator('#tabbar').getByRole('link', { name: 'Menu' }).click();
+  await page.getByRole('link', { name: 'Visitantes' }).click();
+  await expect(page.getByRole('heading', { name: 'Visitantes' })).toBeVisible({ timeout: 1000 });
+  // E nada dos visitantes fica gravado no aparelho.
+  const saved = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.endsWith(':visitantes')));
+  expect(saved).toEqual([]);
+});
