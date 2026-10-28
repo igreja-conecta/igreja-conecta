@@ -67,6 +67,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `020_galeria.sql` | Galeria de fotos: álbuns só para os membros (pasta privada), publicam a liderança e o ministério marcado, limite de 300 fotos por igreja conferido no banco, arquivos até 400 KB (o app reduz no aparelho) e "pedir para tirar esta foto" |
 | `021_chat.sql` | Chat 1 a 1 dentro da igreja: membro com a liderança (e entre membros, se a igreja ligar), "receber mensagens", só as duas pessoas leem, bloquear e denunciar (sem as mensagens), limites por hora, tempo real pelo canal particular de cada pessoa |
 | `022_push_do_chat.sql` | Notificação do chat no celular na hora: o banco chama (pg_net) a Edge Function `enviar-push`, um aviso por mensagem, sem o texto da mensagem |
+| `023_push_do_chat_correcao.sql` | Correção do aviso do chat: a busca dos celulares de quem recebe, em passos simples (a do 022 dava erro quando havia celular para avisar) |
 
 ## Contas de teste
 
