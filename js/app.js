@@ -1282,7 +1282,7 @@ function helpTopics() {
           `<p>Em <a href="#/galeria">Menu &gt; Galeria de fotos</a> ficam os álbuns da igreja. Toque numa foto para ver em tela cheia, passar para o lado, baixar ou compartilhar. Só quem é da igreja vê as fotos.</p>
            <p>Se você aparece numa foto e prefere que ela saia, toque em <em>Pedir para tirar esta foto</em>: quem publica a galeria recebe o pedido.</p>${
              galleryTeam()
-               ? `<p><strong>Se você publica na galeria:</strong> toque em <em>Novo álbum</em> e, dentro dele, em <em>Adicionar fotos</em> (dá para escolher várias de uma vez). O app reduz cada foto no celular antes de enviar, para gastar pouco espaço. A igreja pode ter até ${GALLERY_LIMIT} fotos: apague álbuns antigos quando chegar perto. Evite fotos de crianças em que elas apareçam de perto sem a autorização dos pais.</p>`
+               ? `<p><strong>Se você publica na galeria:</strong> toque no botão <strong>+</strong>, embaixo à direita, para criar o álbum e, dentro dele, em <em>Adicionar fotos</em> (dá para escolher várias de uma vez). O app reduz cada foto no celular antes de enviar, para gastar pouco espaço. A igreja pode ter até ${GALLERY_LIMIT} fotos: apague álbuns antigos quando chegar perto. Evite fotos de crianças em que elas apareçam de perto sem a autorização dos pais.</p>`
                : ''
            }`,
         ]]
@@ -6333,8 +6333,7 @@ function drawGallery(albums, urls) {
       <h1>Galeria</h1>
       ${
         team
-          ? `<div class="actions-row"><a class="btn primary" href="#/galeria/novo">${icon.plus} Novo álbum</a></div>
-             <p class="hint ${used >= GALLERY_LIMIT * 0.9 ? 'warn' : ''}">${used} de ${GALLERY_LIMIT} fotos usadas${used >= GALLERY_LIMIT * 0.9 ? '. Apague álbuns antigos para liberar espaço.' : '.'}</p>`
+          ? `<p class="hint ${used >= GALLERY_LIMIT * 0.9 ? 'warn' : ''}">${used} de ${GALLERY_LIMIT} fotos usadas${used >= GALLERY_LIMIT * 0.9 ? '. Apague álbuns antigos para liberar espaço.' : '.'}</p>`
           : ''
       }
       ${
@@ -6349,9 +6348,10 @@ function drawGallery(albums, urls) {
           </a>`,
               )
               .join('')}</div>`
-          : `<div class="empty"><p>Nenhum álbum ainda.${team ? ' Crie o primeiro.' : ''}</p></div>`
+          : `<div class="empty"><p>Nenhum álbum ainda.${team ? ' Toque no <strong>+</strong> para criar o primeiro.' : ''}</p></div>`
       }
       <p class="hint">As fotos são vistas só por quem é da igreja. Se você aparece numa foto e prefere que ela saia, abra a foto e toque em <em>Pedir para tirar esta foto</em>.</p>
+      ${team ? fab('#/galeria/novo', 'Novo álbum') : ''}
     </div>`;
 }
 
