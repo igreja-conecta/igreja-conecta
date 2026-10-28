@@ -36,6 +36,8 @@ const ministryId = async () =>
 test('a líder cria o ministério, monta a equipe e a primeira escala', async ({ page }) => {
   await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/menu');
   await page.getByRole('link', { name: 'Ministérios e escalas' }).click();
+  // A liderança cria pelo botão redondo "+".
+  await expect(page.locator('.fab')).toHaveAttribute('href', '#/ministerios/novo');
   await page.getByRole('link', { name: 'Novo ministério' }).click();
   // A sugestão preenche nome e descrição; o nome leva a marca do teste.
   await page.getByRole('button', { name: 'Louvor' }).click();
@@ -73,6 +75,7 @@ test('o voluntário vê a escala no Início, confirma e depois pede troca', asyn
   const mine = page.locator('.schedule-mine', { hasText: name });
   await expect(mine).toContainText('Falta confirmar');
   await expect(page.getByRole('link', { name: 'Novo ministério' })).toHaveCount(0);
+  await expect(page.locator('.fab')).toHaveCount(0);
   await mine.getByRole('button', { name: 'Confirmo' }).click();
   await expect(mine).toContainText('Confirmado');
   page.once('dialog', (d) => d.accept('Viagem'));

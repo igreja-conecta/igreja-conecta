@@ -1411,7 +1411,7 @@ function helpTopics() {
     ...(features('escalas')
       ? [[
           'Organizar os ministérios',
-          `<p>Em <a href="#/escalas">Menu &gt; Ministérios e escalas</a>, toque em <em>Novo ministério</em> (há sugestões prontas: Louvor, Acolhimento, Infantil e Mídia). Depois, abra o ministério, coloque a equipe buscando pelo nome e escolha quem é <strong>Líder</strong>: qualquer pessoa do cadastro pode liderar um ministério e montar as escalas dele.</p>
+          `<p>Em <a href="#/escalas">Menu &gt; Ministérios e escalas</a>, toque no botão <strong>+</strong>, embaixo à direita (há sugestões prontas: Louvor, Acolhimento, Infantil e Mídia). Depois, abra o ministério, coloque a equipe buscando pelo nome e escolha quem é <strong>Líder</strong>: qualquer pessoa do cadastro pode liderar um ministério e montar as escalas dele.</p>
            <p>Os pedidos de troca aparecem no alto da tela de escalas.${features('visitantes') ? ' Marque <strong>Recebe os avisos de visitantes</strong> no ministério de Acolhimento: a equipe dele passa a receber o aviso de cada visitante e a ver os cadastros para o acompanhamento. Sem esse ministério, o aviso vai para a liderança.' : ''}</p>`,
         ]]
       : []),
@@ -4878,7 +4878,6 @@ function drawSchedules(data) {
           : '<div class="empty"><p>Você não está em nenhuma escala nos próximos dias.</p></div>'
       }
       <h2>Ministérios</h2>
-      ${leader ? `<div class="actions-row"><a class="btn primary" href="#/ministerios/novo">${icon.plus} Novo ministério</a></div>` : ''}
       ${
         data.ministries.length
           ? `<div class="list">${data.ministries
@@ -4902,9 +4901,10 @@ function drawSchedules(data) {
           </a>`,
               )
               .join('')}</div>`
-          : `<div class="empty"><p>${leader ? 'Nenhum ministério ainda. Crie o primeiro.' : 'Nenhum ministério ainda.'}</p></div>`
+          : `<div class="empty"><p>${leader ? 'Nenhum ministério ainda. Toque no <strong>+</strong> para criar o primeiro.' : 'Nenhum ministério ainda.'}</p></div>`
       }
       ${leader ? '' : '<p class="hint">Quer servir num ministério? Fale com o líder dele ou com a liderança da igreja.</p>'}
+      ${leader ? fab('#/ministerios/novo', 'Novo ministério') : ''}
     </div>`;
 
   $view.querySelectorAll('[data-slot]').forEach((card) => {
