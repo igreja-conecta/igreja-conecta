@@ -607,6 +607,17 @@ a.notice { display: block; color: inherit; text-decoration: none; }
 
 /* Chat */
 .chat-list { display: flex; flex-direction: column; gap: 6px; }
+/* Arrastar para a esquerda apaga: o fundo vermelho aparece por trás da linha. */
+.chat-swipe { position: relative; border-radius: var(--radius); overflow: hidden; }
+.chat-swipe-bg {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-right: 18px;
+  background: var(--danger); color: #fff; font-weight: 600; font-size: .9rem;
+}
+.chat-swipe .chat-row { position: relative; touch-action: pan-y; user-select: none; -webkit-user-drag: none; transition: transform .2s ease; }
+.chat-swipe .chat-row.dragging { transition: none; }
+.chat-swipe .chat-row img { -webkit-user-drag: none; }
+.chat-swipe-hint { margin: 0 0 4px; font-size: .8rem; }
+.toast-action { margin-left: 10px; padding: 4px 6px; border: 0; background: none; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .chat-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); color: var(--ink); text-decoration: none; }
 .chat-row.unread { background: var(--brand-soft); border-color: transparent; }
 .chat-row.unread strong::after { content: ''; display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; background: var(--brand); vertical-align: middle; }

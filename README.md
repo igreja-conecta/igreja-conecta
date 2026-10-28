@@ -69,6 +69,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `022_push_do_chat.sql` | Notificação do chat no celular na hora: o banco chama (pg_net) a Edge Function `enviar-push`, um aviso por mensagem, sem o texto da mensagem |
 | `023_push_do_chat_correcao.sql` | Correção do aviso do chat: a busca dos celulares de quem recebe, em passos simples (a do 022 dava erro quando havia celular para avisar) |
 | `024_chat_lista.sql` | Chat: lista completa de com quem a pessoa pode conversar (a tela "Nova conversa" mostra todos e a busca filtra no aparelho), com as mesmas regras |
+| `025_conversas_apagar.sql` | Chat: apagar a conversa só para quem apagou (arrastando para a esquerda ou pelo menu ⋯); volta com mensagem nova, só com o que é novo |
 
 ## Contas de teste
 

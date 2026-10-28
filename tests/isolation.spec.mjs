@@ -1808,3 +1808,54 @@ test.describe('Chat: lista de contatos (024)', () => {
     expect(search.map((p) => p.name)).toContain('Membro da A');
   });
 });
+
+test.describe('Apagar conversa (025)', () => {
+  const tag = `apagar ${Date.now().toString(36)}`;
+  let conv;
+  const send = (who, body) => api.post(rest('messages'), { headers: returning(as[who].headers), data: { conversation_id: conv, body } });
+  const bodies = async (who) => (await get(who, `messages?select=body&conversation_id=eq.${conv}&body=like.*${encodeURIComponent(tag)}*&order=created_at`)).map((m) => m.body);
+  const listed = async (who) => (await (await rpc(who, 'my_conversations', { p_church: church.a })).json()).map((c) => c.id);
+  const hide = (who, p_hide = true) => rpc(who, 'hide_conversation', { p_conv: conv, p_hide });
+
+  test.beforeAll(async () => {
+    const [admin] = await get('adm-a', 'members?select=id&name=eq.Admin da A');
+    conv = await (await rpc('lider-a', 'start_conversation', { p_church: church.a, p_member: admin.id })).json();
+  });
+
+  // Conversa da líder com o administrador (a do membro com a líder fica para os testes de tela). No fim, volta para os dois.
+  test.afterAll(async () => {
+    if (!api || !conv) return;
+    for (const who of ['lider-a', 'adm-a']) await hide(who, false);
+  });
+
+  test('some só para quem apagou, volta com mensagem nova só com o que é novo, e ninguém apaga a dos outros', async () => {
+    expect((await send('adm-a', `antes ${tag}`)).ok()).toBe(true);
+    // Quem não está na conversa não apaga nada.
+    for (const who of ['membro-a', 'adm-b', 'sem-igreja']) expect((await hide(who)).ok(), who).toBe(true);
+    expect(await listed('lider-a')).toContain(conv);
+    expect(await bodies('lider-a')).toEqual([`antes ${tag}`]);
+
+    // A líder apaga: some da lista dela, as mensagens antigas também, e conta como lida.
+    expect((await hide('lider-a')).ok()).toBe(true);
+    expect(await listed('lider-a')).not.toContain(conv);
+    expect(await bodies('lider-a')).toEqual([]);
+    const [opened] = await (await rpc('lider-a', 'my_conversations', { p_church: church.a, p_conv: conv })).json();
+    expect(opened).toMatchObject({ id: conv, last_message: null, unread: false });
+    // O administrador continua vendo tudo.
+    expect(await listed('adm-a')).toContain(conv);
+    expect(await bodies('adm-a')).toEqual([`antes ${tag}`]);
+
+    // Desfazer traz tudo de volta.
+    expect((await hide('lider-a', false)).ok()).toBe(true);
+    expect(await listed('lider-a')).toContain(conv);
+    expect(await bodies('lider-a')).toEqual([`antes ${tag}`]);
+
+    // Apagou de novo e chegou mensagem nova: volta, só com a nova.
+    await hide('lider-a');
+    await new Promise((r) => setTimeout(r, 50));
+    expect((await send('adm-a', `depois ${tag}`)).ok()).toBe(true);
+    expect(await listed('lider-a')).toContain(conv);
+    expect(await bodies('lider-a')).toEqual([`depois ${tag}`]);
+    expect(await bodies('adm-a')).toEqual([`antes ${tag}`, `depois ${tag}`]);
+  });
+});
