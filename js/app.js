@@ -1430,7 +1430,7 @@ function helpTopics() {
               ? `<p>Em <a href="#/devocional">Devocional</a>, toque no botão <strong>+</strong>, embaixo à direita. Escolha o dia em que ele aparece (um por dia), o título, o versículo-base e a mensagem; a imagem é opcional. Dá para deixar vários prontos: os <strong>agendados</strong> só aparecem para os membros no dia marcado. Marque <em>Avisar os membros às 7h</em> para mandar a notificação.</p>`
               : '<p>Os devocionais são escritos pelo pastor (administrador) e pelos líderes.</p>'
           }
-           <p>Em <a href="#/leitura">Plano de leitura</a>, toque em <em>Novo plano</em>, escolha um dos planos prontos e a data de início: todos leem a mesma parte no mesmo dia. Dentro do plano, a liderança vê quantas pessoas estão lendo e o progresso médio (nunca o de uma pessoa), muda a data de início ou encerra o plano.</p>
+           <p>Em <a href="#/leitura">Plano de leitura</a>, toque no botão <strong>+</strong>, embaixo à direita, escolha um dos planos prontos e a data de início: todos leem a mesma parte no mesmo dia. Dentro do plano, a liderança vê quantas pessoas estão lendo e o progresso médio (nunca o de uma pessoa), muda a data de início ou encerra o plano.</p>
            <p>O app não traz o texto da Bíblia (as traduções têm direitos autorais): os links abrem a YouVersion na tradução escolhida em <em>Configurar a igreja &gt; Bíblia</em>.</p>`,
         ]]
       : []),
@@ -4135,7 +4135,6 @@ function drawReading(data) {
     <div class="page">
       <h1>Plano de leitura</h1>
       ${devotionalTabs('/leitura')}
-      ${leader ? `<div class="actions-row"><a class="btn primary" href="#/leitura/novo">${icon.plus} Novo plano</a></div>` : ''}
       ${
         plans.length
           ? plans
@@ -4162,8 +4161,9 @@ function drawReading(data) {
             </section>`;
               })
               .join('')
-          : `<div class="empty"><p>A igreja ainda não escolheu um plano de leitura.${leader ? ' Toque em <em>Novo plano</em> para começar.' : ''}</p></div>`
+          : `<div class="empty"><p>A igreja ainda não escolheu um plano de leitura.${leader ? ' Toque no <strong>+</strong> para começar.' : ''}</p></div>`
       }
+      ${leader ? fab('#/leitura/novo', 'Novo plano') : ''}
     </div>`;
   bindReading(data, drawReading);
 }
