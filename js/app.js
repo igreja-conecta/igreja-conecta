@@ -659,6 +659,8 @@ const churchRoutes = [
   [/^\/financeiro\/novo$/, viewFinanceEntry],
   [/^\/financeiro\/config$/, viewFinanceConfig],
   [/^\/financeiro\/([0-9a-f-]{36})$/, viewFinanceEntry],
+  [/^\/prestacao$/, viewAccountability],
+  [/^\/prestacao\/(\d{4}-\d{2})$/, viewAccountabilityMonth],
   [/^\/galeria$/, viewGallery],
   [/^\/galeria\/novo$/, viewAlbumForm],
   [/^\/galeria\/([0-9a-f-]{36})$/, viewAlbum],
@@ -1136,6 +1138,7 @@ async function viewMenu() {
         ${featureOn('oracao') ? `<a class="menu-row" href="#/oracao">${icon.heart}<span>Pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${featureOn('oracao') && isPastoral() ? `<a class="menu-row" href="#/oracao/moderar">${icon.heart}<span>Moderar pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${offerReady() ? `<a class="menu-row" href="#/ofertar">${icon.pix}<span>Dízimos e ofertas</span>${icon.chevron}</a>` : ''}
+        ${featureOn('financeiro') ? `<a class="menu-row" href="#/prestacao">${icon.wallet}<span>Prestação de contas</span>${icon.chevron}</a>` : ''}
         ${featureOn('chat') ? `<a class="menu-row" href="#/chat">${icon.chat}<span>Conversas${chatUnread ? ` (${chatUnread})` : ''}</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações</span>${icon.chevron}</a>
         ${admin ? messageLinks() : ''}
@@ -1404,6 +1407,13 @@ function helpTopics() {
            <p>O dinheiro vai direto para a conta da igreja. O app não recebe, não processa e não guarda nada sobre a sua oferta. Confira o nome do recebedor no banco antes de confirmar.</p>`,
         ]]
       : []),
+    ...(features('financeiro')
+      ? [[
+          'Prestação de contas',
+          `<p>Em <a href="#/prestacao">Menu &gt; Prestação de contas</a> estão os meses que a tesouraria da igreja fechou e publicou: o total de cada categoria de entrada (dízimos, ofertas…) e de saída (aluguel, luz…), o resultado do mês e o saldo. Quando sai um mês novo, você recebe um aviso.</p>
+           <p>Aparecem só os totais: ninguém vê quem deu quanto. Toque em <em>Imprimir</em> para levar ao mural da igreja.</p>`,
+        ]]
+      : []),
     [
       'Meu cadastro e privacidade',
       `<p>Em <a href="#/perfil">Menu &gt; Meu cadastro</a> você corrige o nome, o telefone, a data de nascimento${features('datas_especiais') ? ', as datas de casamento e de batismo' : ''} e a foto, e escolhe se os outros membros veem essas datas e o seu telefone. Para trocar o e-mail, fale com a secretaria.</p>
@@ -1487,7 +1497,8 @@ function helpTopics() {
           'Financeiro (tesouraria)',
           `<p>O administrador marca quem cuida do dinheiro: no cadastro da pessoa, em <a href="#/membros">Membros</a>, marque <strong>Tesouraria</strong>. Só o administrador e a tesouraria veem o <a href="#/financeiro">Menu &gt; Financeiro</a>.</p>
            <p>Lá, toque no botão <strong>+</strong>, embaixo à direita, para lançar uma <strong>entrada</strong> (dízimos, ofertas…), uma <strong>saída</strong> (aluguel, luz…) ou uma <strong>transferência</strong> entre contas (ex.: o dinheiro do culto depositado no banco). As setas trocam o mês; a tela mostra os totais e o saldo de cada conta. Arraste um lançamento para a esquerda para apagar.</p>
-           <p>Em <em>Contas e categorias</em>, mude os nomes, crie outras e informe o <strong>saldo inicial</strong> de cada conta (o que ela tinha antes do primeiro lançamento). O app só registra: o dinheiro não passa por ele.</p>`,
+           <p>Em <em>Contas e categorias</em>, mude os nomes, crie outras e informe o <strong>saldo inicial</strong> de cada conta (o que ela tinha antes do primeiro lançamento). O app só registra: o dinheiro não passa por ele.</p>
+           <p>No fim do mês, toque em <strong>Fechar e publicar o mês</strong> (dá para deixar um recado, como "reforma do telhado concluída"). Os lançamentos do mês ficam travados e todos os membros recebem um aviso para ver a <a href="#/prestacao">Prestação de contas</a>: só os totais por categoria, nunca os lançamentos nem as descrições. Antes de fechar, toque em <em>Prévia</em> para ver como vai ficar. Para corrigir depois, toque em <em>Reabrir o mês</em>: ele sai da prestação até você fechar de novo.</p>`,
         ]]
       : []),
     ...(features('escalas')
@@ -6471,7 +6482,7 @@ async function loadFinanceMonth(key) {
       .order('entry_date', { ascending: false })
       .order('created_at', { ascending: false }),
     sb.rpc('finance_balances', { p_church: church, p_until: monthEnd(key) }),
-    sb.from('fin_months').select('closed_at').eq('church_id', church).eq('month', `${key}-01`).maybeSingle(),
+    sb.from('fin_months').select('closed_at, note').eq('church_id', church).eq('month', `${key}-01`).maybeSingle(),
   ]);
   for (const r of [e, b, m]) if (r.error) throw r.error;
   return {
@@ -6479,6 +6490,7 @@ async function loadFinanceMonth(key) {
     entries: e.data,
     balances: Object.fromEntries(b.data.map((x) => [x.account_id, x.balance_cents])),
     closed_at: m.data?.closed_at || null,
+    note: m.data?.note || null,
   };
 }
 
@@ -6528,7 +6540,13 @@ function drawFinance(key, d) {
         <strong>${finMonthLabel(key)}</strong>
         <a class="btn small" href="#/financeiro?mes=${monthShift(key, 1)}" aria-label="Próximo mês">›</a>
       </nav>
-      ${closed ? `<p class="notice">Mês fechado em ${esc(new Date(d.closed_at).toLocaleDateString('pt-BR'))}: os lançamentos dele não mudam mais.</p>` : ''}
+      ${
+        closed
+          ? `<p class="notice">Mês fechado e publicado em ${esc(new Date(d.closed_at).toLocaleDateString('pt-BR'))}: os lançamentos dele não mudam mais.${
+              d.note ? `<br>Recado: ${esc(d.note)}` : ''
+            }</p>`
+          : ''
+      }
       <div class="stat-grid">
         <div class="stat-tile"><span class="stat-label">Entradas</span><strong class="fin-amount entrada">${fmtMoney(total('entrada'))}</strong></div>
         <div class="stat-tile"><span class="stat-label">Saídas</span><strong class="fin-amount saida">${fmtMoney(total('saida'))}</strong></div>
@@ -6546,9 +6564,51 @@ function drawFinance(key, d) {
              <div class="list" id="fin-entries">${d.entries.map(row).join('')}</div>`
           : `<div class="empty"><p>Nenhum lançamento neste mês.${closed ? '' : ' Toque no <strong>+</strong> para lançar uma entrada, uma saída ou uma transferência.'}</p></div>`
       }
+      <h2>Prestação de contas</h2>
+      <div class="actions-row">
+        ${
+          closed
+            ? `<a class="btn" href="#/prestacao/${key}">Ver a prestação de contas</a>
+               <button type="button" class="btn" id="fin-reopen">Reabrir o mês</button>`
+            : key <= monthKey()
+              ? `<button type="button" class="btn primary" id="fin-close">Fechar e publicar o mês</button>
+                 <a class="btn" href="#/prestacao/${key}">Prévia</a>`
+              : ''
+        }
+      </div>
+      <p class="hint">${
+        closed
+          ? 'Os membros veem os totais deste mês em Menu &gt; Prestação de contas. Para corrigir um lançamento, reabra o mês: ele sai da prestação até você fechar de novo.'
+          : 'Ao fechar, os lançamentos do mês ficam travados e os membros recebem um aviso para ver os totais por categoria (nunca os lançamentos nem as descrições).'
+      }</p>
       <p><a class="btn" href="#/financeiro/config">Contas e categorias</a></p>
       ${closed ? '' : fab(`#/financeiro/novo?mes=${key}`, 'Novo lançamento')}
     </div>`;
+
+  // Fechar e publicar (com um recado opcional) e reabrir: só a tesouraria, conferido no banco.
+  const changed = (msg) => {
+    forgetFinance();
+    screenForget('prestacao');
+    screenForget(`prestacao:${key}`);
+    toast(msg);
+    render();
+  };
+  document.getElementById('fin-close')?.addEventListener('click', async () => {
+    const note = await ask(
+      `Fechar e publicar ${finMonthLabel(key)}? Os lançamentos do mês ficam travados e todos os membros veem os totais na Prestação de contas. Se quiser, deixe um recado (opcional):`,
+      { input: 'text', ok: 'Fechar e publicar', placeholder: 'Ex.: reforma do telhado concluída' },
+    );
+    if (note === null) return;
+    const { error } = await sb.rpc('finance_close_month', { p_church: state.church.id, p_month: `${key}-01`, p_note: note.trim() || null });
+    if (error) return toast(errorText(error), 'error');
+    changed('Mês fechado e publicado.');
+  });
+  document.getElementById('fin-reopen')?.addEventListener('click', async () => {
+    if (!await ask(`Reabrir ${finMonthLabel(key)}? Ele sai da Prestação de contas até você fechar de novo.`, { ok: 'Reabrir' })) return;
+    const { error } = await sb.rpc('finance_reopen_month', { p_church: state.church.id, p_month: `${key}-01` });
+    if (error) return toast(errorText(error), 'error');
+    changed('Mês reaberto.');
+  });
 
   const list = document.getElementById('fin-entries');
   if (!list || closed) return;
@@ -6793,6 +6853,104 @@ function drawFinanceConfig(ctx, d) {
       save(sb.from(table(type)).update({ active: !x.active }).eq('id', x.id));
     }),
   );
+}
+
+// ---------------------------------------------------------------------
+// Prestação de contas: todos os membros veem os meses que a tesouraria fechou e publicou, só
+// com os totais por categoria (finance_published e finance_report), nunca os lançamentos.
+// ---------------------------------------------------------------------
+async function loadPublished() {
+  const { data, error } = await sb.rpc('finance_published', { p_church: state.church.id });
+  if (error) throw error;
+  return data;
+}
+
+async function viewAccountability(ctx) {
+  if (!requireMemberFeature('/prestacao', 'financeiro')) return;
+  await screenShow(ctx, 'prestacao', loadPublished, drawAccountability);
+}
+
+function drawAccountability(months) {
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Prestação de contas</h1>
+      <p class="hint">O que entrou e o que saiu em cada mês, publicado pela tesouraria da igreja.</p>
+      ${
+        months.length
+          ? `<div class="list">${months
+              .map((m) => {
+                const key = m.month.slice(0, 7);
+                return `
+          <a class="menu-row fin-month" href="#/prestacao/${key}">
+            ${icon.wallet}
+            <span><strong>${finMonthLabel(key)}</strong><small>Entradas ${fmtMoney(m.in_cents)} · Saídas ${fmtMoney(m.out_cents)}</small></span>
+            ${icon.chevron}
+          </a>`;
+              })
+              .join('')}</div>`
+          : '<div class="empty"><p>A tesouraria ainda não publicou nenhuma prestação de contas.</p></div>'
+      }
+      ${treasury() ? '<p><a class="btn" href="#/financeiro">Ir para o Financeiro</a></p>' : ''}
+    </div>`;
+}
+
+// Mês não publicado: o banco recusa (a tesouraria vê a prévia).
+async function loadAccountabilityMonth(key) {
+  const { data, error } = await sb.rpc('finance_report', { p_church: state.church.id, p_month: `${key}-01` });
+  if (error?.code === '42501') return { missing: true };
+  if (error) throw error;
+  return data;
+}
+
+async function viewAccountabilityMonth(ctx, key) {
+  if (!requireMemberFeature(`/prestacao/${key}`, 'financeiro')) return;
+  await screenShow(ctx, `prestacao:${key}`, () => loadAccountabilityMonth(key), (r) => drawAccountabilityMonth(key, r));
+}
+
+function drawAccountabilityMonth(key, r) {
+  if (r.missing) {
+    $view.innerHTML = `<div class="empty"><h2>Prestação de contas não publicada</h2><p>A tesouraria ainda não publicou ${finMonthLabel(key)}.</p><a class="btn" href="#/prestacao">Voltar</a></div>`;
+    return;
+  }
+  const items = (kind) => r.categories.filter((c) => c.kind === kind);
+  const sum = (kind) => items(kind).reduce((s, c) => s + c.cents, 0);
+  const inC = sum('entrada');
+  const outC = sum('saida');
+  const table = (kind, empty) => {
+    const total = sum(kind);
+    return items(kind).length
+      ? `<div class="fin-balances">${items(kind)
+          .map((c) => `<div><span>${esc(c.name)} <small>${Math.round((c.cents / total) * 100)}%</small></span><strong>${fmtMoney(c.cents)}</strong></div>`)
+          .join('')}<div class="total"><span>Total</span><strong>${fmtMoney(total)}</strong></div></div>`
+      : `<p class="hint">${empty}</p>`;
+  };
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/prestacao" class="back no-print">← Prestação de contas</a>
+      <h1>${esc(state.church.name)}: ${finMonthLabel(key)}</h1>
+      ${
+        r.published_at
+          ? `<p class="hint">Publicada pela tesouraria em ${esc(new Date(r.published_at).toLocaleDateString('pt-BR'))}.</p>`
+          : '<p class="notice">Prévia: este mês ainda não foi publicado. Só a tesouraria vê.</p>'
+      }
+      ${r.note ? `<div class="notice"><strong>Recado da tesouraria</strong><p>${esc(r.note)}</p></div>` : ''}
+      <div class="stat-grid">
+        <div class="stat-tile"><span class="stat-label">Entradas</span><strong class="fin-amount entrada">${fmtMoney(inC)}</strong></div>
+        <div class="stat-tile"><span class="stat-label">Saídas</span><strong class="fin-amount saida">${fmtMoney(outC)}</strong></div>
+        <div class="stat-tile"><span class="stat-label">Resultado do mês</span><strong>${fmtMoney(inC - outC)}</strong></div>
+      </div>
+      <div class="fin-balances">
+        <div><span>Saldo no início do mês</span><strong>${fmtMoney(r.opening_cents)}</strong></div>
+        <div class="total"><span>Saldo no fim do mês</span><strong>${fmtMoney(r.opening_cents + inC - outC)}</strong></div>
+      </div>
+      <h2>Entradas</h2>
+      ${table('entrada', 'Nenhuma entrada neste mês.')}
+      <h2>Saídas</h2>
+      ${table('saida', 'Nenhuma saída neste mês.')}
+      <p class="hint">A prestação de contas mostra só os totais por categoria. Os dízimos e as ofertas não identificam quem deu.</p>
+      <button type="button" class="btn no-print" id="print">${icon.print} Imprimir</button>
+    </div>`;
+  document.getElementById('print').onclick = () => window.print();
 }
 
 // ---------------------------------------------------------------------
@@ -7854,6 +8012,7 @@ const NOTIF_GROUPS = {
   devocional: { label: 'Devocional', icon: 'book', kinds: ['devocional', 'leitura'], on: () => featureOn('devocional') },
   datas: { label: 'Datas', icon: 'cake', kinds: ['aniversario', 'casamento', 'batismo', 'resumo_lideres'], on: () => datesOn() },
   visitantes: { label: 'Visitantes', icon: 'user', kinds: ['visitante'], on: () => visitorTeam() },
+  financeiro: { label: 'Prestação de contas', icon: 'wallet', kinds: ['financeiro'], on: () => featureOn('financeiro') },
 };
 const notifGroup = (kind) => Object.keys(NOTIF_GROUPS).find((g) => NOTIF_GROUPS[g].kinds.includes(kind)) || 'sistema';
 const NOTIF_PAGE = 30;
