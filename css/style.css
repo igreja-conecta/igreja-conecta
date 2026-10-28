@@ -666,4 +666,4 @@ a.notice { display: block; color: inherit; text-decoration: none; }
 .fab:active { transform: scale(.96); }
 body:not(.has-tabbar) .fab { bottom: calc(16px + env(safe-area-inset-bottom)); }
 /* Espaço no fim da lista para o botão não cobrir a última conversa */
-.chat-page:has(.fab) { padding-bottom: 80px; }
+.page:has(.fab) { padding-bottom: 80px; }
