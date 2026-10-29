@@ -30,9 +30,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: npm install --no-audit --no-fund
+      # Testa o que vai ao ar: o código num arquivo só, como o build publica.
+      - run: node scripts/build-site.mjs --sem-igrejas
       - run: npx playwright test
         env:
           HOME: /root
+          SITE_DIR: _site
           # Senha das contas de teste das igrejas Teste A e Teste B (scripts/criar-usuarios-de-teste.mjs)
           TEST_USERS_PASSWORD: ${{ secrets.TEST_USERS_PASSWORD }}
       - if: failure()
@@ -85,6 +88,7 @@ jobs:
           node-version: 24
       - id: pages
         uses: actions/configure-pages@v6
+      - run: npm install --no-audit --no-fund
       - run: node scripts/build-site.mjs
         env:
           SITE_URL: ${{ steps.pages.outputs.base_url }}

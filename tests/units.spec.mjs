@@ -1,6 +1,6 @@
 // Funções puras do app, testadas sem navegador.
 import { test, expect } from '@playwright/test';
-import { slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE } from '../js/util.js';
+import { slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE } from '../js/util.js';
 import { pixPayload, normalizePixKey, guessPixType, crc16, parseAmount } from '../js/pix.js';
 
 test('endereço da igreja a partir do nome', () => {
@@ -19,6 +19,14 @@ test('igreja da página pelo caminho', () => {
   expect(churchSlugFromPath('/repositorio/i/exemplo/index.html')).toBe('exemplo');
   expect(churchSlugFromPath('/repositorio/')).toBe(null);
   expect(churchSlugFromPath('/i/')).toBe(null);
+});
+
+// O preload da página da igreja (scripts/build-site.mjs) e o app (loadChurch) usam este endereço:
+// sem cabeçalhos, com a chave pública nele, para o navegador aproveitar a mesma resposta.
+test('endereço da igreja no banco, igual no preload e no app', () => {
+  expect(churchRestUrl('https://x.supabase.co', 'sb_publishable_abc', 'batista-central')).toBe(
+    'https://x.supabase.co/rest/v1/churches?select=*&slug=eq.batista-central&apikey=sb_publishable_abc',
+  );
 });
 
 test('texto legível sobre a cor da igreja', () => {

@@ -2,9 +2,10 @@
 // caminho terminado em "/" serve index.html e arquivo inexistente serve 404.html com status 404.
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { extname, join, normalize, sep } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 
-const root = process.cwd();
+// SITE_DIR=_site: serve a pasta publicada (código num arquivo só), como no GitHub Pages.
+const root = resolve(process.env.SITE_DIR || '.');
 const port = Number(process.argv[2] || 4173);
 const TYPES = {
   '.html': 'text/html; charset=utf-8',

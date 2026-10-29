@@ -25,6 +25,12 @@ export function churchSlugFromPath(pathname) {
   return m ? m[1] : null;
 }
 
+// Endereço da igreja no banco, com a chave pública no próprio endereço (sem cabeçalhos): a página
+// da igreja já pede este endereço junto com o HTML (preload, scripts/build-site.mjs) e o app usa a
+// mesma resposta ao abrir. Os dois precisam ser idênticos, por isso saem daqui.
+export const churchRestUrl = (supabaseUrl, anonKey, slug) =>
+  `${supabaseUrl}/rest/v1/churches?select=*&slug=eq.${encodeURIComponent(slug)}&apikey=${encodeURIComponent(anonKey)}`;
+
 // "#3b5bdb" → [59, 91, 219]
 export function hexToRgb(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
