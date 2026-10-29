@@ -13,6 +13,8 @@ Mesma arquitetura do [Desapega](https://github.com/garagesalebsb/desapega): HTML
 
 A publicação (`scripts/build-site.mjs`) gera uma pasta `i/<igreja>/` por igreja ativa, com manifest, ícones e título próprios. Uma igreja recém-criada já abre antes disso pelo `404.html`, só que ainda com o ícone padrão.
 
+Na publicação, o código do app vira um arquivo só e compactado (`js/app.js`, com o cliente do Supabase dentro, via esbuild) e a página de cada igreja já pede os dados da igreja junto com o HTML. O código-fonte continua rodando sem build (o Supabase vem do jsDelivr); a versão do `supabase-js` no `import` de `js/app.js` e no `package.json` precisa ser a mesma (o build confere). Os testes do GitHub rodam sobre a pasta publicada (`SITE_DIR=_site`); para fazer o mesmo aqui: `node scripts/build-site.mjs --sem-igrejas` e depois `SITE_DIR=_site npx playwright test`.
+
 ## Papéis
 
 | Papel | O que faz |

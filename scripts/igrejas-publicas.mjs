@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const config = readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
 const pick = (key) => config.match(new RegExp(`${key}:\\s*'([^']+)'`))?.[1];
 export const SUPABASE_URL = pick('SUPABASE_URL');
-const SUPABASE_ANON_KEY = pick('SUPABASE_ANON_KEY');
+export const SUPABASE_ANON_KEY = pick('SUPABASE_ANON_KEY');
 export const supabaseConfigured = !!SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('COLE-AQUI');
 
 export async function fetchPublicChurches() {

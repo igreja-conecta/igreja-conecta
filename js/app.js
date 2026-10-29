@@ -1,7 +1,7 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import { CONFIG } from './config.js';
 import {
-  esc, slugify, isValidSlug, churchSlugFromPath, inkOn, readableOnWhite, normalizePhone, fmtPhone,
+  esc, slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, normalizePhone, fmtPhone,
   ROLES, isLeaderRole, FEATURES, fold, fmtDate, fmtMoney, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
   parseFinanceCsv, financeKey, FINANCE_CSV_TEMPLATE, FINANCE_CSV_HEADER, FIN_KIND_CSV,
   renderMessage, firstName, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
@@ -8846,6 +8846,13 @@ async function viewMessageSettings(ctx, kind) {
 // Inicialização
 // ---------------------------------------------------------------------
 async function loadChurch() {
+  // Pedido simples, igual ao preload da página: chega junto com o código do app em vez de depois dele.
+  // Igreja desativada (só o administrador da plataforma vê) ou falha: busca pelo cliente, com a sessão.
+  try {
+    const res = await fetch(churchRestUrl(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, SLUG));
+    const [church] = res.ok ? await res.json() : [];
+    if (church) return church;
+  } catch {}
   const { data, error } = await sb.from('churches').select('*').eq('slug', SLUG).maybeSingle();
   if (error) throw error;
   return data;
