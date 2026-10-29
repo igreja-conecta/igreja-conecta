@@ -1,11 +1,11 @@
 ---
 name: folha-para-imprimir
-description: Receita da folha para imprimir ou salvar em PDF do Igreja Conecta (como a Prestação de contas) — folha A4 sempre clara, logo e nome da igreja no topo, espaço para assinaturas e rodapé só no papel, nome do PDF certo e teste com a impressão emulada. Use sempre que o usuário pedir para imprimir, gerar PDF, "salvar como PDF", mandar um relatório no grupo, ou melhorar o layout de impressão de uma tela (relatórios, aniversariantes, escalas, listas, recibos), mesmo que não diga "skill".
+description: Receita da folha para imprimir ou salvar em PDF do Igreja Conecta (como o Livro caixa) — folha A4 sempre clara, logo e nome da igreja no topo, espaço para assinaturas e rodapé só no papel, nome do PDF certo e teste com a impressão emulada. Use sempre que o usuário pedir para imprimir, gerar PDF, "salvar como PDF", mandar um relatório no grupo, ou melhorar o layout de impressão de uma tela (relatórios, aniversariantes, escalas, listas, recibos), mesmo que não diga "skill".
 ---
 
 # Folha para imprimir ou salvar PDF
 
-Feita na Prestação de contas (PR #68, `drawAccountabilityMonth` em `js/app.js` e o bloco `.acc-*` em
+Feita no Livro caixa (PR #68, `drawAccountabilityMonth` em `js/app.js` e o bloco `.acc-*` em
 `css/style.css`). Testado pelo usuário no celular: na tela fica bonita e, ao imprimir, sai uma folha A4
 pronta para assinar ou mandar no grupo. Não precisa de biblioteca de PDF: o próprio navegador gera
 (no celular, **Salvar como PDF** na tela de impressão).
@@ -141,7 +141,7 @@ Aniversariantes e Relatórios usam `drawSheet`, que junta as peças comuns `shee
 linha)`, `sheetSigns([funções])`, `sheetFoot()` e `printAs(nome do PDF)`: página
 `<div class="page sheet-page">`, folha `<article class="sheet">` e o CSS `.sheet-*` (bloco "Folha para
 imprimir das outras telas" em css/style.css). Na prévia, assinaturas e rodapé aparecem também na tela.
-Numa tela nova, use `drawSheet` em vez de copiar o prefixo `acc-` (a Prestação de contas ficou com o
+Numa tela nova, use `drawSheet` em vez de copiar o prefixo `acc-` (o Livro caixa ficou com o
 CSS próprio).
 
 ## Telas que ainda imprimem com o layout simples (candidatas)

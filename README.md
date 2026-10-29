@@ -70,7 +70,8 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `023_push_do_chat_correcao.sql` | Correção do aviso do chat: a busca dos celulares de quem recebe, em passos simples (a do 022 dava erro quando havia celular para avisar) |
 | `024_chat_lista.sql` | Chat: lista completa de com quem a pessoa pode conversar (a tela "Nova conversa" mostra todos e a busca filtra no aparelho), com as mesmas regras |
 | `025_conversas_apagar.sql` | Chat: apagar a conversa só para quem apagou (arrastando para a esquerda ou pelo menu ⋯); volta com mensagem nova, só com o que é novo |
-| `026_financeiro.sql` | Financeiro e prestação de contas: a tesouraria (admin e membros marcados) lança entradas, saídas e transferências em centavos; fechar o mês trava e publica; os membros veem só os totais por categoria dos meses publicados |
+| `026_financeiro.sql` | Financeiro e livro caixa: a tesouraria (admin e membros marcados) lança entradas, saídas e transferências em centavos; fechar o mês trava e publica; os membros veem só os totais por categoria dos meses publicados |
+| `027_livro_caixa.sql` | Financeiro: o aviso de mês publicado passa a dizer "Livro caixa" (antes "Prestação de contas") |
 
 ## Contas de teste
 

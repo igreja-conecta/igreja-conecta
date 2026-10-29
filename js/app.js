@@ -1181,7 +1181,7 @@ async function viewMenu() {
         ${featureOn('oracao') ? `<a class="menu-row" href="#/oracao">${icon.heart}<span>Pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${featureOn('oracao') && isPastoral() ? `<a class="menu-row" href="#/oracao/moderar">${icon.heart}<span>Moderar pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${offerReady() ? `<a class="menu-row" href="#/ofertar">${icon.pix}<span>Dízimos e ofertas</span>${icon.chevron}</a>` : ''}
-        ${featureOn('financeiro') ? `<a class="menu-row" href="#/prestacao">${icon.wallet}<span>Prestação de contas</span>${icon.chevron}</a>` : ''}
+        ${featureOn('financeiro') ? `<a class="menu-row" href="#/prestacao">${icon.wallet}<span>Livro caixa</span>${icon.chevron}</a>` : ''}
         ${featureOn('chat') ? `<a class="menu-row" href="#/chat">${icon.chat}<span>Conversas${chatUnread ? ` (${chatUnread})` : ''}</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações</span>${icon.chevron}</a>
         ${admin ? messageLinks() : ''}
@@ -1452,8 +1452,8 @@ function helpTopics() {
       : []),
     ...(features('financeiro')
       ? [[
-          'Prestação de contas',
-          `<p>Em <a href="#/prestacao">Menu &gt; Prestação de contas</a> estão os meses que a tesouraria da igreja fechou e publicou: o total de cada categoria de entrada (dízimos, ofertas…) e de saída (aluguel, luz…), o resultado do mês e o saldo. Quando sai um mês novo, você recebe um aviso.</p>
+          'Livro caixa',
+          `<p>Em <a href="#/prestacao">Menu &gt; Livro caixa</a> estão os meses que a tesouraria da igreja fechou e publicou: o total de cada categoria de entrada (dízimos, ofertas…) e de saída (aluguel, luz…), o resultado do mês e o saldo. Quando sai um mês novo, você recebe um aviso.</p>
            <p>Aparecem só os totais: ninguém vê quem deu quanto. Toque em <em>Imprimir</em> para levar ao mural da igreja.</p>`,
         ]]
       : []),
@@ -1542,7 +1542,7 @@ function helpTopics() {
            <p>Lá, toque no botão <strong>+</strong>, embaixo à direita, e em <em>Novo lançamento</em> para lançar uma <strong>entrada</strong> (dízimos, ofertas…), uma <strong>saída</strong> (aluguel, luz…) ou uma <strong>transferência</strong> entre contas (ex.: o dinheiro do culto depositado no banco). As setas trocam o mês; a tela mostra os totais e o saldo de cada conta. Arraste um lançamento para a esquerda para apagar.</p>
            <p>Para lançar muita coisa de uma vez, toque no <strong>+</strong> e em <a href="#/financeiro/importar">Importar planilha</a>: baixe o modelo, preencha no Excel ou no Google Planilhas e salve como CSV. O app mostra os erros de cada linha antes de gravar e pula o que já foi lançado (importar de novo não duplica). <em>Baixar planilha do mês</em> traz os lançamentos no mesmo formato, para o contador. Importou errado? <em>Apagar os lançamentos do mês</em> tira todos de uma vez (com Desfazer).</p>
            <p>Em <em>Contas e categorias</em>, mude os nomes, crie outras e informe o <strong>saldo inicial</strong> de cada conta (o que ela tinha antes do primeiro lançamento). O app só registra: o dinheiro não passa por ele.</p>
-           <p>No fim do mês, toque em <strong>Fechar e publicar o mês</strong> (dá para deixar um recado, como "reforma do telhado concluída"). Os lançamentos do mês ficam travados e todos os membros recebem um aviso para ver a <a href="#/prestacao">Prestação de contas</a>: só os totais por categoria, nunca os lançamentos nem as descrições. Antes de fechar, toque em <em>Prévia</em> para ver como vai ficar. Para corrigir depois, toque em <em>Reabrir o mês</em>: ele sai da prestação até você fechar de novo.</p>`,
+           <p>No fim do mês, toque em <strong>Fechar e publicar o mês</strong> (dá para deixar um recado, como "reforma do telhado concluída"). Os lançamentos do mês ficam travados e todos os membros recebem um aviso para ver o <a href="#/prestacao">Livro caixa</a>: só os totais por categoria, nunca os lançamentos nem as descrições. Antes de fechar, toque em <em>Prévia</em> para ver como vai ficar. Para corrigir depois, toque em <em>Reabrir o mês</em>: ele sai do livro caixa até você fechar de novo.</p>`,
         ]]
       : []),
     ...(features('escalas')
@@ -1593,7 +1593,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, a galeria de fotos, o chat (e se os membros conversam entre si), o cadastro de visitantes o financeiro com a prestação de contas e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, a galeria de fotos, o chat (e se os membros conversam entre si), o cadastro de visitantes o financeiro com o livro caixa e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -2127,7 +2127,7 @@ async function viewMemberForm(ctx, id) {
       ${
         admin && featureOn('financeiro')
           ? `<label class="check"><input type="checkbox" name="treasury" ${m.treasury ? 'checked' : ''}> Tesouraria
-              <small class="hint">Lança as entradas e as saídas no Financeiro e publica a prestação de contas.</small></label>`
+              <small class="hint">Lança as entradas e as saídas no Financeiro e publica o livro caixa.</small></label>`
           : ''
       }
       ${
@@ -6648,11 +6648,11 @@ function drawFinance(key, d) {
              ${closed ? '' : '<p><button type="button" class="btn danger-outline" id="fin-clear">Apagar os lançamentos do mês</button></p>'}`
           : `<div class="empty"><p>Nenhum lançamento neste mês.${closed ? '' : ' Toque no <strong>+</strong> para lançar uma entrada, uma saída ou uma transferência.'}</p></div>`
       }
-      <h2>Prestação de contas</h2>
+      <h2>Livro caixa</h2>
       <div class="actions-row">
         ${
           closed
-            ? `<a class="btn" href="#/prestacao/${key}">Ver a prestação de contas</a>
+            ? `<a class="btn" href="#/prestacao/${key}">Ver o livro caixa</a>
                <button type="button" class="btn" id="fin-reopen">Reabrir o mês</button>`
             : key <= monthKey()
               ? `<button type="button" class="btn primary" id="fin-close">Fechar e publicar o mês</button>
@@ -6662,7 +6662,7 @@ function drawFinance(key, d) {
       </div>
       <p class="hint">${
         closed
-          ? 'Os membros veem os totais deste mês em Menu &gt; Prestação de contas. Para corrigir um lançamento, reabra o mês: ele sai da prestação até você fechar de novo.'
+          ? 'Os membros veem os totais deste mês em Menu &gt; Livro caixa. Para corrigir um lançamento, reabra o mês: ele sai do livro caixa até você fechar de novo.'
           : 'Ao fechar, os lançamentos do mês ficam travados e os membros recebem um aviso para ver os totais por categoria (nunca os lançamentos nem as descrições).'
       }</p>
       <h2>Planilhas</h2>
@@ -6738,7 +6738,7 @@ function drawFinance(key, d) {
   };
   document.getElementById('fin-close')?.addEventListener('click', async () => {
     const note = await ask(
-      `Fechar e publicar ${finMonthLabel(key)}? Os lançamentos do mês ficam travados e todos os membros veem os totais na Prestação de contas. Se quiser, deixe um recado (opcional):`,
+      `Fechar e publicar ${finMonthLabel(key)}? Os lançamentos do mês ficam travados e todos os membros veem os totais no Livro caixa. Se quiser, deixe um recado (opcional):`,
       { input: 'text', ok: 'Fechar e publicar', placeholder: 'Ex.: reforma do telhado concluída' },
     );
     if (note === null) return;
@@ -6747,7 +6747,7 @@ function drawFinance(key, d) {
     changed('Mês fechado e publicado.');
   });
   document.getElementById('fin-reopen')?.addEventListener('click', async () => {
-    if (!await ask(`Reabrir ${finMonthLabel(key)}? Ele sai da Prestação de contas até você fechar de novo.`, { ok: 'Reabrir' })) return;
+    if (!await ask(`Reabrir ${finMonthLabel(key)}? Ele sai do Livro caixa até você fechar de novo.`, { ok: 'Reabrir' })) return;
     const { error } = await sb.rpc('finance_reopen_month', { p_church: state.church.id, p_month: `${key}-01` });
     if (error) return toast(errorText(error), 'error');
     changed('Mês reaberto.');
@@ -7130,7 +7130,7 @@ function drawImportPreview(box, rows) {
 }
 
 // ---------------------------------------------------------------------
-// Prestação de contas: todos os membros veem os meses que a tesouraria fechou e publicou, só
+// Livro caixa: todos os membros veem os meses que a tesouraria fechou e publicou, só
 // com os totais por categoria (finance_published e finance_report), nunca os lançamentos.
 // ---------------------------------------------------------------------
 async function loadPublished() {
@@ -7147,7 +7147,7 @@ async function viewAccountability(ctx) {
 function drawAccountability(months) {
   $view.innerHTML = `
     <div class="page">
-      <h1>Prestação de contas</h1>
+      <h1>Livro caixa</h1>
       <p class="hint">O que entrou e o que saiu em cada mês, publicado pela tesouraria da igreja.</p>
       ${
         months.length
@@ -7162,7 +7162,7 @@ function drawAccountability(months) {
           </a>`;
               })
               .join('')}</div>`
-          : '<div class="empty"><p>A tesouraria ainda não publicou nenhuma prestação de contas.</p></div>'
+          : '<div class="empty"><p>A tesouraria ainda não publicou nenhum mês do livro caixa.</p></div>'
       }
       ${treasury() ? '<p><a class="btn" href="#/financeiro">Ir para o Financeiro</a></p>' : ''}
     </div>`;
@@ -7183,7 +7183,7 @@ async function viewAccountabilityMonth(ctx, key) {
 
 function drawAccountabilityMonth(key, r) {
   if (r.missing) {
-    $view.innerHTML = `<div class="empty"><h2>Prestação de contas não publicada</h2><p>A tesouraria ainda não publicou ${finMonthLabel(key)}.</p><a class="btn" href="#/prestacao">Voltar</a></div>`;
+    $view.innerHTML = `<div class="empty"><h2>Livro caixa não publicado</h2><p>A tesouraria ainda não publicou ${finMonthLabel(key)}.</p><a class="btn" href="#/prestacao">Voltar</a></div>`;
     return;
   }
   const items = (kind) => r.categories.filter((c) => c.kind === kind);
@@ -7220,14 +7220,14 @@ function drawAccountabilityMonth(key, r) {
   };
   $view.innerHTML = `
     <div class="page acc-page">
-      <a href="#/prestacao" class="back no-print">← Prestação de contas</a>
+      <a href="#/prestacao" class="back no-print">← Livro caixa</a>
       ${r.published_at ? '' : '<p class="notice no-print">Prévia: este mês ainda não foi publicado. Só a tesouraria vê.</p>'}
       <article class="acc-sheet">
         <header class="acc-head">
           ${logo ? `<img class="acc-logo" src="${esc(logo)}" alt="" width="56" height="56">` : ''}
           <div>
             <p class="acc-church">${esc(state.church.name)}</p>
-            <h1>Prestação de contas <span>${finMonthLabel(key)}</span></h1>
+            <h1>Livro caixa <span>${finMonthLabel(key)}</span></h1>
             <p class="acc-sub">${r.published_at ? `Publicada pela tesouraria em ${esc(day(r.published_at))}` : 'Prévia: ainda não publicada'}</p>
           </div>
         </header>
@@ -7258,7 +7258,7 @@ function drawAccountabilityMonth(key, r) {
         <p class="hint">Sai numa folha A4, com espaço para as assinaturas. No celular, escolha <strong>Salvar como PDF</strong> para mandar no grupo da igreja.</p>
       </div>
     </div>`;
-  document.getElementById('print').onclick = () => printAs(`Prestação de contas - ${state.church.name} - ${finMonthLabel(key)}`);
+  document.getElementById('print').onclick = () => printAs(`Livro caixa - ${state.church.name} - ${finMonthLabel(key)}`);
 }
 
 // ---------------------------------------------------------------------
@@ -8364,7 +8364,7 @@ const NOTIF_GROUPS = {
   devocional: { label: 'Devocional', icon: 'book', kinds: ['devocional', 'leitura'], on: () => featureOn('devocional') },
   datas: { label: 'Datas', icon: 'cake', kinds: ['aniversario', 'casamento', 'batismo', 'resumo_lideres'], on: () => datesOn() },
   visitantes: { label: 'Visitantes', icon: 'user', kinds: ['visitante'], on: () => visitorTeam() },
-  financeiro: { label: 'Prestação de contas', icon: 'wallet', kinds: ['financeiro'], on: () => featureOn('financeiro') },
+  financeiro: { label: 'Livro caixa', icon: 'wallet', kinds: ['financeiro'], on: () => featureOn('financeiro') },
 };
 const notifGroup = (kind) => Object.keys(NOTIF_GROUPS).find((g) => NOTIF_GROUPS[g].kinds.includes(kind)) || 'sistema';
 const NOTIF_PAGE = 30;

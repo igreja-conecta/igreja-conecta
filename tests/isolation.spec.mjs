@@ -1860,7 +1860,7 @@ test.describe('Apagar conversa (025)', () => {
   });
 });
 
-test.describe('Financeiro e prestação de contas (026)', () => {
+test.describe('Financeiro e livro caixa (026)', () => {
   // Um mês antigo, só dos testes: não mistura com os lançamentos de verdade nem com os testes de tela.
   const MONTH = '2001-01-01';
   const tag = `fin ${Date.now().toString(36)}`;
@@ -1985,7 +1985,7 @@ test.describe('Financeiro e prestação de contas (026)', () => {
     // Fechar de novo dá erro.
     expect((await rpc('adm-a', 'finance_close_month', { p_church: church.a, p_month: MONTH })).ok()).toBe(false);
 
-    // Reaberto (só pela tesouraria): sai da prestação de contas e volta a aceitar mudanças.
+    // Reaberto (só pela tesouraria): sai do livro caixa e volta a aceitar mudanças.
     expect((await rpc('membro-a', 'finance_reopen_month', { p_church: church.a, p_month: MONTH })).ok()).toBe(false);
     expect((await rpc('adm-a', 'finance_reopen_month', { p_church: church.a, p_month: MONTH })).ok()).toBe(true);
     expect((await report('membro-a')).ok()).toBe(false);
