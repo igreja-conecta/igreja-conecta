@@ -815,7 +815,26 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
   .acc-foot { display: block; margin-top: 6mm; color: var(--muted); font-size: 8pt; text-align: center; }
 }
 
-/* Folha para imprimir das outras telas (aniversariantes, relatórios): na tela, só o cabeçalho com a logo. */
+/* Folha para imprimir das outras telas (aniversariantes, relatórios): prévia na tela, como vai sair no papel. */
+.sheet { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 18px; box-shadow: var(--shadow); }
+.sheet-actions { margin-top: 16px; text-align: center; }
+.sheet .report-section { margin-top: 18px; }
+.sheet .report-section h2 { margin: 0; font-size: 1.1rem; }
+.sheet .bar-chart details { display: none; }
+.sheet-bdays { display: grid; grid-template-columns: 1fr; column-gap: 24px; }
+@media (min-width: 560px) { .sheet-bdays { grid-template-columns: 1fr 1fr; } }
+.sheet-bday { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); break-inside: avoid; }
+.sheet-bday-date { flex: none; width: 2.6em; display: flex; flex-direction: column; align-items: center; color: var(--link); }
+.sheet-bday-date strong { font-size: 1.3rem; line-height: 1.1; }
+.sheet-bday-date small { color: var(--muted); font-size: .72rem; }
+.sheet-bday ul { margin: 0; padding: 0; list-style: none; }
+.sheet-bday li { padding: 1px 0; }
+.sheet-bday li small { display: block; color: var(--muted); font-size: .78rem; }
+.sheet-signs { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 40px; }
+.sheet-signs > div { display: flex; flex-direction: column; align-items: center; font-weight: 600; font-size: .85rem; text-align: center; }
+.sheet-line { width: 100%; margin-bottom: 4px; border-top: 1px solid var(--ink); }
+.sheet-signs small { margin-top: 8px; color: var(--muted); font-weight: 400; }
+.sheet-foot { margin-top: 18px; color: var(--muted); font-size: .74rem; text-align: center; }
 .sheet-head { display: flex; align-items: center; gap: 14px; padding-bottom: 12px; margin-bottom: 14px; border-bottom: 3px solid var(--brand); }
 .sheet-logo { flex: none; width: 56px; height: 56px; border-radius: 12px; object-fit: contain; background: #fff; }
 .sheet-church { margin: 0; color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
@@ -823,18 +842,20 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 .sheet-head h1 span { display: block; color: var(--link); }
 .sheet-head h1 span::first-letter { text-transform: uppercase; }
 .sheet-sub { margin: 0; color: var(--muted); font-size: .82rem; }
-.sheet-signs, .sheet-foot { display: none; }
 
 @page folha { size: A4; margin: 14mm 16mm; }
 @media print {
-  .page.sheet { page: folha; padding: 0; font-size: 10pt; }
+  .sheet-page { padding: 0; }
+  .sheet { page: folha; border: 0; border-radius: 0; box-shadow: none; padding: 0; font-size: 10pt; }
   .sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .sheet-head { padding-bottom: 3mm; margin-bottom: 4mm; }
   .sheet-head h1 { font-size: 16pt; }
-  .sheet .bar-chart details { display: none; }
+  .sheet-bdays { grid-template-columns: 1fr 1fr; column-gap: 10mm; }
+  .sheet-bday { padding: 1.5mm 0; }
+  .sheet-bday-date strong { font-size: 14pt; }
   /* Seção grande pode continuar na outra página; quebra só entre gráficos, quadros e tabelas. */
   .sheet .report-section { break-inside: auto; margin: 0 0 4mm; padding: 4mm; border-radius: 3mm; }
-  .sheet .report-head, .sheet .report-section h3 { break-after: avoid; }
+  .sheet .report-section h2, .sheet .report-section h3 { break-after: avoid; }
   .sheet .stat-grid, .sheet .bar-chart, .sheet .hbar-row, .sheet .preview-table tr { break-inside: avoid; }
   .sheet .stat-grid { margin: 2mm 0; }
   .sheet .bar-chart { margin: 3mm 0 1mm; }
@@ -843,10 +864,8 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
   .sheet .preview-table { font-size: 8.5pt; }
   .sheet .preview-table th, .sheet .preview-table td { white-space: normal; padding: 1.5mm 2mm; }
   .sheet-end { break-inside: avoid; }
-  .sheet .bday-day { break-inside: avoid; }
-  .sheet-signs { display: grid; grid-template-columns: 1fr 1fr; gap: 14mm; margin-top: 14mm; break-inside: avoid; }
-  .sheet-signs > div { display: flex; flex-direction: column; align-items: center; font-weight: 600; }
-  .sheet-line { width: 100%; margin-bottom: 4px; border-top: 1px solid #000; }
-  .sheet-signs small { margin-top: 8px; color: var(--muted); font-weight: 400; }
-  .sheet-foot { display: block; margin-top: 6mm; color: var(--muted); font-size: 8pt; text-align: center; }
+  .sheet-signs { gap: 14mm; margin-top: 14mm; }
+  .sheet-signs > div { font-size: 10pt; }
+  .sheet-line { border-top-color: #000; }
+  .sheet-foot { margin-top: 6mm; font-size: 8pt; }
 }

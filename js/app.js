@@ -371,6 +371,23 @@ function printAs(fileTitle) {
   window.addEventListener('afterprint', () => (document.title = title), { once: true });
   window.print();
 }
+// Prévia na tela: a folha como vai sair no papel e, embaixo, o botão de imprimir.
+function drawSheet({ back, backText, title, accent, sub, body, signs, file }) {
+  $view.innerHTML = `
+    <div class="page sheet-page">
+      <a href="${back}" class="back no-print">← ${esc(backText)}</a>
+      <article class="sheet">
+        ${sheetHead(title, accent, sub)}
+        ${body}
+        <div class="sheet-end">${signs ? sheetSigns(signs) : ''}${sheetFoot()}</div>
+      </article>
+      <div class="sheet-actions no-print">
+        <button type="button" class="btn primary big" id="print">${icon.print} Imprimir ou salvar PDF</button>
+        <p class="hint">Sai numa folha A4. No celular, escolha <strong>Salvar como PDF</strong> para mandar no grupo da igreja.</p>
+      </div>
+    </div>`;
+  document.getElementById('print').onclick = () => printAs(file);
+}
 
 const navigate = (path) => {
   if (location.hash === `#${path}`) render();
@@ -632,6 +649,7 @@ const churchRoutes = [
   [/^\/meus-dados$/, viewMyData],
   [/^\/ajuda$/, viewHelp],
   [/^\/aniversariantes$/, viewBirthdays],
+  [/^\/aniversariantes\/imprimir$/, viewBirthdaysSheet],
   [/^\/config\/(aniversario|casamento|batismo)$/, viewMessageSettings],
   [/^\/notificacoes$/, viewNotifications],
   [/^\/agenda$/, viewAgenda],
@@ -678,6 +696,7 @@ const churchRoutes = [
   [/^\/chat\/nova$/, viewChatNew],
   [/^\/chat\/([0-9a-f-]{36})$/, viewConversation],
   [/^\/relatorios$/, viewReports],
+  [/^\/relatorios\/imprimir$/, viewReportSheet],
   [/^\/financeiro$/, viewFinance],
   [/^\/financeiro\/novo$/, viewFinanceEntry],
   [/^\/financeiro\/config$/, viewFinanceConfig],
@@ -6219,6 +6238,27 @@ async function viewReports(ctx) {
   await screenShow(ctx, `relatorio:${p.key}`, () => loadReport(p), (r) => drawReport(p, r));
 }
 
+// Folha do relatório para imprimir: mesmo guardado da tela, sem os botões de planilha.
+async function viewReportSheet(ctx) {
+  if (!requireMemberFeature('/relatorios', 'relatorios')) return;
+  if (!isLeaderRole(myRole())) return navigate('/');
+  const p = reportPeriod(ctx.params.get('periodo') || '3');
+  await screenShow(ctx, `relatorio:${p.key}`, () => loadReport(p), (r) =>
+    drawSheet({
+      back: `#/relatorios?periodo=${p.key}`,
+      backText: 'Relatórios',
+      title: 'Relatórios',
+      accent: p.label,
+      sub: `${fmtDate(p.from)} a ${fmtDate(p.to)}`,
+      body: Object.values(reportSections(r))
+        .map((s) => `<section class="report-section"><h2>${esc(s.title)}</h2>${s.html}</section>`)
+        .join(''),
+      signs: ['Secretaria', 'Pastor(a) responsável'],
+      file: `Relatório - ${state.church.name} - ${p.label}`,
+    }),
+  );
+}
+
 const monthLabel = (ym, withYear) => {
   const [y, m] = ym.split('-').map(Number);
   return `${MONTHS_SHORT[m - 1]}${withYear ? `/${String(y).slice(2)}` : ''}`;
@@ -6272,11 +6312,11 @@ const reportTable = (head, rows) =>
     .map((r) => `<tr>${r.map((c) => `<td>${esc(c == null ? '—' : String(c))}</td>`).join('')}</tr>`)
     .join('')}</table></div>`;
 
-function drawReport(p, r) {
+// Seções do relatório (na tela e na folha para imprimir): html e linhas da planilha.
+function reportSections(r) {
   const m = r.membros;
   const years = new Set(m.novos_por_mes.map((x) => x.mes.slice(0, 4))).size > 1;
   const months = (list) => list.map((x) => ({ label: monthLabel(x.mes, years), value: x.total }));
-  const thisYear = new Date().getFullYear();
   const sections = {};
 
   sections.membros = {
@@ -6403,17 +6443,23 @@ function drawReport(p, r) {
     };
   }
   sections.membros.title = 'Membros';
+  return sections;
+}
 
+function drawReport(p, r) {
+  const thisYear = new Date().getFullYear();
+  const sections = reportSections(r);
   $view.innerHTML = `
-    <div class="page report sheet">
-      ${sheetHead('Relatórios', p.label, `${fmtDate(p.from)} a ${fmtDate(p.to)}`)}
+    <div class="page report">
+      <h1>Relatórios</h1>
       <div class="chips filters no-print">
         ${REPORT_PERIODS.map(([k, label]) => `<a class="chip ${p.key === k ? 'active' : ''}" href="#/relatorios?periodo=${k}">${label}</a>`).join('')}
         ${[thisYear, thisYear - 1].map((y) => `<a class="chip ${p.key === String(y) ? 'active' : ''}" href="#/relatorios?periodo=${y}">${y}</a>`).join('')}
       </div>
-      <div class="actions-row no-print">
+      <p class="hint">${esc(p.label)}: ${esc(fmtDate(p.from))} a ${esc(fmtDate(p.to))}.</p>
+      <div class="actions-row">
         <button class="btn" id="members-csv">${icon.users} Lista de membros completa</button>
-        <button class="btn" id="print">${icon.print} Imprimir ou salvar PDF</button>
+        <a class="btn" href="#/relatorios/imprimir?periodo=${p.key}">${icon.print} Imprimir ou salvar PDF</a>
       </div>
       ${Object.entries(sections)
         .map(
@@ -6424,7 +6470,6 @@ function drawReport(p, r) {
         </section>`,
         )
         .join('')}
-      <div class="sheet-end">${sheetSigns(['Secretaria', 'Pastor(a) responsável'])}${sheetFoot()}</div>
     </div>`;
 
   const cell = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
@@ -6432,7 +6477,6 @@ function drawReport(p, r) {
   $view.querySelectorAll('[data-csv]').forEach((b) => {
     b.onclick = () => downloadFile(`relatorio-${b.dataset.csv}-${p.from}-a-${p.to}.csv`, toCsv(sections[b.dataset.csv].csv), 'text/csv;charset=utf-8');
   });
-  document.getElementById('print').onclick = () => printAs(`Relatório - ${state.church.name} - ${p.label}`);
   const membersBtn = document.getElementById('members-csv');
   membersBtn.onclick = async () => {
     membersBtn.disabled = true;
@@ -8212,22 +8256,53 @@ function weekBirthdaysCard(el, changed) {
   });
 }
 
-async function viewBirthdays(ctx) {
-  if (!requireLogin('/aniversariantes')) return;
-  if (!isActiveMember()) return navigate('/');
+// Mês pedido (?mes=AAAA-MM, ou o atual) e a busca das datas dele.
+function birthdayMonth(ctx) {
   const now = new Date();
   const [y, m] = (ctx.params.get('mes') || '').match(/^\d{4}-\d{2}$/)
     ? ctx.params.get('mes').split('-').map(Number)
     : [now.getFullYear(), now.getMonth() + 1];
-  const first = new Date(y, m - 1, 1);
-  const last = new Date(y, m, 0);
-  await screenShowWithPhotos(
-    ctx,
-    `mes:${y}-${m}`,
-    () => fetchBirthdays(isoLocal(first), isoLocal(last)),
-    (rows) => rows.map((r) => r.photo_path),
-    (rows, minis) => drawBirthdays(rows, minis, y, m),
-  );
+  const load = () => fetchBirthdays(isoLocal(new Date(y, m - 1, 1)), isoLocal(new Date(y, m, 0)));
+  return { y, m, key: `${y}-${String(m).padStart(2, '0')}`, load };
+}
+
+async function viewBirthdays(ctx) {
+  if (!requireLogin('/aniversariantes')) return;
+  if (!isActiveMember()) return navigate('/');
+  const { y, m, load } = birthdayMonth(ctx);
+  await screenShowWithPhotos(ctx, `mes:${y}-${m}`, load, (rows) => rows.map((r) => r.photo_path), (rows, minis) => drawBirthdays(rows, minis, y, m));
+}
+
+// Folha do mês para imprimir (mural da igreja): só nomes, sem fotos; mesmo guardado da lista.
+async function viewBirthdaysSheet(ctx) {
+  if (!requireLogin('/aniversariantes')) return;
+  if (!isActiveMember()) return navigate('/');
+  const { y, m, key, load } = birthdayMonth(ctx);
+  await screenShow(ctx, `mes:${y}-${m}`, load, (rows) => {
+    const byDay = new Map();
+    for (const r of rows) {
+      if (!byDay.has(r.on_date)) byDay.set(r.on_date, []);
+      byDay.get(r.on_date).push(r);
+    }
+    drawSheet({
+      back: `#/aniversariantes?mes=${key}`,
+      backText: 'Aniversariantes',
+      title: 'Aniversariantes de',
+      accent: `${MONTHS[m - 1]} de ${y}`,
+      body: rows.length
+        ? `<div class="sheet-bdays">${[...byDay]
+            .map(
+              ([iso, list]) => `
+          <div class="sheet-bday">
+            <span class="sheet-bday-date"><strong>${parseIso(iso).getDate()}</strong><small>${parseIso(iso).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')}</small></span>
+            <ul>${list.map((r) => `<li><strong>${esc(r.name)}</strong>${celebrationNote(r) ? `<small>${celebrationNote(r)}</small>` : ''}</li>`).join('')}</ul>
+          </div>`,
+            )
+            .join('')}</div>`
+        : `<p class="hint">Nenhum aniversariante em ${MONTHS[m - 1]}.</p>`,
+      file: `Aniversariantes - ${state.church.name} - ${MONTHS[m - 1]} de ${y}`,
+    });
+  });
 }
 
 function drawBirthdays(rows, minis, y, m) {
@@ -8242,14 +8317,13 @@ function drawBirthdays(rows, minis, y, m) {
   const todayIso = isoLocal(now);
 
   $view.innerHTML = `
-    <div class="page birthdays-page sheet">
-      ${sheetHead('Aniversariantes de', `${MONTHS[m - 1]} de ${y}`)}
-      <nav class="month-nav no-print" aria-label="Mês">
+    <div class="page birthdays-page">
+      <div class="month-nav">
         <a class="btn small" href="#/aniversariantes?mes=${month(new Date(y, m - 2, 1))}" aria-label="Mês anterior">‹</a>
-        <strong>${MONTHS[m - 1]} de ${y}</strong>
+        <h1>Aniversariantes de ${MONTHS[m - 1]}</h1>
         <a class="btn small" href="#/aniversariantes?mes=${month(new Date(y, m, 1))}" aria-label="Próximo mês">›</a>
-      </nav>
-      <p class="hint no-print">${
+      </div>
+      <p class="hint">${
         leader
           ? `${rows.length} ${rows.length === 1 ? 'data' : 'datas'}. Como liderança, você vê todos os membros ativos.`
           : `Aparecem só os membros que autorizaram mostrar o aniversário${featureOn('datas_especiais') ? ', o casamento ou o batismo' : ''}.`
@@ -8275,10 +8349,8 @@ function drawBirthdays(rows, minis, y, m) {
               .join('')}</div>`
           : `<div class="empty"><p>Nenhum aniversariante em ${MONTHS[m - 1]}.</p></div>`
       }
-      ${sheetFoot()}
-      <button class="fab no-print" id="print" aria-label="Imprimir ou salvar PDF" title="Imprimir ou salvar PDF">${icon.print}</button>
+      <a class="fab" id="print" href="#/aniversariantes/imprimir?mes=${month(new Date(y, m - 1, 1))}" aria-label="Imprimir ou salvar PDF" title="Imprimir ou salvar PDF">${icon.print}</a>
     </div>`;
-  document.getElementById('print').onclick = () => printAs(`Aniversariantes - ${state.church.name} - ${MONTHS[m - 1]} de ${y}`);
 }
 
 // Grupos da central: cada um com ícone, cor (css .k-<grupo>) e os tipos que reúne.

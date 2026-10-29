@@ -10,7 +10,12 @@ Feita na Prestação de contas (PR #68, `drawAccountabilityMonth` em `js/app.js`
 pronta para assinar ou mandar no grupo. Não precisa de biblioteca de PDF: o próprio navegador gera
 (no celular, **Salvar como PDF** na tela de impressão).
 
-Copie a estrutura de lá, trocando o prefixo `acc-` pelo da tela nova (ex.: `esc-` para escalas).
+**Pedido do usuário: a folha aparece primeiro na tela (prévia), e só depois imprime.** O botão de
+imprimir de uma lista não chama `window.print()` direto: é um link para uma rota `…/imprimir` que
+mostra a folha num cartão, com "← Voltar" e, embaixo, **Imprimir ou salvar PDF**. Na tela nova, use a
+peça pronta `drawSheet({ back, backText, title, accent, sub, body, signs, file })` em `js/app.js`
+(Aniversariantes: `viewBirthdaysSheet`; Relatórios: `viewReportSheet`), com o **mesmo nome de
+guardado** da lista, para a prévia abrir na hora. As seções 1 a 3 abaixo explicam o que ela já faz.
 
 ## 1. HTML da tela
 
@@ -132,11 +137,12 @@ só, quando o conteúdo cabe). Depois de publicar, peça ao usuário para testar
 
 ## Peças prontas em js/app.js
 
-Aniversariantes e Relatórios já usam as peças comuns: `sheetHead(título, destaque, linha)`,
-`sheetSigns([funções])`, `sheetFoot()` e `printAs(nome do PDF)`, com a página
-`<div class="page sheet">` e o CSS `.sheet-*` (bloco "Folha para imprimir das outras telas" em
-css/style.css). Numa tela nova, use essas peças em vez de copiar o prefixo `acc-` (a Prestação de
-contas ficou com o CSS próprio).
+Aniversariantes e Relatórios usam `drawSheet`, que junta as peças comuns `sheetHead(título, destaque,
+linha)`, `sheetSigns([funções])`, `sheetFoot()` e `printAs(nome do PDF)`: página
+`<div class="page sheet-page">`, folha `<article class="sheet">` e o CSS `.sheet-*` (bloco "Folha para
+imprimir das outras telas" em css/style.css). Na prévia, assinaturas e rodapé aparecem também na tela.
+Numa tela nova, use `drawSheet` em vez de copiar o prefixo `acc-` (a Prestação de contas ficou com o
+CSS próprio).
 
 ## Telas que ainda imprimem com o layout simples (candidatas)
 
