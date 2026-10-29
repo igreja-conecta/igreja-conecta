@@ -105,6 +105,11 @@ Os detalhes que custaram tentativas:
   segurança da página (CSP); script embutido não é. Mostre também o número ou a porcentagem, para ler
   em preto e branco.
 - Use `@page` com nome (`page: xx`) para a margem valer só nesta folha e não mudar as outras impressões.
+- **Folha de várias páginas** (Relatórios): `break-inside: avoid` numa seção inteira empurra a seção
+  para a página seguinte e deixa a primeira só com o cabeçalho. Deixe a seção quebrar
+  (`break-inside: auto`) e proteja só as peças de dentro (quadros, gráficos, linhas de tabela), com
+  `break-after: avoid` nos títulos. Assinaturas e rodapé num invólucro com `break-inside: avoid`,
+  senão o rodapé fica sozinho na última página. Tabelas largas: `white-space: normal` e fonte menor.
 
 ## 4. Teste
 
@@ -121,10 +126,19 @@ await page.emulateMedia({ media: 'screen' });
 
 Antes de abrir o PR, confira com os olhos: um script de Playwright no scratchpad que abre a tela,
 tira foto no tema claro e no escuro (360 px) e gera `page.pdf({ format: 'A4', preferCSSPageSize: true })`.
-Confira no PDF que saiu **uma página**, clara, com logo, assinaturas e rodapé. Depois de publicar, peça
-ao usuário para testar no celular em **Imprimir ou salvar PDF** (na igreja de testes dele, o Vineyard).
+Confira no PDF que saiu clara, com logo, assinaturas e rodapé, e sem página quase vazia (uma página
+só, quando o conteúdo cabe). Depois de publicar, peça ao usuário para testar no celular em
+**Imprimir ou salvar PDF** (na igreja de testes dele, o Vineyard).
 
-## Telas que já imprimem com o layout simples (candidatas)
+## Peças prontas em js/app.js
 
-Aniversariantes do mês, Relatórios, QR Code de visitantes e etiqueta do Infantil usam só
-`window.print()`. Só aplique esta folha quando o usuário pedir.
+Aniversariantes e Relatórios já usam as peças comuns: `sheetHead(título, destaque, linha)`,
+`sheetSigns([funções])`, `sheetFoot()` e `printAs(nome do PDF)`, com a página
+`<div class="page sheet">` e o CSS `.sheet-*` (bloco "Folha para imprimir das outras telas" em
+css/style.css). Numa tela nova, use essas peças em vez de copiar o prefixo `acc-` (a Prestação de
+contas ficou com o CSS próprio).
+
+## Telas que ainda imprimem com o layout simples (candidatas)
+
+QR Code de visitantes e etiqueta do Infantil usam só `window.print()`, com layout próprio (telão e
+etiqueta). Só aplique esta folha quando o usuário pedir.

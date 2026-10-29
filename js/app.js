@@ -350,6 +350,28 @@ const fabMenu = (label, items) => `
     <div class="fab-options">${items.map(([href, text]) => `<a class="btn" href="${href}">${esc(text)}</a>`).join('')}</div>
   </details>`;
 
+// Folha para imprimir ou salvar PDF (skill folha-para-imprimir): logo e nome da igreja no topo;
+// assinaturas e rodapé só aparecem no papel.
+const sheetHead = (title, accent, sub = '') => `
+  <header class="sheet-head">
+    ${state.church.logo_url ? `<img class="sheet-logo" src="${esc(state.church.logo_url)}" alt="" width="56" height="56">` : ''}
+    <div>
+      <p class="sheet-church">${esc(state.church.name)}</p>
+      <h1>${esc(title)} <span>${esc(accent)}</span></h1>
+      ${sub ? `<p class="sheet-sub">${esc(sub)}</p>` : ''}
+    </div>
+  </header>`;
+const sheetSigns = (roles) =>
+  `<div class="sheet-signs">${roles.map((r) => `<div><span class="sheet-line"></span>${esc(r)}<small>Data: ____/____/________</small></div>`).join('')}</div>`;
+const sheetFoot = () => `<footer class="sheet-foot">Gerado pelo app da ${esc(state.church.name)} em ${esc(new Date().toLocaleDateString('pt-BR'))}.</footer>`;
+// O título da página vira o nome do PDF salvo.
+function printAs(fileTitle) {
+  const title = document.title;
+  document.title = fileTitle;
+  window.addEventListener('afterprint', () => (document.title = title), { once: true });
+  window.print();
+}
+
 const navigate = (path) => {
   if (location.hash === `#${path}`) render();
   else location.hash = path;
@@ -6383,16 +6405,15 @@ function drawReport(p, r) {
   sections.membros.title = 'Membros';
 
   $view.innerHTML = `
-    <div class="page report">
-      <h1>Relatórios</h1>
+    <div class="page report sheet">
+      ${sheetHead('Relatórios', p.label, `${fmtDate(p.from)} a ${fmtDate(p.to)}`)}
       <div class="chips filters no-print">
         ${REPORT_PERIODS.map(([k, label]) => `<a class="chip ${p.key === k ? 'active' : ''}" href="#/relatorios?periodo=${k}">${label}</a>`).join('')}
         ${[thisYear, thisYear - 1].map((y) => `<a class="chip ${p.key === String(y) ? 'active' : ''}" href="#/relatorios?periodo=${y}">${y}</a>`).join('')}
       </div>
-      <p class="hint">${esc(p.label)}: ${esc(fmtDate(p.from))} a ${esc(fmtDate(p.to))}.</p>
       <div class="actions-row no-print">
         <button class="btn" id="members-csv">${icon.users} Lista de membros completa</button>
-        <button class="btn" id="print">${icon.print} Imprimir</button>
+        <button class="btn" id="print">${icon.print} Imprimir ou salvar PDF</button>
       </div>
       ${Object.entries(sections)
         .map(
@@ -6403,6 +6424,7 @@ function drawReport(p, r) {
         </section>`,
         )
         .join('')}
+      <div class="sheet-end">${sheetSigns(['Secretaria', 'Pastor(a) responsável'])}${sheetFoot()}</div>
     </div>`;
 
   const cell = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
@@ -6410,7 +6432,7 @@ function drawReport(p, r) {
   $view.querySelectorAll('[data-csv]').forEach((b) => {
     b.onclick = () => downloadFile(`relatorio-${b.dataset.csv}-${p.from}-a-${p.to}.csv`, toCsv(sections[b.dataset.csv].csv), 'text/csv;charset=utf-8');
   });
-  document.getElementById('print').onclick = () => window.print();
+  document.getElementById('print').onclick = () => printAs(`Relatório - ${state.church.name} - ${p.label}`);
   const membersBtn = document.getElementById('members-csv');
   membersBtn.onclick = async () => {
     membersBtn.disabled = true;
@@ -7192,13 +7214,7 @@ function drawAccountabilityMonth(key, r) {
         <p class="hint">Sai numa folha A4, com espaço para as assinaturas. No celular, escolha <strong>Salvar como PDF</strong> para mandar no grupo da igreja.</p>
       </div>
     </div>`;
-  // O título da página vira o nome do PDF salvo.
-  document.getElementById('print').onclick = () => {
-    const title = document.title;
-    document.title = `Prestação de contas - ${state.church.name} - ${finMonthLabel(key)}`;
-    window.addEventListener('afterprint', () => (document.title = title), { once: true });
-    window.print();
-  };
+  document.getElementById('print').onclick = () => printAs(`Prestação de contas - ${state.church.name} - ${finMonthLabel(key)}`);
 }
 
 // ---------------------------------------------------------------------
@@ -8211,14 +8227,14 @@ function drawBirthdays(rows, minis, y, m) {
   const todayIso = isoLocal(now);
 
   $view.innerHTML = `
-    <div class="page birthdays-page">
-      <div class="month-nav no-print">
+    <div class="page birthdays-page sheet">
+      ${sheetHead('Aniversariantes de', `${MONTHS[m - 1]} de ${y}`)}
+      <nav class="month-nav no-print" aria-label="Mês">
         <a class="btn small" href="#/aniversariantes?mes=${month(new Date(y, m - 2, 1))}" aria-label="Mês anterior">‹</a>
-        <h1>Aniversariantes de ${MONTHS[m - 1]}</h1>
+        <strong>${MONTHS[m - 1]} de ${y}</strong>
         <a class="btn small" href="#/aniversariantes?mes=${month(new Date(y, m, 1))}" aria-label="Próximo mês">›</a>
-      </div>
-      <h1 class="print-only">${esc(state.church.name)}: aniversariantes de ${MONTHS[m - 1]} de ${y}</h1>
-      <p class="hint">${
+      </nav>
+      <p class="hint no-print">${
         leader
           ? `${rows.length} ${rows.length === 1 ? 'data' : 'datas'}. Como liderança, você vê todos os membros ativos.`
           : `Aparecem só os membros que autorizaram mostrar o aniversário${featureOn('datas_especiais') ? ', o casamento ou o batismo' : ''}.`
@@ -8244,9 +8260,10 @@ function drawBirthdays(rows, minis, y, m) {
               .join('')}</div>`
           : `<div class="empty"><p>Nenhum aniversariante em ${MONTHS[m - 1]}.</p></div>`
       }
-      <button class="fab no-print" id="print" aria-label="Imprimir" title="Imprimir">${icon.print}</button>
+      ${sheetFoot()}
+      <button class="fab no-print" id="print" aria-label="Imprimir ou salvar PDF" title="Imprimir ou salvar PDF">${icon.print}</button>
     </div>`;
-  document.getElementById('print').onclick = () => window.print();
+  document.getElementById('print').onclick = () => printAs(`Aniversariantes - ${state.church.name} - ${MONTHS[m - 1]} de ${y}`);
 }
 
 // Grupos da central: cada um com ícone, cor (css .k-<grupo>) e os tipos que reúne.
