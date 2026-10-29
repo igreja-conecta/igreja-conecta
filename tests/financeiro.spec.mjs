@@ -1,6 +1,6 @@
 // Financeiro da tesouraria na igreja Teste A: o administrador lança entrada, saída e transferência,
 // vê os totais, edita e apaga arrastando, com Desfazer; fecha e publica um mês antigo e o membro vê
-// só os totais na Prestação de contas. Quem não é da tesouraria não vê o Financeiro.
+// só os totais no Livro caixa. Quem não é da tesouraria não vê o Financeiro.
 // Os lançamentos do teste levam a marca "UI fin" na descrição e ficam marcados como apagados no fim.
 import { readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
@@ -133,7 +133,7 @@ test('a tesouraria lança, vê os totais, edita e apaga arrastando, com Desfazer
   await expect(page.locator('.fin-config-row', { hasText: 'Dízimos' })).toBeVisible();
 });
 
-test('a tesouraria fecha e publica o mês; o membro vê só os totais; reabrir tira da prestação', async ({ page, browser }) => {
+test('a tesouraria fecha e publica o mês; o membro vê só os totais; reabrir tira do livro caixa', async ({ page, browser }) => {
   await openLoggedIn(page, admin.session, `/i/teste-a/#/financeiro?mes=${MONTH}`);
   await expect(page.locator('.month-nav')).toContainText('março de 2002');
   const add = async (kind, value, category, text) => {
@@ -166,7 +166,7 @@ test('a tesouraria fecha e publica o mês; o membro vê só os totais; reabrir t
   // O membro vê o mês publicado, com os totais por categoria e o recado, sem os lançamentos.
   const member = await (await browser.newContext({ ...test.info().project.use, baseURL: 'http://localhost:4173/' })).newPage();
   await openLoggedIn(member, membro.session, '/i/teste-a/#/menu');
-  await member.getByRole('link', { name: 'Prestação de contas' }).click();
+  await member.getByRole('link', { name: 'Livro caixa' }).click();
   await member.getByRole('link', { name: /março de 2002/ }).click();
   await expect(member.getByRole('heading', { name: /março de 2002/ })).toBeVisible();
   await expect(member.locator('.page')).toContainText(`Recado ${TAG}`);
@@ -184,13 +184,13 @@ test('a tesouraria fecha e publica o mês; o membro vê só os totais; reabrir t
   await expect(member.getByRole('button', { name: 'Imprimir ou salvar PDF' })).toBeHidden();
   await member.emulateMedia({ media: 'screen' });
 
-  // Reaberto: volta a aceitar lançamentos e sai da prestação de contas.
+  // Reaberto: volta a aceitar lançamentos e sai do livro caixa.
   await page.getByRole('button', { name: 'Reabrir o mês' }).click();
   await answer(page);
   await expect(page.locator('#toast')).toContainText('Mês reaberto.');
   await expect(page.getByLabel('Adicionar lançamentos')).toBeVisible();
   await member.reload();
-  await expect(member.getByRole('heading', { name: 'Prestação de contas não publicada' })).toBeVisible();
+  await expect(member.getByRole('heading', { name: 'Livro caixa não publicado' })).toBeVisible();
   await member.context().close();
 });
 
