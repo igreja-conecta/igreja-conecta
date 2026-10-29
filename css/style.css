@@ -48,7 +48,8 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html, body { margin: 0; }
+/* Sem "puxar para atualizar" (Android) nem efeito elástico (iPhone): no topo ou no fim, a tela para. */
+html, body { margin: 0; overscroll-behavior: none; }
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
@@ -234,6 +235,8 @@ body.has-tabbar .install-banner { bottom: calc(var(--tabbar-h) + 10px + env(safe
 .modal-backdrop { position: fixed; inset: 0; z-index: 40; background: rgb(0 0 0 / .45); display: grid; place-items: end center; padding: 16px; }
 .modal { width: 100%; max-width: 440px; background: var(--surface); border-radius: var(--radius); padding: 20px; }
 .modal h2 { margin-top: 0; }
+/* Janelas que rolam por dentro: o puxão para nelas e não passa para a página. */
+.modal-backdrop, .modal, dialog.ask, .map-modal { overscroll-behavior: contain; }
 .modal li { margin: .5em 0; }
 svg.inline { vertical-align: -3px; }
 

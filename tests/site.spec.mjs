@@ -50,6 +50,15 @@ test('limite de envio de e-mails aparece em português', async ({ page }) => {
   await expect(page.locator('#toast')).toContainText('Muitos pedidos de link de acesso');
 });
 
+test('não dá para puxar a tela para atualizar (nem efeito elástico)', async ({ page }) => {
+  await page.goto('/i/teste-a/');
+  await expect(page.locator('.church-hero h1')).toHaveText('Igreja Teste A');
+  // O WebKit dos testes não conhece a regra (o Safari do iPhone conhece desde o iOS 16).
+  test.skip(!(await page.evaluate(() => CSS.supports('overscroll-behavior', 'none'))), 'navegador de teste sem overscroll-behavior');
+  const pull = await page.evaluate(() => [document.documentElement, document.body].map((el) => getComputedStyle(el).overscrollBehaviorY));
+  expect(pull).toEqual(['none', 'none']);
+});
+
 test('igreja que não existe', async ({ page }) => {
   await page.goto('/i/nao-existe-esta/');
   await expect(page.getByRole('heading', { name: 'Igreja não encontrada' })).toBeVisible();
