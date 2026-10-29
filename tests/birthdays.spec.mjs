@@ -38,6 +38,15 @@ test('a liderança vê todos, com a idade, e pode imprimir', async ({ page }) =>
   // Imprimir fica no botão redondo (com o ícone da impressora, não o "+").
   await expect(page.getByRole('button', { name: 'Imprimir' })).toBeVisible();
   await expect(page.locator('.fab#print')).toBeVisible();
+  await expect(page.locator('.sheet-church')).toHaveText('Igreja Teste A');
+  // Na impressão: o rodapé aparece (sem assinaturas); a troca de mês e o botão somem.
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.getByRole('heading', { name: 'Aniversariantes de abril de 2027' })).toBeVisible();
+  await expect(page.locator('.sheet-foot')).toContainText('Gerado pelo app da Igreja Teste A');
+  await expect(page.locator('.sheet-signs')).toHaveCount(0);
+  await expect(page.locator('.month-nav')).toBeHidden();
+  await expect(page.locator('.fab#print')).toBeHidden();
+  await page.emulateMedia({ media: 'screen' });
 });
 
 test('o admin vê a prévia da mensagem com os campos trocados', async ({ page }) => {

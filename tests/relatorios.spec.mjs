@@ -33,7 +33,18 @@ test('a liderança vê os relatórios, troca o período e baixa as planilhas', a
   }
 
   await page.getByRole('link', { name: 'Últimos 12 meses' }).click();
-  await expect(page.getByText(/^Últimos 12 meses:/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Relatórios Últimos 12 meses' })).toBeVisible();
+  await expect(page.locator('.sheet-church')).toHaveText('Igreja Teste A');
+
+  // Na impressão: assinaturas e rodapé aparecem; botões e "Ver em tabela" somem.
+  await expect(page.locator('.sheet-signs')).toBeHidden();
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('.sheet-signs')).toContainText('Secretaria');
+  await expect(page.locator('.sheet-signs')).toContainText('Pastor(a) responsável');
+  await expect(page.locator('.sheet-foot')).toContainText('Gerado pelo app da Igreja Teste A');
+  await expect(page.getByRole('button', { name: 'Imprimir ou salvar PDF' })).toBeHidden();
+  await expect(members.getByText('Ver em tabela').first()).toBeHidden();
+  await page.emulateMedia({ media: 'screen' });
 
   const sectionCsv = page.waitForEvent('download');
   await members.getByRole('button', { name: 'Baixar planilha' }).click();
