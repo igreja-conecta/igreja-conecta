@@ -36,17 +36,26 @@ test('a liderança vê todos, com a idade, e pode imprimir', async ({ page }) =>
   await page.getByRole('link', { name: 'Próximo mês' }).click();
   await expect(page.getByRole('heading', { name: 'Aniversariantes de abril' })).toBeVisible();
   // Imprimir fica no botão redondo (com o ícone da impressora, não o "+").
-  await expect(page.getByRole('button', { name: 'Imprimir' })).toBeVisible();
-  await expect(page.locator('.fab#print')).toBeVisible();
-  await expect(page.locator('.sheet-church')).toHaveText('Igreja Teste A');
-  // Na impressão: o rodapé aparece (sem assinaturas); a troca de mês e o botão somem.
-  await page.emulateMedia({ media: 'print' });
+  // O botão mostra primeiro a folha na tela (prévia), com o mês que estava aberto.
+  await page.locator('.fab#print').click();
+  await expect(page).toHaveURL(/#\/aniversariantes\/imprimir\?mes=2027-04$/);
   await expect(page.getByRole('heading', { name: 'Aniversariantes de abril de 2027' })).toBeVisible();
+  await expect(page.locator('.sheet .sheet-church')).toHaveText('Igreja Teste A');
   await expect(page.locator('.sheet-foot')).toContainText('Gerado pelo app da Igreja Teste A');
   await expect(page.locator('.sheet-signs')).toHaveCount(0);
-  await expect(page.locator('.month-nav')).toBeHidden();
-  await expect(page.locator('.fab#print')).toBeHidden();
+  // Na impressão sai só a folha: o voltar e o botão somem.
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('.sheet-foot')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Imprimir ou salvar PDF' })).toBeHidden();
+  await expect(page.getByRole('link', { name: '← Aniversariantes' })).toBeHidden();
   await page.emulateMedia({ media: 'screen' });
+  await page.getByRole('link', { name: '← Aniversariantes' }).click();
+  await expect(page.getByRole('heading', { name: 'Aniversariantes de abril' })).toBeVisible();
+
+  // A folha de março traz as pessoas, sem fotos.
+  await page.evaluate(() => (location.hash = '/aniversariantes/imprimir?mes=2027-03'));
+  await expect(page.locator('.sheet-bday', { hasText: 'Fulano da A' })).toContainText('faz 47 anos');
+  await expect(page.locator('.sheet .avatar')).toHaveCount(0);
 });
 
 test('o admin vê a prévia da mensagem com os campos trocados', async ({ page }) => {

@@ -33,18 +33,28 @@ test('a liderança vê os relatórios, troca o período e baixa as planilhas', a
   }
 
   await page.getByRole('link', { name: 'Últimos 12 meses' }).click();
-  await expect(page.getByRole('heading', { name: 'Relatórios Últimos 12 meses' })).toBeVisible();
-  await expect(page.locator('.sheet-church')).toHaveText('Igreja Teste A');
+  await expect(page.getByText(/^Últimos 12 meses:/)).toBeVisible();
 
-  // Na impressão: assinaturas e rodapé aparecem; botões e "Ver em tabela" somem.
-  await expect(page.locator('.sheet-signs')).toBeHidden();
+  // Imprimir mostra primeiro a folha na tela (prévia), do mesmo período, com as assinaturas.
+  await page.getByRole('link', { name: 'Imprimir ou salvar PDF' }).click();
+  await expect(page).toHaveURL(/#\/relatorios\/imprimir\?periodo=12$/);
+  const sheet = page.locator('.sheet');
+  await expect(sheet.getByRole('heading', { name: 'Relatórios Últimos 12 meses' })).toBeVisible();
+  await expect(sheet.locator('.sheet-church')).toHaveText('Igreja Teste A');
+  await expect(sheet.locator('.stat-tile', { hasText: 'Membros ativos' })).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'Baixar planilha' })).toHaveCount(0);
+  await expect(sheet.locator('.bar-chart details').first()).toBeHidden();
+  await expect(sheet.locator('.sheet-signs')).toContainText('Secretaria');
+  await expect(sheet.locator('.sheet-signs')).toContainText('Pastor(a) responsável');
+  await expect(sheet.locator('.sheet-foot')).toContainText('Gerado pelo app da Igreja Teste A');
+  // Na impressão sai só a folha: o voltar e o botão somem.
   await page.emulateMedia({ media: 'print' });
-  await expect(page.locator('.sheet-signs')).toContainText('Secretaria');
-  await expect(page.locator('.sheet-signs')).toContainText('Pastor(a) responsável');
-  await expect(page.locator('.sheet-foot')).toContainText('Gerado pelo app da Igreja Teste A');
+  await expect(sheet.locator('.sheet-signs')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Imprimir ou salvar PDF' })).toBeHidden();
-  await expect(members.getByText('Ver em tabela').first()).toBeHidden();
+  await expect(page.getByRole('link', { name: '← Relatórios' })).toBeHidden();
   await page.emulateMedia({ media: 'screen' });
+  await page.getByRole('link', { name: '← Relatórios' }).click();
+  await expect(page.getByText(/^Últimos 12 meses:/)).toBeVisible();
 
   const sectionCsv = page.waitForEvent('download');
   await members.getByRole('button', { name: 'Baixar planilha' }).click();
@@ -82,4 +92,7 @@ test('os relatórios abrem na hora, mesmo com o banco demorando', async ({ page 
   await page.locator('#tabbar').getByRole('link', { name: 'Menu' }).click();
   await page.getByRole('link', { name: 'Relatórios' }).click();
   await expect(page.locator('.stat-tile', { hasText: 'Membros ativos' })).toBeVisible({ timeout: 1000 });
+  // A folha para imprimir usa o mesmo guardado: também abre na hora.
+  await page.getByRole('link', { name: 'Imprimir ou salvar PDF' }).click();
+  await expect(page.locator('.sheet .stat-tile', { hasText: 'Membros ativos' })).toBeVisible({ timeout: 1000 });
 });
