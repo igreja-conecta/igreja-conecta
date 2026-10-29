@@ -7674,6 +7674,8 @@ async function viewChats(ctx) {
   if (!requireChat('/chat')) return;
   await screenShowWithPhotos(ctx, 'chat', loadChats, (rows) => rows.map((c) => c.other_photo), (rows, photos) => drawChats(rows, photos));
   refreshChatUnread();
+  // Para o "+" (nova conversa) abrir na hora com a lista de pessoas.
+  if (!screenCached('chat-contatos')) screenFetch('chat-contatos', loadChatContacts).catch(() => {});
 }
 
 function drawChats(rows, photos) {
@@ -7836,10 +7838,23 @@ function drawChatNew(ctx, people, photos) {
     </div>`;
   $view.querySelectorAll('[data-start]').forEach((b) => {
     b.onclick = async () => {
-      b.disabled = true;
-      const { data: id, error } = await sb.rpc('start_conversation', { p_church: state.church.id, p_member: b.dataset.start });
-      b.disabled = false;
-      if (error) return toast(errorText(error), 'error');
+      const p = people.find((x) => x.member_id === b.dataset.start);
+      // Já conversa com a pessoa: abre direto, sem perguntar ao banco.
+      const known = screenCached('chat')?.find((c) => c.other_member_id === p.member_id);
+      if (known) return navigate(`/chat/${known.id}`);
+      // Conversa nova: abre na hora com a pessoa no topo (já dá para digitar); o banco cria a
+      // conversa em segundo plano e só o Enviar e o menu ⋯ esperam por ela.
+      const c = { other_member_id: p.member_id, other_name: p.name, other_photo: p.photo_path, other_role: p.role, unread: false, blocked: false, blocked_by_me: false, can_send: true };
+      drawConversation(ctx, '', { c, messages: [] }, photos);
+      document.querySelector('#chat-form button').disabled = true;
+      document.querySelector('.chat-menu').hidden = true;
+      const { data: id, error } = await sb.rpc('start_conversation', { p_church: state.church.id, p_member: p.member_id });
+      if (!ctx.alive()) return;
+      if (error) {
+        toast(errorText(error), 'error');
+        return drawChatNew(ctx, people, photos);
+      }
+      if (!screenCached(`conversa:${id}`)) screenUpdate(`conversa:${id}`, { c: { ...c, id }, messages: [] });
       navigate(`/chat/${id}`);
     };
   });
@@ -7918,7 +7933,7 @@ function drawConversation(ctx, id, data, photos) {
   // (Sem as que o banco já trouxe gravadas: mesma pessoa, mesmo texto, de lá para cá.)
   const saved = (p) =>
     data.messages.some((m) => m.sender_id === p.sender_id && m.body === p.body && Date.parse(m.created_at) >= Date.parse(p.created_at) - 60000);
-  const pending = chatOpen?.id === id && chatOpen.ctx === ctx ? chatOpen.messages.filter((m) => m.pending && !saved(m)) : [];
+  const pending = id && chatOpen?.id === id ? chatOpen.messages.filter((m) => m.pending && !saved(m)) : [];
   const messages = [...data.messages.filter((m) => !pending.some((p) => p.id === m.id)), ...pending];
   let draft = '';
   try {
@@ -8011,7 +8026,7 @@ function drawConversation(ctx, id, data, photos) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const body = input.value.trim();
-      if (!body) return;
+      if (!body || !id) return; // sem id: conversa nova ainda sendo criada (o Enter espera junto com o botão)
       const temp = { id: `tmp-${Date.now()}`, sender_id: state.user.id, body, created_at: new Date().toISOString(), pending: true };
       const first = !messages.some((m) => m.sender_id === state.user.id);
       messages.push(temp);
@@ -8020,7 +8035,7 @@ function drawConversation(ctx, id, data, photos) {
       paint();
       const { data: saved, error } = await sb.from('messages').insert({ conversation_id: id, body }).select('id, sender_id, body, created_at').single();
       // A tela pode ter sido redesenhada enquanto enviava (o banco respondeu): usa a lista atual.
-      const v = chatOpen?.id === id && chatOpen.ctx === ctx ? chatOpen : { messages, paint, remember };
+      const v = chatOpen?.id === id ? chatOpen : { messages, paint, remember };
       const i = v.messages.findIndex((x) => x.id === temp.id);
       if (error) {
         if (i >= 0) v.messages.splice(i, 1);
@@ -8088,7 +8103,7 @@ window.addEventListener('chat-message', (e) => {
 let chatSyncing = false;
 window.addEventListener('chat-resync', async () => {
   const v = chatOpen;
-  if (!v || !v.ctx.alive() || chatSyncing) return;
+  if (!v?.id || !v.ctx.alive() || chatSyncing) return; // sem id: conversa nova ainda sendo criada
   chatSyncing = true;
   try {
     const last = v.messages.filter((m) => !m.pending).at(-1)?.created_at;

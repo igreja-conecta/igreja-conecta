@@ -123,6 +123,40 @@ test('a lista de conversas e a conversa abrem na hora, mesmo com o banco demoran
   await expect(page.locator('.msg').first()).toBeVisible({ timeout: 1000 });
 });
 
+test('nova conversa: a lista de pessoas e a conversa abrem na hora, mesmo com o banco demorando', async ({ page }) => {
+  // Conversa apagada: some da lista e o toque na pessoa segue o caminho da conversa nova.
+  const h = { headers: as['membro-a'].headers };
+  const [lider] = await (await api.get(rest('members?select=id,church_id&name=eq.Líder da A'), { headers: as['lider-a'].headers })).json();
+  const conv = await (await api.post(rest('rpc/start_conversation'), { ...h, data: { p_church: lider.church_id, p_member: lider.id } })).json();
+  await api.post(rest('rpc/hide_conversation'), { ...h, data: { p_conv: conv } });
+  try {
+    // A lista de conversas já busca, em segundo plano, quem dá para chamar.
+    const contacts = page.waitForResponse((r) => r.url().includes('/rpc/chat_contacts'));
+    await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/chat');
+    await contacts;
+    await page.waitForLoadState('networkidle');
+    await page.route('**/rest/v1/**', async (route) => {
+      await new Promise((r) => setTimeout(r, 4000));
+      await route.continue().catch(() => {});
+    });
+    await page.getByRole('link', { name: 'Falar com a liderança' }).click();
+    const person = page.locator('.chat-person', { hasText: 'Líder da A' });
+    await expect(person).toBeVisible({ timeout: 1000 });
+    await person.click();
+    await expect(page.locator('.chat-head')).toContainText('Líder da A', { timeout: 1000 });
+    // Já dá para digitar; o Enviar espera o banco criar a conversa.
+    await page.getByLabel('Mensagem').fill(`primeira ${tag}`);
+    await expect(page.getByRole('button', { name: 'Enviar' })).toBeDisabled();
+    await expect(page).toHaveURL(new RegExp(`#/chat/${conv}$`), { timeout: 15000 });
+    await page.unroute('**/rest/v1/**');
+    await expect(page.getByLabel('Mensagem')).toHaveValue(`primeira ${tag}`);
+    await page.getByRole('button', { name: 'Enviar' }).click();
+    await expect(page.locator('.msg.mine', { hasText: `primeira ${tag}` })).toContainText(/\d{2}:\d{2}/);
+  } finally {
+    await api.post(rest('rpc/hide_conversation'), { ...h, data: { p_conv: conv, p_hide: false } });
+  }
+});
+
 test('o botão + abre a lista de quem dá para chamar, com busca', async ({ page }) => {
   // A líder vê a liderança e os membros.
   await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/chat');
