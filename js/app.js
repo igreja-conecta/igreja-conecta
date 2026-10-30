@@ -236,6 +236,12 @@ function prefetchScreens() {
         .then((all) => galleryUrls(all.map((a) => a.cover_mini).filter(Boolean)))
         .catch(() => {});
     }
+    if (featureOn('atas')) {
+      // E os links dos PDFs, para a ATA abrir no primeiro toque.
+      screenFetch('atas', loadMinutes)
+        .then((rows) => galleryUrls(minutesPaths(rows), 'atas'))
+        .catch(() => {});
+    }
     if (featureOn('relatorios') && isLeaderRole(myRole())) screenFetch('relatorio:3', () => loadReport(reportPeriod('3'))).catch(() => {});
     const me = myMember();
     screenFetch('perfil', () => loadProfile(me.id))
@@ -456,6 +462,7 @@ const icon = {
   chat: '<svg viewBox="0 0 24 24"><path d="M4 5.5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>',
   wallet: '<svg viewBox="0 0 24 24"><path d="M4 7.5a2 2 0 0 1 2-2h12v3"/><rect x="4" y="8.5" width="16" height="11" rx="2"/><path d="M15.5 14h.01"/></svg>',
   send: '<svg viewBox="0 0 24 24"><path d="m4 12 16-7.5-6 15-2.5-6z"/><path d="m11.5 13.5 8.5-9"/></svg>',
+  file: '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
   book: '<svg viewBox="0 0 24 24"><path d="M5 19.5V5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2 2 2 0 0 0 2 2h12v-4"/><path d="M12 6.5v6M9.5 8.8h5"/></svg>',
 };
 
@@ -704,6 +711,9 @@ const churchRoutes = [
   [/^\/financeiro\/([0-9a-f-]{36})$/, viewFinanceEntry],
   [/^\/prestacao$/, viewAccountability],
   [/^\/prestacao\/(\d{4}-\d{2})$/, viewAccountabilityMonth],
+  [/^\/atas$/, viewMinutes],
+  [/^\/atas\/nova$/, viewMinutesForm],
+  [/^\/atas\/([0-9a-f-]{36})\/editar$/, viewMinutesForm],
   [/^\/galeria$/, viewGallery],
   [/^\/galeria\/novo$/, viewAlbumForm],
   [/^\/galeria\/([0-9a-f-]{36})$/, viewAlbum],
@@ -1182,6 +1192,7 @@ async function viewMenu() {
         ${featureOn('oracao') && isPastoral() ? `<a class="menu-row" href="#/oracao/moderar">${icon.heart}<span>Moderar pedidos de oração</span>${icon.chevron}</a>` : ''}
         ${offerReady() ? `<a class="menu-row" href="#/ofertar">${icon.pix}<span>Dízimos e ofertas</span>${icon.chevron}</a>` : ''}
         ${featureOn('financeiro') ? `<a class="menu-row" href="#/prestacao">${icon.wallet}<span>Livro caixa</span>${icon.chevron}</a>` : ''}
+        ${featureOn('atas') ? `<a class="menu-row" href="#/atas">${icon.file}<span>ATAs das reuniões</span>${icon.chevron}</a>` : ''}
         ${featureOn('chat') ? `<a class="menu-row" href="#/chat">${icon.chat}<span>Conversas${chatUnread ? ` (${chatUnread})` : ''}</span>${icon.chevron}</a>` : ''}
         <a class="menu-row" href="#/notificacoes">${icon.bell}<span>Notificações</span>${icon.chevron}</a>
         ${admin ? messageLinks() : ''}
@@ -1457,6 +1468,16 @@ function helpTopics() {
            <p>Aparecem só os totais: ninguém vê quem deu quanto. Toque em <em>Imprimir</em> para levar ao mural da igreja.</p>`,
         ]]
       : []),
+    ...(features('atas')
+      ? [[
+          'ATAs das reuniões',
+          `<p>Em <a href="#/atas">Menu &gt; ATAs das reuniões</a> ficam as ATAs da igreja, da mais nova para a mais antiga. Toque numa para abrir o PDF (dá para ler, baixar ou compartilhar por ali). Quando sai uma ATA nova, você recebe um aviso. Só quem é da igreja abre as ATAs.</p>${
+             minutesTeam()
+               ? '<p><strong>Se você é administrador ou secretaria:</strong> toque no botão <strong>+</strong>, embaixo à direita, escolha o PDF (até 5 MB), escreva o título e a data da reunião e toque em <em>Enviar ATA</em>. Em <em>Editar</em>, corrija o título ou a data, troque o PDF (sem novo aviso) ou apague a ATA. PDF grande demais? Use "Comprimir PDF" (ex.: no site ilovepdf.com) ou escaneie com qualidade menor.</p>'
+               : ''
+           }`,
+        ]]
+      : []),
     [
       'Meu cadastro e privacidade',
       `<p>Em <a href="#/perfil">Menu &gt; Meu cadastro</a> você corrige o nome, o telefone, a data de nascimento${features('datas_especiais') ? ', as datas de casamento e de batismo' : ''} e a foto, e escolhe se os outros membros veem essas datas e o seu telefone. Para trocar o e-mail, fale com a secretaria.</p>
@@ -1593,7 +1614,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, a galeria de fotos, o chat (e se os membros conversam entre si), o cadastro de visitantes o financeiro com o livro caixa e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, a galeria de fotos, o chat (e se os membros conversam entre si), o cadastro de visitantes, as ATAs das reuniões, o financeiro com o livro caixa e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -7267,41 +7288,42 @@ function drawAccountabilityMonth(key, r) {
 const GALLERY_LIMIT = 300; // o banco confere (gallery_limit)
 const galleryTeam = () => featureOn('galeria') && (isLeaderRole(myRole()) || (isActiveMember() && !!myMember().gallery_team));
 
-// Links das fotos da galeria (válidos por 1 hora), guardados em memória por 50 minutos.
+// Links das pastas privadas (fotos da galeria, PDFs das ATAs), válidos por 1 hora e guardados
+// em memória por 50 minutos.
 const galleryLinks = new Map();
-async function galleryUrls(paths) {
+async function galleryUrls(paths, bucket = 'galeria') {
   const now = Date.now();
   const out = {};
   const missing = [];
   for (const p of paths) {
-    const hit = galleryLinks.get(p);
+    const hit = galleryLinks.get(`${bucket}:${p}`);
     if (hit && hit.until > now) out[p] = hit.url;
     else missing.push(p);
   }
   for (let i = 0; i < missing.length; i += 100) {
-    const { data, error } = await sb.storage.from('galeria').createSignedUrls(missing.slice(i, i + 100), 3600);
+    const { data, error } = await sb.storage.from(bucket).createSignedUrls(missing.slice(i, i + 100), 3600);
     if (error) continue;
     for (const d of data) {
       if (!d.signedUrl) continue;
-      galleryLinks.set(d.path, { url: d.signedUrl, until: now + 50 * 60 * 1000 });
+      galleryLinks.set(`${bucket}:${d.path}`, { url: d.signedUrl, until: now + 50 * 60 * 1000 });
       out[d.path] = d.signedUrl;
     }
   }
   return out;
 }
-const knownGallery = (paths) => {
+const knownGallery = (paths, bucket = 'galeria') => {
   const now = Date.now();
-  return Object.fromEntries(paths.map((p) => [p, galleryLinks.get(p)]).filter(([, h]) => h && h.until > now).map(([p, h]) => [p, h.url]));
+  return Object.fromEntries(paths.map((p) => [p, galleryLinks.get(`${bucket}:${p}`)]).filter(([, h]) => h && h.until > now).map(([p, h]) => [p, h.url]));
 };
 
 // Desenha na hora com os links já conhecidos e de novo quando os que faltam chegam.
-async function showWithGalleryLinks(ctx, name, fetcher, pathsOf, draw) {
-  await screenShow(ctx, name, fetcher, (data) => draw(data, knownGallery(pathsOf(data))));
+async function showWithGalleryLinks(ctx, name, fetcher, pathsOf, draw, bucket = 'galeria') {
+  await screenShow(ctx, name, fetcher, (data) => draw(data, knownGallery(pathsOf(data), bucket)));
   const data = screenCached(name);
   if (!data || !ctx.alive()) return;
   const paths = pathsOf(data);
-  if (paths.every((p) => knownGallery([p])[p])) return;
-  const urls = await galleryUrls(paths).catch(() => ({}));
+  if (paths.every((p) => knownGallery([p], bucket)[p])) return;
+  const urls = await galleryUrls(paths, bucket).catch(() => ({}));
   if (ctx.alive()) draw(data, urls);
 }
 
@@ -7623,6 +7645,182 @@ async function viewAlbumForm(ctx, id) {
     forgetAlbum(id);
     toast('Álbum apagado.');
     navigate('/galeria');
+  });
+}
+
+// ---------------------------------------------------------------------
+// ATAs das reuniões (supabase/028). O administrador e a secretaria enviam o PDF; os membros
+// abrem pelo link temporário da pasta privada "atas". A ATA só aparece aos membros (e eles
+// recebem o aviso) depois que o arquivo chegou: minutes_publish.
+// ---------------------------------------------------------------------
+const MINUTES_MAX = 5 * 1024 * 1024; // o banco confere (pasta "atas")
+const minutesTeam = () => featureOn('atas') && ['admin', 'secretaria'].includes(myRole());
+const minutesPaths = (rows) => rows.filter((r) => r.published_at).map((r) => r.path);
+const fileSize = (bytes) =>
+  bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+async function loadMinutes() {
+  const { data, error } = await sb
+    .from('meeting_minutes')
+    .select('id, title, meeting_date, path, file_size, published_at')
+    .eq('church_id', state.church.id)
+    .order('meeting_date', { ascending: false })
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+async function viewMinutes(ctx) {
+  if (!requireMemberFeature('/atas', 'atas')) return;
+  await showWithGalleryLinks(ctx, 'atas', loadMinutes, minutesPaths, drawMinutes, 'atas');
+}
+
+function minutesRow(r, url, team) {
+  const when = `Reunião de ${fmtDate(r.meeting_date)}`;
+  if (!r.published_at) {
+    return `
+      <a class="menu-row" href="#/atas/${r.id}/editar">
+        ${icon.file}<span><strong>${esc(r.title)}</strong><small>${when} · <span class="tag wait">Envio incompleto</span></small></span>${icon.chevron}
+      </a>`;
+  }
+  const open = url ? `href="${esc(url)}" target="_blank" rel="noopener"` : `href="#/atas" data-pdf="${esc(r.path)}"`;
+  return `
+    <div class="minutes-item">
+      <a class="menu-row" ${open}>
+        ${icon.file}<span><strong>${esc(r.title)}</strong><small>${when}${r.file_size ? ` · PDF ${fileSize(r.file_size)}` : ''}</small></span>${icon.chevron}
+      </a>
+      ${team ? `<a class="btn small" href="#/atas/${r.id}/editar" aria-label="Editar ${esc(r.title)}">Editar</a>` : ''}
+    </div>`;
+}
+
+function drawMinutes(rows, urls) {
+  const team = minutesTeam();
+  const shown = team ? rows : rows.filter((r) => r.published_at);
+  const years = [...new Set(shown.map((r) => r.meeting_date.slice(0, 4)))];
+  $view.innerHTML = `
+    <div class="page">
+      <h1>ATAs</h1>
+      <p class="hint">As ATAs das reuniões da igreja. Toque numa para abrir o PDF.</p>
+      ${
+        shown.length
+          ? years
+              .map(
+                (y) => `
+        <h2>${y}</h2>
+        <div class="list">${shown
+          .filter((r) => r.meeting_date.startsWith(y))
+          .map((r) => minutesRow(r, urls[r.path], team))
+          .join('')}</div>`,
+              )
+              .join('')
+          : `<div class="empty"><p>${team ? 'Nenhuma ATA ainda. Toque no <strong>+</strong> para enviar a primeira.' : 'A igreja ainda não publicou nenhuma ATA.'}</p></div>`
+      }
+      ${team ? fab('#/atas/nova', 'Nova ATA') : ''}
+    </div>`;
+  // Link ainda não chegou: abre a aba já no toque (senão o celular bloqueia) e põe o PDF nela.
+  $view.querySelectorAll('[data-pdf]').forEach((a) =>
+    a.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const tab = window.open('', '_blank');
+      if (tab) tab.opener = null;
+      const path = a.dataset.pdf;
+      const url = (await galleryUrls([path], 'atas').catch(() => ({})))[path];
+      if (!url) {
+        tab?.close();
+        return toast('Não deu para abrir o PDF. Confira sua internet e tente de novo.', 'error');
+      }
+      if (tab) tab.location.href = url;
+      else location.href = url;
+    }),
+  );
+}
+
+// Arquivo escolhido: PDF de verdade (começa com "%PDF-") e dentro do limite.
+async function pdfProblem(file) {
+  if (file.size > MINUTES_MAX)
+    return `O PDF tem ${fileSize(file.size)} e o limite é 5 MB. Diminua o arquivo (ex.: "Comprimir PDF" no site ilovepdf.com) ou escaneie com qualidade menor.`;
+  const head = new Uint8Array(await file.slice(0, 5).arrayBuffer());
+  if (String.fromCharCode(...head) !== '%PDF-') return 'Escolha um arquivo PDF.';
+  return null;
+}
+
+async function viewMinutesForm(ctx, id) {
+  if (!requireMemberFeature(id ? `/atas/${id}/editar` : '/atas/nova', 'atas')) return;
+  if (!minutesTeam()) return navigate('/atas');
+  let a = { title: '', meeting_date: isoLocal(new Date()), published_at: null };
+  if (id) {
+    a = await editItem(
+      ctx,
+      screenCached('atas')?.find((x) => x.id === id),
+      async () => {
+        const { data, error } = await sb.from('meeting_minutes').select('id, title, meeting_date, path, file_size, published_at').eq('id', id).maybeSingle();
+        if (error) throw error;
+        return data;
+      },
+      () => screenForget('atas'),
+    );
+    if (!a) return navigate('/atas');
+  }
+  if (!ctx.alive()) return;
+  const needsFile = !a.published_at;
+  $view.innerHTML = `
+    <form id="minutes" class="form page">
+      <a href="#/atas" class="back">← ATAs</a>
+      <h1>${id ? 'Editar ATA' : 'Nova ATA'}</h1>
+      <label>Título<input name="title" required minlength="2" maxlength="120" value="${esc(a.title)}" placeholder="Reunião ordinária de outubro"></label>
+      <label>Data da reunião<input name="meeting_date" type="date" required value="${esc(a.meeting_date)}"></label>
+      <label>${id && !needsFile ? 'Trocar o PDF (opcional)' : 'Arquivo PDF'}<input name="pdf" type="file" accept="application/pdf,.pdf" ${needsFile ? 'required' : ''}></label>
+      <p class="hint">Só PDF, até 5 MB. ${id ? 'Trocar o PDF não manda aviso de novo.' : 'Os membros recebem um aviso quando a ATA for enviada.'}</p>
+      <button class="btn primary big">${id ? 'Salvar' : 'Enviar ATA'}</button>
+      ${id ? '<button class="btn danger-outline" type="button" id="delete">Apagar a ATA</button>' : ''}
+    </form>`;
+  const form = document.getElementById('minutes');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const file = form.pdf.files[0];
+    const problem = file && (await pdfProblem(file));
+    if (problem) return toast(problem, 'error');
+    const btn = form.querySelector('button.primary');
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = file ? 'Enviando…' : 'Salvando…';
+    const done = (msg, kind) => {
+      btn.disabled = false;
+      btn.textContent = label;
+      if (msg) toast(msg, kind);
+    };
+    const row = { title: form.title.value.trim(), meeting_date: form.meeting_date.value };
+    const { data, error } = id
+      ? await sb.from('meeting_minutes').update(row).eq('id', id).select('id, path').single()
+      : await sb.from('meeting_minutes').insert({ ...row, church_id: state.church.id }).select('id, path').single();
+    if (error) return done(errorText(error), 'error');
+    if (file) {
+      const { error: err } = await sb.storage.from('atas').upload(data.path, file, { contentType: 'application/pdf', upsert: true, cacheControl: '60' });
+      if (err) {
+        if (!id) await sb.from('meeting_minutes').delete().eq('id', data.id);
+        return done(/maximum allowed size|Payload too large/i.test(err.message) ? 'O PDF passa de 5 MB.' : errorText(err), 'error');
+      }
+      const { error: pubErr } = await sb.rpc('minutes_publish', { p_id: data.id });
+      if (pubErr) return done(errorText(pubErr), 'error');
+    }
+    done();
+    screenForget('atas');
+    toast(id ? 'ATA salva.' : 'ATA enviada. Os membros vão receber um aviso.');
+    navigate('/atas');
+  });
+  document.getElementById('delete')?.addEventListener('click', async () => {
+    if (!(await ask(`Apagar a ATA "${a.title}"? O PDF também é apagado e não dá para desfazer.`))) return;
+    try {
+      const { error: err } = await sb.storage.from('atas').remove([a.path]);
+      if (err) throw err;
+      const { data, error } = await sb.from('meeting_minutes').delete().eq('id', id).select('id');
+      if (error || !data.length) throw error || new Error('Você não tem permissão para isso.');
+    } catch (err) {
+      return toast(errorText(err), 'error');
+    }
+    screenForget('atas');
+    toast('ATA apagada.');
+    navigate('/atas');
   });
 }
 
@@ -8365,6 +8563,7 @@ const NOTIF_GROUPS = {
   datas: { label: 'Datas', icon: 'cake', kinds: ['aniversario', 'casamento', 'batismo', 'resumo_lideres'], on: () => datesOn() },
   visitantes: { label: 'Visitantes', icon: 'user', kinds: ['visitante'], on: () => visitorTeam() },
   financeiro: { label: 'Livro caixa', icon: 'wallet', kinds: ['financeiro'], on: () => featureOn('financeiro') },
+  atas: { label: 'ATAs', icon: 'file', kinds: ['ata'], on: () => featureOn('atas') },
 };
 const notifGroup = (kind) => Object.keys(NOTIF_GROUPS).find((g) => NOTIF_GROUPS[g].kinds.includes(kind)) || 'sistema';
 const NOTIF_PAGE = 30;

@@ -74,6 +74,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `025_conversas_apagar.sql` | Chat: apagar a conversa só para quem apagou (arrastando para a esquerda ou pelo menu ⋯); volta com mensagem nova, só com o que é novo |
 | `026_financeiro.sql` | Financeiro e livro caixa: a tesouraria (admin e membros marcados) lança entradas, saídas e transferências em centavos; fechar o mês trava e publica; os membros veem só os totais por categoria dos meses publicados |
 | `027_livro_caixa.sql` | Financeiro: o aviso de mês publicado passa a dizer "Livro caixa" (antes "Prestação de contas") |
+| `028_atas.sql` | ATAs das reuniões: o administrador e a secretaria enviam o PDF (só PDF, até 5 MB, pasta privada), os membros da igreja abrem e recebem o aviso quando sai uma ATA nova |
 
 ## Contas de teste
 

@@ -623,6 +623,11 @@ a.notice { display: block; color: inherit; text-decoration: none; }
 .photo-nav.prev { left: 8px; }
 .photo-nav.next { right: 8px; }
 
+/* ATAs das reuniões: a linha abre o PDF; quem envia tem o Editar ao lado */
+.minutes-item { display: flex; align-items: center; gap: 8px; }
+.minutes-item .menu-row { flex: 1; min-width: 0; }
+.notif-icon.k-atas { background: color-mix(in srgb, #1098ad 16%, var(--surface)); color: color-mix(in srgb, #0c8599 85%, var(--ink)); }
+
 /* Chat */
 .chat-list { display: flex; flex-direction: column; gap: 6px; }
 /* Arrastar para a esquerda (Conversas, Membros): o fundo colorido aparece por trás da linha. */
