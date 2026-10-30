@@ -1,7 +1,7 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import { CONFIG } from './config.js';
 import {
-  esc, slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, darkPalette, normalizePhone, fmtPhone,
+  esc, slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, darkPalette, normalizeHex, normalizePhone, fmtPhone,
   ROLES, isLeaderRole, FEATURES, fold, fmtDate, fmtMoney, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
   parseFinanceCsv, financeKey, FINANCE_CSV_TEMPLATE, FINANCE_CSV_HEADER, FIN_KIND_CSV,
   renderMessage, firstName, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
@@ -1939,6 +1939,37 @@ const initials = (name) =>
 const avatar = (name, url, size = '') =>
   `<span class="avatar ${size}">${url ? `<img src="${esc(url)}" alt="">` : `<b class="initials">${initials(name)}</b>`}</span>`;
 
+// Cor: o quadradinho que abre a paleta e, ao lado, o código (ex.: #2c3666) para digitar ou colar.
+const colorField = (label, name, value) => `
+  <label>${label}
+    <span class="color-pick">
+      <input type="color" name="${name}" value="${esc(value)}">
+      <input type="text" class="color-code" data-for="${name}" value="${esc(value)}" maxlength="7" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Código da cor (${label.toLowerCase()})">
+    </span>
+  </label>`;
+
+// Liga cada código à sua cor, nos dois sentidos. O código vale quando é uma cor completa
+// ("2c3666", "#2C3666" ou "#abc"); ao sair do campo com um código incompleto, volta o da cor.
+function bindColorFields(form) {
+  for (const code of form.querySelectorAll('.color-code')) {
+    const color = form[code.dataset.for];
+    color.addEventListener('input', () => {
+      if (document.activeElement !== code) code.value = color.value; // não reescreve no meio da digitação
+    });
+    code.addEventListener('input', () => {
+      const hex = normalizeHex(code.value);
+      code.classList.toggle('invalid', !hex && code.value.trim() !== '');
+      if (!hex || hex === color.value) return;
+      color.value = hex;
+      color.dispatchEvent(new Event('input')); // prévia do ícone e avisos de cor
+    });
+    code.addEventListener('blur', () => {
+      code.value = color.value;
+      code.classList.remove('invalid');
+    });
+  }
+}
+
 function photoField(name, url) {
   return `
     <div class="photo-field">
@@ -2457,8 +2488,8 @@ async function viewSettings(ctx) {
           </div>
         </div>
         <div class="colors">
-          <label>Cor principal<input type="color" name="primary_color" value="${esc(c.primary_color)}"></label>
-          <label>Fundo do ícone<input type="color" name="icon_background" value="${esc(c.icon_background)}"></label>
+          ${colorField('Cor principal', 'primary_color', c.primary_color)}
+          ${colorField('Fundo do ícone', 'icon_background', c.icon_background)}
         </div>
         <p class="hint warn" id="color-warn" hidden>Essa cor é clara demais para botões e links sobre fundo branco. Prefira uma cor mais escura.</p>
         <fieldset>
@@ -2534,6 +2565,7 @@ async function viewSettings(ctx) {
   const form = document.getElementById('settings');
   bindPinField(form, { address: () => [form.address.value.trim(), form.city.value.trim()].filter(Boolean).join(', ') });
   let logoFile = null;
+  bindColorFields(form);
   const colorWarn = () => (document.getElementById('color-warn').hidden = readableOnWhite(form.primary_color.value));
   colorWarn();
   form.primary_color.addEventListener('input', colorWarn);

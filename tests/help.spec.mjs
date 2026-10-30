@@ -74,6 +74,34 @@ test('a configuração mostra o nome que vai embaixo do ícone do app', async ({
   await expect(iconName).toHaveText('Minha Igreja');
 });
 
+// Só confere a tela: nada é gravado na Teste A.
+test('as cores aceitam o código digitado, e o código acompanha a paleta', async ({ page }) => {
+  await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config');
+  const color = page.getByLabel('Fundo do ícone', { exact: true });
+  const code = page.getByLabel('Código da cor (fundo do ícone)');
+  await expect(code).toHaveValue(await color.inputValue());
+  // Digitado (sem "#" e em maiúsculas): vira a cor e a prévia do ícone muda na hora.
+  await code.fill('2C3666');
+  await expect(color).toHaveValue('#2c3666');
+  await expect(page.locator('#icon-preview')).toHaveCSS('background-color', 'rgb(44, 54, 102)');
+  // No meio da digitação, "#abc" já é uma cor, mas o campo não é reescrito.
+  await code.fill('');
+  await code.pressSequentially('#abcdef');
+  await expect(code).toHaveValue('#abcdef');
+  await expect(color).toHaveValue('#abcdef');
+  // Código incompleto: marcado em vermelho; ao sair do campo, volta o da cor.
+  await code.fill('#12');
+  await expect(code).toHaveClass(/invalid/);
+  await code.blur();
+  await expect(code).toHaveValue('#abcdef');
+  // Escolhido na paleta: o código acompanha.
+  await color.fill('#ff0000');
+  await expect(code).toHaveValue('#ff0000');
+  // A cor principal também tem o campo, e o aviso de cor clara demais continua valendo.
+  await page.getByLabel('Código da cor (cor principal)').fill('#ffe066');
+  await expect(page.locator('#color-warn')).toBeVisible();
+});
+
 // Só confere as validações da tela: nada é gravado na Teste A.
 test('a configuração do Pix valida a chave antes de salvar', async ({ page }) => {
   let saved = false;

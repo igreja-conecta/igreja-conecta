@@ -1,6 +1,6 @@
 // Funções puras do app, testadas sem navegador.
 import { test, expect } from '@playwright/test';
-import { slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, darkPalette, contrastRatio, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE } from '../js/util.js';
+import { slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, darkPalette, contrastRatio, normalizeHex, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE } from '../js/util.js';
 import { pixPayload, normalizePixKey, guessPixType, crc16, parseAmount } from '../js/pix.js';
 
 test('endereço da igreja a partir do nome', () => {
@@ -35,6 +35,10 @@ test('texto legível sobre a cor da igreja', () => {
   expect(readableOnWhite('#3b5bdb')).toBe(true);
   expect(readableOnWhite('#ffe066')).toBe(false);
   // Escuro com a cor principal: a cor da Reformada fica como está; amarelo escurece para o texto claro ler.
+  expect(normalizeHex('2C3666')).toBe('#2c3666');
+  expect(normalizeHex(' #abc ')).toBe('#aabbcc');
+  expect(normalizeHex('#12')).toBeNull();
+  expect(normalizeHex('azul')).toBeNull();
   expect(darkPalette('#2c3666').bg).toBe('#2c3666');
   expect(contrastRatio(darkPalette('#ffd43b').bg, '#eceef4')).toBeGreaterThanOrEqual(7);
   expect(contrastRatio(darkPalette('#2b8a3e').accent, darkPalette('#2b8a3e').bg)).toBeGreaterThanOrEqual(4.5);

@@ -58,6 +58,14 @@ export const inkOn = (hex) => (contrastRatio(hex, '#ffffff') >= contrastRatio(he
 // Aviso para o admin: cor clara demais para botões e links sobre fundo branco.
 export const readableOnWhite = (hex) => contrastRatio(hex, '#ffffff') >= 3;
 
+// Código de cor digitado ("2C3666", "#2c3666", "#abc") → "#2c3666", ou null se não for uma cor.
+export function normalizeHex(s) {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(s ?? '').trim());
+  if (!m) return null;
+  const h = m[1].toLowerCase();
+  return `#${h.length === 3 ? [...h].map((x) => x + x).join('') : h}`;
+}
+
 // Mistura duas cores: t = 0 é a primeira, t = 1 é a segunda.
 export function mixHex(a, b, t) {
   const [x, y] = [hexToRgb(a), hexToRgb(b)];
