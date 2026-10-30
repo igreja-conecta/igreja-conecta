@@ -151,3 +151,15 @@ test('a líder importa uma planilha: pula o e-mail repetido e mostra os erros', 
   const rows = await (await api.get(rest(`members?select=name,birth_date&name=like.UI Teste ${stamp}*&order=name`), { headers: admin.headers })).json();
   expect(rows.map((r) => r.name)).toEqual([NAME, `${NAME} planilha`]);
 });
+
+test('sem foto, as iniciais ficam no meio da bolinha', async ({ page }) => {
+  await openLoggedIn(page, lider.session, '/i/teste-a/#/membros');
+  const ball = page.locator('.member-row', { hasText: 'Fulano da A' }).locator('.avatar');
+  await expect(ball.locator('.initials')).toHaveText('FD');
+  const b = await ball.boundingBox();
+  // A caixa das iniciais vai do topo das maiúsculas até a linha de base: o meio dela é o das letras.
+  const t = await ball.locator('.initials').boundingBox();
+  expect(b.width).toBeCloseTo(b.height, 0);
+  expect(Math.abs(t.y + t.height / 2 - (b.y + b.height / 2))).toBeLessThanOrEqual(1);
+  expect(Math.abs(t.x + t.width / 2 - (b.x + b.width / 2))).toBeLessThanOrEqual(1);
+});

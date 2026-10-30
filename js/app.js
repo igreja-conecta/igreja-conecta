@@ -1919,7 +1919,7 @@ const initials = (name) =>
   );
 
 const avatar = (name, url, size = '') =>
-  `<span class="avatar ${size}">${url ? `<img src="${esc(url)}" alt="">` : initials(name)}</span>`;
+  `<span class="avatar ${size}">${url ? `<img src="${esc(url)}" alt="">` : `<b class="initials">${initials(name)}</b>`}</span>`;
 
 function photoField(name, url) {
   return `
