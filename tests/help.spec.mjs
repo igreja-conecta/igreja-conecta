@@ -74,6 +74,15 @@ test('a configuração mostra o nome que vai embaixo do ícone do app', async ({
   await expect(iconName).toHaveText('Minha Igreja');
 });
 
+test('as caixas de texto grandes só aumentam na altura, nunca na largura', async ({ page }) => {
+  await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config');
+  const boxes = page.locator('textarea');
+  await expect(boxes.first()).toBeVisible();
+  const resize = await boxes.evaluateAll((all) => all.map((t) => getComputedStyle(t).resize));
+  expect(resize.length).toBeGreaterThan(1);
+  expect(new Set(resize)).toEqual(new Set(['vertical']));
+});
+
 // Só confere a tela: nada é gravado na Teste A.
 test('as cores aceitam o código digitado, e o código acompanha a paleta', async ({ page }) => {
   await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config');
