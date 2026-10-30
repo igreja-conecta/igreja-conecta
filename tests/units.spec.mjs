@@ -1,6 +1,6 @@
 // Funções puras do app, testadas sem navegador.
 import { test, expect } from '@playwright/test';
-import { slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE } from '../js/util.js';
+import { slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, readableOnDark, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE } from '../js/util.js';
 import { pixPayload, normalizePixKey, guessPixType, crc16, parseAmount } from '../js/pix.js';
 
 test('endereço da igreja a partir do nome', () => {
@@ -34,6 +34,8 @@ test('texto legível sobre a cor da igreja', () => {
   expect(inkOn('#ffd43b')).toBe('#111111');
   expect(readableOnWhite('#3b5bdb')).toBe(true);
   expect(readableOnWhite('#ffe066')).toBe(false);
+  expect(readableOnDark('#ffd43b')).toBe(true);
+  expect(readableOnDark('#1b2a4a')).toBe(false);
 });
 
 test('telefone no formato do banco', () => {

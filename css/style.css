@@ -45,6 +45,11 @@
   --brand-soft: color-mix(in srgb, var(--brand) 22%, var(--surface));
   color-scheme: dark;
 }
+/* A igreja escolheu a cor principal pura para links e ícones no tema escuro (Configurar > Aparência). */
+@media (prefers-color-scheme: dark) {
+  :root[data-dark-brand="principal"]:not([data-theme="light"]) { --link: var(--brand); }
+}
+:root[data-theme="dark"][data-dark-brand="principal"] { --link: var(--brand); }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }

@@ -1,7 +1,7 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import { CONFIG } from './config.js';
 import {
-  esc, slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, normalizePhone, fmtPhone,
+  esc, slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, readableOnDark, normalizePhone, fmtPhone,
   ROLES, isLeaderRole, FEATURES, fold, fmtDate, fmtMoney, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
   parseFinanceCsv, financeKey, FINANCE_CSV_TEMPLATE, FINANCE_CSV_HEADER, FIN_KIND_CSV,
   renderMessage, firstName, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
@@ -523,6 +523,9 @@ function applyBranding() {
   const root = document.documentElement.style;
   root.setProperty('--brand', color);
   root.setProperty('--brand-ink', inkOn(color));
+  // Tema escuro: links e ícones com a cor principal pura, se a igreja escolheu (css/style.css).
+  if (c?.dark_brand === 'principal') document.documentElement.dataset.darkBrand = 'principal';
+  else delete document.documentElement.dataset.darkBrand;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
   document.getElementById('app-name').textContent = c ? c.name : CONFIG.APP_NAME;
   document.getElementById('brand-logo').src = c?.logo_url || 'icons/icon-192.png';
@@ -2440,6 +2443,14 @@ async function viewSettings(ctx) {
           <label>Fundo do ícone<input type="color" name="icon_background" value="${esc(c.icon_background)}"></label>
         </div>
         <p class="hint warn" id="color-warn" hidden>Essa cor é clara demais para botões e links sobre fundo branco. Prefira uma cor mais escura.</p>
+        <fieldset>
+          <legend>No tema escuro, links e ícones usam</legend>
+          <label class="check"><input type="radio" name="dark_brand" value="clara" ${c.dark_brand !== 'principal' ? 'checked' : ''}> A cor principal clareada
+            <small class="hint">Mais fácil de ler no fundo escuro.</small></label>
+          <label class="check"><input type="radio" name="dark_brand" value="principal" ${c.dark_brand === 'principal' ? 'checked' : ''}> A cor principal da igreja
+            <small class="hint">A mesma cor do tema claro. Botões e o + usam a cor principal nos dois casos.</small></label>
+        </fieldset>
+        <p class="hint warn" id="dark-warn" hidden>Essa cor é escura demais para links e ícones no tema escuro: eles podem ficar difíceis de ler. Prefira a cor clareada.</p>
       </fieldset>
 
       <fieldset class="card">
@@ -2508,8 +2519,13 @@ async function viewSettings(ctx) {
   bindPinField(form, { address: () => [form.address.value.trim(), form.city.value.trim()].filter(Boolean).join(', ') });
   let logoFile = null;
   const colorWarn = () => (document.getElementById('color-warn').hidden = readableOnWhite(form.primary_color.value));
+  const darkWarn = () =>
+    (document.getElementById('dark-warn').hidden = form.dark_brand.value !== 'principal' || readableOnDark(form.primary_color.value));
   colorWarn();
+  darkWarn();
   form.primary_color.addEventListener('input', colorWarn);
+  form.primary_color.addEventListener('input', darkWarn);
+  for (const r of form.querySelectorAll('[name="dark_brand"]')) r.addEventListener('change', darkWarn);
   form.icon_background.addEventListener('input', () => (document.getElementById('icon-preview').style.background = form.icon_background.value));
   // Nome embaixo do ícone no celular: o nome curto, ou o começo do nome da igreja.
   const iconName = () => {
@@ -2555,6 +2571,7 @@ async function viewSettings(ctx) {
         short_name: form.short_name.value.trim() || null,
         primary_color: form.primary_color.value.toLowerCase(),
         icon_background: form.icon_background.value.toLowerCase(),
+        dark_brand: form.dark_brand.value,
         welcome_text: form.welcome_text.value.trim() || null,
         about_text: form.about_text.value.trim() || null,
         address: form.address.value.trim() || null,

@@ -58,6 +58,9 @@ export const inkOn = (hex) => (contrastRatio(hex, '#ffffff') >= contrastRatio(he
 // Aviso para o admin: cor clara demais para botões e links sobre fundo branco.
 export const readableOnWhite = (hex) => contrastRatio(hex, '#ffffff') >= 3;
 
+// Aviso para o admin: cor escura demais para links e ícones sobre o fundo do tema escuro.
+export const readableOnDark = (hex) => contrastRatio(hex, '#1a1d24') >= 3;
+
 export const onlyDigits = (s) => String(s ?? '').replace(/\D/g, '');
 
 // Telefone no formato do banco: 55 + DDD + número (12 ou 13 dígitos).
