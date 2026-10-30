@@ -74,12 +74,12 @@ test('no tema escuro, o admin escolhe entre a cor clareada e a cor principal nos
     await expect(clara).toBeChecked();
     const lighter = await linkColor(page);
     // Cor escura demais para o fundo escuro: avisa (só ao escolher a cor principal).
-    const color = await page.getByLabel('Cor principal').inputValue();
-    await page.getByLabel('Cor principal').fill('#1b2a4a');
+    const color = await page.getByLabel('Cor principal', { exact: true }).inputValue();
+    await page.getByLabel('Cor principal', { exact: true }).fill('#1b2a4a');
     await expect(page.locator('#dark-warn')).toBeHidden();
     await principal.check();
     await expect(page.locator('#dark-warn')).toBeVisible();
-    await page.getByLabel('Cor principal').fill(color);
+    await page.getByLabel('Cor principal', { exact: true }).fill(color);
     await expect(page.locator('#dark-warn')).toBeHidden();
 
     await page.getByRole('button', { name: 'Salvar' }).click();
