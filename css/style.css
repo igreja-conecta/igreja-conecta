@@ -2,6 +2,9 @@
 :root {
   --brand: #3b5bdb;
   --brand-ink: #ffffff;
+  --church: #3b5bdb;
+  --church-ink: #ffffff;
+  --church-dark: #2c44a4;
   --bg: #f5f6fa;
   --surface: #ffffff;
   --ink: #1b1e27;
@@ -45,11 +48,26 @@
   --brand-soft: color-mix(in srgb, var(--brand) 22%, var(--surface));
   color-scheme: dark;
 }
-/* A igreja escolheu a cor principal pura para links e ícones no tema escuro (Configurar > Aparência). */
+/* Tema escuro com o fundo na cor principal (Configurar > Aparência). O js/app.js põe o fundo em
+   --church-dark e, no escuro, a cor clareada em --brand (botões, "+", links). */
 @media (prefers-color-scheme: dark) {
-  :root[data-dark-brand="principal"]:not([data-theme="light"]) { --link: var(--brand); }
+  :root[data-dark-theme="principal"]:not([data-theme="light"]) {
+    --bg: var(--church-dark);
+    --surface: color-mix(in srgb, var(--church-dark) 88%, white);
+    --line: color-mix(in srgb, var(--church-dark) 70%, white);
+    --muted: color-mix(in srgb, var(--church-dark) 28%, white);
+    --link: var(--brand);
+    --brand-soft: color-mix(in srgb, var(--brand) 18%, var(--surface));
+  }
 }
-:root[data-theme="dark"][data-dark-brand="principal"] { --link: var(--brand); }
+:root[data-theme="dark"][data-dark-theme="principal"] {
+  --bg: var(--church-dark);
+  --surface: color-mix(in srgb, var(--church-dark) 88%, white);
+  --line: color-mix(in srgb, var(--church-dark) 70%, white);
+  --muted: color-mix(in srgb, var(--church-dark) 28%, white);
+  --link: var(--brand);
+  --brand-soft: color-mix(in srgb, var(--brand) 18%, var(--surface));
+}
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -809,6 +827,8 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
   html:root:not(#imprimir) {
     --surface: #fff; --bg: #f3f4f8; --ink: #1b1e27; --muted: #555b6b; --line: #d6d9e2; --danger: #c92a2a;
     --link: var(--brand); --brand-soft: color-mix(in srgb, var(--brand) 10%, #fff);
+    /* A cor da igreja de verdade, mesmo com o escuro na cor principal (que clareia --brand na tela). */
+    --brand: var(--church) !important; --brand-ink: var(--church-ink) !important;
   }
   .acc-page { padding: 0; }
   html:root:not(#imprimir), html:root:not(#imprimir) body { background: #fff; }

@@ -50,53 +50,48 @@ test('"Tema: seguir o celular" volta ao automático', async ({ page, playwright 
   expect(await bg(page)).toBe('rgb(17, 19, 24)');
 });
 
-// Cor que a página usa nos links e ícones (--link), já calculada pelo navegador.
-const linkColor = (page) =>
-  page.evaluate(() => {
-    const probe = document.body.appendChild(Object.assign(document.createElement('span'), { style: 'color: var(--link)' }));
-    const c = getComputedStyle(probe).color;
-    probe.remove();
-    return c;
-  });
-const brandColor = (page) => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--brand').trim());
+// Cor de fundo de um elemento da página, já calculada pelo navegador.
+const bgOf = (page, sel) => page.locator(sel).first().evaluate((el) => getComputedStyle(el).backgroundColor);
+const rgbOf = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 
-test('no tema escuro, o admin escolhe entre a cor clareada e a cor principal nos links', async ({ page, playwright }) => {
+test('no tema escuro, o admin escolhe o fundo preto ou na cor principal; os botões não somem no fundo', async ({ page, playwright }) => {
   test.skip(!configured || !testPassword(), 'Sem as contas de teste');
   const api = await playwright.request.newContext();
   const admin = await loginAs(api, 'adm-a');
-  const reset = () => api.patch(rest('churches?slug=eq.teste-a'), { headers: admin.headers, data: { dark_brand: 'clara' } });
+  const reset = () => api.patch(rest('churches?slug=eq.teste-a'), { headers: admin.headers, data: { dark_theme: 'preto' } });
   try {
     await reset();
     await page.emulateMedia({ colorScheme: 'dark' });
     await openLoggedIn(page, admin.session, '/i/teste-a/#/config');
-    const clara = page.getByLabel('A cor principal clareada');
-    const principal = page.getByLabel('A cor principal da igreja');
-    await expect(clara).toBeChecked();
-    const lighter = await linkColor(page);
-    // Cor escura demais para o fundo escuro: avisa (só ao escolher a cor principal).
+    await expect(page.getByLabel('Preto', { exact: true })).toBeChecked();
+    expect(await bg(page)).toBe('rgb(17, 19, 24)'); // preto, como sempre foi
     const color = await page.getByLabel('Cor principal', { exact: true }).inputValue();
-    await page.getByLabel('Cor principal', { exact: true }).fill('#1b2a4a');
-    await expect(page.locator('#dark-warn')).toBeHidden();
-    await principal.check();
-    await expect(page.locator('#dark-warn')).toBeVisible();
-    await page.getByLabel('Cor principal', { exact: true }).fill(color);
-    await expect(page.locator('#dark-warn')).toBeHidden();
 
+    await page.getByLabel('Cor principal da igreja').check();
     await page.getByRole('button', { name: 'Salvar' }).click();
     await expect(page.locator('#toast')).toContainText(/salva|Pronto/);
-    await expect(page.locator('html')).toHaveAttribute('data-dark-brand', 'principal');
-    const pure = await linkColor(page);
-    expect(pure).not.toBe(lighter);
-    const hex = await brandColor(page);
-    const rgb = `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
-    expect(pure).toBe(rgb);
-    // Vale também ao abrir de novo e no tema escuro escolhido pelo botão.
-    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(page.locator('html')).toHaveAttribute('data-dark-theme', 'principal');
+    // O fundo é a cor principal (escurecida só se for clara demais), não o preto.
+    const dark = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--church-dark').trim());
+    expect(await bg(page)).toBe(rgbOf(dark));
+    expect(await bg(page)).not.toBe('rgb(17, 19, 24)');
+    // O botão + fica na cor clareada: diferente do fundo e da cor original.
+    await page.goto('/i/teste-a/#/avisos');
+    const fab = await bgOf(page, '.fab');
+    expect(fab).not.toBe(rgbOf(dark));
+    expect(fab).not.toBe(rgbOf(color));
+
+    // Na próxima abertura, o fundo já vem certo antes de o app desenhar (sem piscar o preto).
+    await page.addInitScript(() =>
+      document.addEventListener('DOMContentLoaded', () => (window.__fundo = getComputedStyle(document.body).backgroundColor)),
+    );
     await page.reload();
-    expect(await linkColor(page)).toBe(rgb); // tema claro: sempre a cor principal
+    expect(await page.evaluate(() => window.__fundo)).toBe(rgbOf(dark));
+    // Tema claro: nada muda (fundo claro e o + na cor principal).
     await page.locator('#theme-btn').click();
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    expect(await linkColor(page)).toBe(rgb);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    expect(await bg(page)).toBe('rgb(245, 246, 250)');
+    expect(await bgOf(page, '.fab')).toBe(rgbOf(color));
   } finally {
     await reset();
     await api.dispose();

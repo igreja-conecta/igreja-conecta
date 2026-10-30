@@ -58,8 +58,24 @@ export const inkOn = (hex) => (contrastRatio(hex, '#ffffff') >= contrastRatio(he
 // Aviso para o admin: cor clara demais para botões e links sobre fundo branco.
 export const readableOnWhite = (hex) => contrastRatio(hex, '#ffffff') >= 3;
 
-// Aviso para o admin: cor escura demais para links e ícones sobre o fundo do tema escuro.
-export const readableOnDark = (hex) => contrastRatio(hex, '#1a1d24') >= 3;
+// Mistura duas cores: t = 0 é a primeira, t = 1 é a segunda.
+export function mixHex(a, b, t) {
+  const [x, y] = [hexToRgb(a), hexToRgb(b)];
+  return `#${x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('')}`;
+}
+
+// Tema escuro com o fundo na cor principal: o fundo (a própria cor, escurecida só o necessário para
+// o texto claro ler bem) e a cor dos botões, do "+" e dos links (a cor clareada até destacar do fundo).
+export function darkPalette(hex) {
+  let bg = hex;
+  for (let t = 0.05; contrastRatio(bg, '#eceef4') < 7 && t <= 1; t += 0.05) bg = mixHex(hex, '#000000', t);
+  let accent = '#ffffff';
+  for (let t = 0.3; t <= 1; t += 0.05) {
+    accent = mixHex(hex, '#ffffff', t);
+    if (contrastRatio(accent, bg) >= 4.5) break;
+  }
+  return { bg, accent, accentInk: inkOn(accent) };
+}
 
 export const onlyDigits = (s) => String(s ?? '').replace(/\D/g, '');
 
