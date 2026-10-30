@@ -144,8 +144,8 @@ test('a tela das ATAs abre na hora, mesmo com o banco demorando', async ({ page 
     await new Promise((r) => setTimeout(r, 4000));
     await route.continue().catch(() => {});
   });
-  await page.locator('#tabbar').getByRole('link', { name: 'Menu' }).click();
-  await page.getByRole('link', { name: 'ATAs das reuniões' }).click();
+  // Pelo atalho do Início.
+  await page.locator('.shortcuts').getByRole('link', { name: 'ATAs' }).click();
   await expect(page.locator('.minutes-item', { hasText: `${TAG} tela` })).toBeVisible({ timeout: 1000 });
 });
 
