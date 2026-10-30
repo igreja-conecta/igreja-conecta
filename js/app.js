@@ -1083,6 +1083,7 @@ async function viewChurchHome() {
     ['infantil', icon.child, 'Check-in', '#/infantil'],
     ['carteirinha', icon.idcard, 'Carteirinha', '#/carteirinha'],
     ['galeria', icon.image, 'Galeria', '#/galeria'],
+    ['atas', icon.file, 'ATAs', '#/atas'],
     ['visitantes', icon.user, 'Visitantes', '#/visitantes'],
     ['pix', icon.pix, 'Ofertar', '#/ofertar'],
   ].filter(([k]) =>
