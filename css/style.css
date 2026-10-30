@@ -185,7 +185,7 @@ legend { font-weight: 700; padding: 0 4px; }
   font: inherit; text-align: left; width: 100%; cursor: pointer;
 }
 .church-row img { border-radius: 10px; object-fit: contain; background: #fff; border: 1px solid var(--line); }
-.church-row span, .menu-row span { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.church-row span:not(.avatar), .menu-row span:not(.avatar) { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .church-row small { color: var(--muted); }
 .church-row > svg:last-child, .menu-row > svg:last-child { color: var(--muted); }
 .menu-row > svg:first-child { color: var(--link); width: 22px; height: 22px; }
@@ -254,11 +254,15 @@ svg.inline { vertical-align: -3px; }
 .chip.active { background: var(--brand); color: var(--brand-ink); }
 select:disabled, input:disabled { opacity: .65; }
 
+/* As iniciais ficam no meio da bolinha: a caixa do texto vai do topo das maiúsculas até a
+   linha de base (sem o espaço das letras que descem, como "g"), assim o meio é o das letras. */
 .avatar {
   width: 44px; height: 44px; flex: none; border-radius: 50%; overflow: hidden;
   display: grid; place-items: center;
   background: var(--brand-soft); color: var(--link); font-weight: 700;
+  line-height: 1;
 }
+.avatar .initials { display: inline-block; font-weight: inherit; text-box: trim-both cap alphabetic; }
 .avatar img { width: 100%; height: 100%; object-fit: cover; }
 .avatar.big { width: 84px; height: 84px; font-size: 1.6rem; }
 .photo-field { display: flex; gap: 16px; align-items: center; }
@@ -293,7 +297,7 @@ button.member-row { font: inherit; text-align: left; width: 100%; cursor: pointe
 .birthday-card h2 { display: flex; align-items: center; gap: 8px; }
 .bday-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .bday-list li { display: flex; align-items: center; gap: 12px; }
-.bday-list li span { display: flex; flex-direction: column; min-width: 0; }
+.bday-list li span:not(.avatar) { display: flex; flex-direction: column; min-width: 0; }
 .bday-list small { color: var(--muted); }
 .bday-list li.today strong { color: var(--link); }
 .month-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
