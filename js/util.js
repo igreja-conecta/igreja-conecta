@@ -100,6 +100,7 @@ export const FEATURES = [
   { key: 'chat', label: 'Chat com a liderança', phase: 3 },
   { key: 'chat_membros', label: 'Chat: membros também conversam entre si', phase: 3 },
   { key: 'financeiro', label: 'Financeiro e livro caixa', phase: 3 },
+  { key: 'atas', label: 'ATAs das reuniões', phase: 3 },
 ];
 
 // Texto sem acentos e em minúsculas, para buscas e nomes de colunas.
