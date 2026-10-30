@@ -76,6 +76,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `027_livro_caixa.sql` | Financeiro: o aviso de mês publicado passa a dizer "Livro caixa" (antes "Prestação de contas") |
 | `028_atas.sql` | ATAs das reuniões: o administrador e a secretaria enviam o PDF (só PDF, até 5 MB, pasta privada), os membros da igreja abrem e recebem o aviso quando sai uma ATA nova |
 | `029_separar_teste_a.sql` | A igreja de verdade que estava na Teste A vira a Igreja Reformada de Brasília (`/i/reformada-brasilia/`), sem as pessoas de teste; nasce uma Teste A nova só para os testes |
+| `030_limpar_reformada.sql` | Tira da Igreja Reformada de Brasília o que os testes automáticos deixaram quando ela era a Teste A (conversas, avisos, lançamentos…) |
 
 ## Contas de teste
 
