@@ -78,6 +78,7 @@ Rode na ordem, no SQL Editor. Cada entrega que precisar de SQL novo avisa.
 | `029_separar_teste_a.sql` | A igreja de verdade que estava na Teste A vira a Igreja Reformada de Brasília (`/i/reformada-brasilia/`), sem as pessoas de teste; nasce uma Teste A nova só para os testes |
 | `030_limpar_reformada.sql` | Tira da Igreja Reformada de Brasília o que os testes automáticos deixaram quando ela era a Teste A (conversas, avisos, lançamentos…) |
 | `031_cor_tema_escuro.sql` | Aparência: no tema escuro, links e ícones usam a cor principal clareada (padrão) ou a cor principal pura, à escolha do administrador |
+| `032_fundo_tema_escuro.sql` | Aparência: no tema escuro, o fundo do app fica preto (padrão) ou na cor principal da igreja; tira a opção do 031 |
 
 ## Contas de teste
 
