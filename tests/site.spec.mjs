@@ -59,6 +59,17 @@ test('não dá para puxar a tela para atualizar (nem efeito elástico)', async (
   expect(pull).toEqual(['none', 'none']);
 });
 
+test('nenhuma tela deixa dar zoom (pinça ou dois toques)', async ({ page }) => {
+  for (const url of ['/', '/i/teste-a/', '/privacidade.html', '/termos.html']) {
+    await page.goto(url);
+    await expect(page.locator('meta[name="viewport"]'), url).toHaveAttribute('content', /maximum-scale=1, user-scalable=no/);
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).touchAction), url).toBe('pan-x pan-y');
+  }
+  // Página da igreja servida pelo 404.html (antes de ganhar a pasta própria): o mesmo.
+  await page.goto('/i/teste-a/#/');
+  await expect(page.locator('meta[name="viewport"]')).toHaveAttribute('content', /user-scalable=no/);
+});
+
 test('igreja que não existe', async ({ page }) => {
   await page.goto('/i/nao-existe-esta/');
   await expect(page.getByRole('heading', { name: 'Igreja não encontrada' })).toBeVisible();
