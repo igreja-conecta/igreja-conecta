@@ -17,4 +17,9 @@
       }
     }
   } catch (e) {}
+  // Sem zoom: o Safari do iPhone ignora o "user-scalable=no" da página, então o gesto de pinça é
+  // barrado aqui. O mapa (Leaflet) usa os próprios toques e continua aproximando.
+  document.addEventListener('gesturestart', function (e) {
+    e.preventDefault();
+  });
 })();

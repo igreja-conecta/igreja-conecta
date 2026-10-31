@@ -73,6 +73,8 @@
 [hidden] { display: none !important; }
 /* Sem "puxar para atualizar" (Android) nem efeito elástico (iPhone): no topo ou no fim, a tela para. */
 html, body { margin: 0; overscroll-behavior: none; }
+/* Sem zoom: nem de pinça nem com dois toques (com o "user-scalable=no" das páginas e o js/tema.js no iPhone). */
+html { touch-action: pan-x pan-y; }
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
