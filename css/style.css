@@ -913,3 +913,15 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
   .sheet-line { border-top-color: #000; }
   .sheet-foot { margin-top: 6mm; font-size: 8pt; }
 }
+
+/* Presença nos cultos: contador e leitor do QR Code da carteirinha */
+.attendance-count { grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 560px) { .attendance-count { grid-template-columns: repeat(4, 1fr); } }
+.qr-video { position: relative; width: 100%; max-width: 480px; margin: 12px auto; aspect-ratio: 4 / 3; background: #000; border-radius: var(--radius); overflow: hidden; }
+.qr-video video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.qr-frame { position: absolute; inset: 18% 22%; border: 3px solid rgba(255, 255, 255, .85); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .25); pointer-events: none; }
+.qr-result { text-align: center; font-weight: 700; font-size: 1.15rem; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--line); margin: 8px 0; }
+.qr-result.ok { border-color: var(--brand); color: var(--ink); background: color-mix(in srgb, var(--brand) 14%, transparent); font-size: 1.4rem; }
+.qr-result.error { border-color: var(--danger); color: var(--danger); }
+.qr-recent { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 4px; }
+.qr-recent li { padding: 6px 10px; border-bottom: 1px solid var(--line); }

@@ -1,6 +1,6 @@
 // Funções puras do app, testadas sem navegador.
 import { test, expect } from '@playwright/test';
-import { slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, darkPalette, contrastRatio, normalizeHex, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE } from '../js/util.js';
+import { slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, darkPalette, contrastRatio, normalizeHex, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE, cardTokenFrom } from '../js/util.js';
 import { pixPayload, normalizePixKey, guessPixType, crc16, parseAmount } from '../js/pix.js';
 
 test('endereço da igreja a partir do nome', () => {
@@ -388,4 +388,12 @@ test('perguntas usam a janela do app (ask), não a do navegador, que mostra o en
     const code = readFileSync(new URL(`../js/${file}`, import.meta.url), 'utf8');
     expect(code.match(/(?<![.\w])(confirm|prompt|alert)\(/g), file).toBeNull();
   }
+});
+
+test('presença: o QR Code da carteirinha dá o código secreto; outros QR Codes, não', () => {
+  const token = '0f3e2d1c-1a2b-4c3d-8e9f-001122334455';
+  expect(cardTokenFrom(`https://igreja-conecta.github.io/igreja-conecta/i/teste-a/#/carteirinha/verificar/${token}`)).toBe(token);
+  expect(cardTokenFrom(`  ${token.toUpperCase()}  `)).toBe(token);
+  for (const other of ['', null, 'https://exemplo.com', `https://x/#/agenda/${token}`, `${token}x`, '00020126580014BR.GOV.BCB.PIX'])
+    expect(cardTokenFrom(other), String(other)).toBeNull();
 });

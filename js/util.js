@@ -121,6 +121,7 @@ export const FEATURES = [
   { key: 'inscricoes', label: 'Inscrições em eventos', phase: 3 },
   { key: 'infantil', label: 'Check-in do ministério infantil', phase: 3 },
   { key: 'carteirinha', label: 'Carteirinha digital', phase: 3 },
+  { key: 'presenca', label: 'Presença nos cultos', phase: 3 },
   { key: 'relatorios', label: 'Relatórios', phase: 3 },
   { key: 'galeria', label: 'Galeria de fotos', phase: 3 },
   { key: 'devocional', label: 'Devocional e plano de leitura', phase: 3 },
@@ -155,6 +156,15 @@ export function parseBirthDate(s, today = new Date()) {
   if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
   if (y < 1900 || date > today) return null;
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+// Texto lido do QR Code da carteirinha (o endereço de conferência, .../#/carteirinha/verificar/<código>,
+// ou só o código) → o código secreto em minúsculas, ou null se não for de uma carteirinha.
+export function cardTokenFrom(text) {
+  const m = String(text ?? '')
+    .trim()
+    .match(/(?:^|#\/carteirinha\/verificar\/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+  return m ? m[1].toLowerCase() : null;
 }
 
 export const fmtDate = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
