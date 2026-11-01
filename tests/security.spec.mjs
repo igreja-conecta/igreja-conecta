@@ -330,3 +330,27 @@ test.describe('Banco: visitante sem login (financeiro)', () => {
     for (const fn of ['fin_entries_guard', 'members_treasury_guard']) expect((await rpc(request, fn)).ok(), fn).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (presença nos cultos)', () => {
+  test('não lê nem grava listas e presenças; não chama as funções', async ({ request }) => {
+    for (const table of ['attendance_sessions', 'attendance']) {
+      const res = await request.get(rest(`${table}?select=*`), { headers });
+      if (res.ok()) expect(await res.json(), table).toEqual([]);
+    }
+    expect((await request.post(rest('attendance_sessions'), { headers, data: { church_id: UUID, title: 'Intrusa', session_date: '2030-01-01' } })).ok()).toBe(false);
+    const calls = {
+      attendance_on: { p_church: UUID },
+      can_attendance: { p_church: UUID },
+      my_attendance_churches: {},
+      attendance_open: { p_church: UUID, p_title: 'Culto', p_date: '2030-01-01', p_event: null },
+      attendance_sessions_list: { p_church: UUID, p_since: '2030-01-01' },
+      attendance_roster: { p_session: UUID },
+      attendance_check: { p_session: UUID, p_member: UUID },
+      attendance_mark: { p_session: UUID, p_member: UUID },
+      attendance_unmark: { p_session: UUID, p_member: UUID },
+      attendance_mark_card: { p_session: UUID, p_token: UUID },
+      attendance_report: { p_church: UUID, p_from: '2026-01-01', p_to: '2026-03-31' },
+    };
+    for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
+  });
+});

@@ -6,7 +6,7 @@ description: Regras do botão redondo com "+" (canto inferior direito) para cria
 # Botão redondo com "+"
 
 Pedido do usuário: a ação de **criar** de uma tela de lista fica num **botão redondo com "+"** no
-canto inferior direito, como em apps de celular (já usado em Conversas, Agenda, Avisos, Devocional, Plano de leitura, Galeria, Células, Ministérios, Membros, Pedidos de oração, Meus filhos e Check-in infantil). Ele não
+canto inferior direito, como em apps de celular (já usado em Conversas, Agenda, Avisos, Devocional, Plano de leitura, Galeria, Células, Ministérios, Membros, Pedidos de oração, Meus filhos, Check-in infantil e Presença nos cultos). Ele não
 ocupa espaço no topo da tela e fica sempre ao alcance do polegar.
 
 ## Como usar

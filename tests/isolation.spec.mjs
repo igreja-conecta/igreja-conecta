@@ -1992,3 +1992,127 @@ test.describe('Financeiro e livro caixa (026)', () => {
     expect((await entry('adm-a', { kind: 'saida', amount_cents: 100, account_id: accounts[0].id, category_id: saida.id })).ok()).toBe(true);
   });
 });
+
+test.describe('Presença nos cultos (033)', () => {
+  const tag = `Culto ${Date.now().toString(36)}`;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const ids = {};
+  const open = (who, title = tag, date = today) => rpc(who, 'attendance_open', { p_church: church.a, p_title: title, p_date: date, p_event: null });
+  const roster = async (who) => (await rpc(who, 'attendance_roster', { p_session: ids.session })).json();
+  const listed = async (who) => (await (await rpc(who, 'attendance_sessions_list', { p_church: church.a, p_since: today })).json()).find((s) => s.id === ids.session);
+
+  test.beforeAll(async () => {
+    const people = await get('lider-a', 'members?select=id,name,card_token&name=in.("Membro da A","Fulano da A")');
+    ids.membro = people.find((p) => p.name === 'Membro da A');
+    ids.fulano = people.find((p) => p.name === 'Fulano da A');
+    [ids.b] = await get('adm-b', `members?select=id,card_token&user_id=eq.${as['adm-b'].id}`);
+  });
+
+  test.afterAll(async () => {
+    if (!api) return;
+    await api.delete(rest(`attendance_sessions?title=like.${encodeURIComponent(tag)}*`), { headers: as['lider-a'].headers });
+    await api.delete(rest(`ministries?name=like.${encodeURIComponent(tag)}*`), { headers: as['lider-a'].headers });
+  });
+
+  test('só a liderança e a equipe abrem a lista; mesmo nome no mesmo dia é a mesma lista', async () => {
+    for (const who of ['membro-a', 'adm-b', 'sem-igreja']) expect((await open(who)).ok(), who).toBe(false);
+    const res = await open('lider-a');
+    expect(res.ok(), await res.text()).toBe(true);
+    ids.session = await res.json();
+    const again = await open('adm-a', `  ${tag.toUpperCase()} `);
+    expect(await again.json()).toBe(ids.session);
+    // Datas fora do intervalo e gravação direta na tabela, não.
+    expect((await open('lider-a', `${tag} futuro`, '2099-01-01')).ok()).toBe(false);
+    const direct = await api.post(rest('attendance_sessions'), { headers: as['lider-a'].headers, data: { church_id: church.a, title: `${tag} direto`, session_date: today } });
+    expect(direct.ok()).toBe(false);
+    expect(await get('adm-b', `attendance_sessions?select=id&id=eq.${ids.session}`)).toEqual([]);
+  });
+
+  test('marca pela lista e pelo QR Code; o contador separa as formas; a outra igreja não vê nem marca', async () => {
+    const mark = (who, member) => rpc(who, 'attendance_mark', { p_session: ids.session, p_member: member });
+    const card = (who, token) => rpc(who, 'attendance_mark_card', { p_session: ids.session, p_token: token });
+    expect((await mark('lider-a', ids.fulano.id)).ok()).toBe(true);
+    expect((await mark('lider-a', ids.fulano.id)).ok()).toBe(true); // já marcado: fica como estava
+    const first = await card('lider-a', ids.membro.card_token);
+    expect(first.ok(), await first.text()).toBe(true);
+    expect(await first.json()).toEqual([{ member_id: ids.membro.id, name: 'Membro da A', already: false }]);
+    expect((await (await card('lider-a', ids.membro.card_token)).json())[0].already).toBe(true);
+
+    // Gente de outra igreja, carteirinha de outra igreja e código inventado: não marcam.
+    expect((await mark('lider-a', ids.b.id)).ok()).toBe(false);
+    expect((await card('lider-a', ids.b.card_token)).ok()).toBe(false);
+    expect((await card('lider-a', '00000000-0000-4000-8000-000000000000')).ok()).toBe(false);
+    for (const who of ['membro-a', 'adm-b']) {
+      expect((await mark(who, ids.fulano.id)).ok(), who).toBe(false);
+      expect((await card(who, ids.membro.card_token)).ok(), who).toBe(false);
+      expect((await rpc(who, 'attendance_unmark', { p_session: ids.session, p_member: ids.fulano.id })).ok(), who).toBe(false);
+      expect(await roster(who), who).toEqual([]);
+      expect(await listed(who), who).toBeUndefined();
+    }
+    const direct = await api.post(rest('attendance'), {
+      headers: as['lider-a'].headers,
+      data: { session_id: ids.session, member_id: ids.fulano.id, church_id: church.a, method: 'camera' },
+    });
+    expect(direct.ok()).toBe(false);
+
+    // A lista mostra só o nome e como foi marcado.
+    const rows = await roster('lider-a');
+    expect(Object.keys(rows[0]).sort()).toEqual(['marked_at', 'member_id', 'method', 'name']);
+    expect(rows.find((r) => r.member_id === ids.fulano.id).method).toBe('lista');
+    expect(rows.find((r) => r.member_id === ids.membro.id).method).toBe('qr');
+    expect(await listed('lider-a')).toMatchObject({ title: tag, total: 2, by_list: 1, by_qr: 1, by_camera: 0 });
+
+    // O membro vê só a própria presença (e a lista em que está); ela entra nos próprios dados.
+    expect(await get('membro-a', `attendance?select=member_id,method&session_id=eq.${ids.session}`)).toEqual([{ member_id: ids.membro.id, method: 'qr' }]);
+    expect(await get('membro-a', `attendance_sessions?select=title&id=eq.${ids.session}`)).toEqual([{ title: tag }]);
+    expect(await get('adm-b', `attendance?select=member_id&session_id=eq.${ids.session}`)).toEqual([]);
+    const data = await (await rpc('membro-a', 'export_my_data')).json();
+    const here = data.igrejas.find((c) => c.endereco_no_app === '/i/teste-a/');
+    expect(here.presencas_nos_cultos.find((p) => p.culto === tag)).toMatchObject({ dia: today, marcada_por: 'QR Code da carteirinha' });
+
+    expect((await rpc('lider-a', 'attendance_unmark', { p_session: ids.session, p_member: ids.fulano.id })).ok()).toBe(true);
+    expect(await listed('lider-a')).toMatchObject({ total: 1, by_list: 0, by_qr: 1 });
+  });
+
+  test('a equipe do ministério marcado marca a presença; desmarcado, não marca mais', async () => {
+    const made = await api.post(rest('ministries'), {
+      headers: returning(as['lider-a'].headers),
+      data: { church_id: church.a, name: `${tag} Acolhimento`, attendance_checkin: true },
+    });
+    expect(made.ok(), await made.text()).toBe(true);
+    const [mi] = await made.json();
+    const second = await api.post(rest('ministries'), { headers: as['lider-a'].headers, data: { church_id: church.a, name: `${tag} Outro`, attendance_checkin: true } });
+    expect(second.ok()).toBe(false); // só um por igreja
+    const team = await api.post(rest('ministry_members'), { headers: as['lider-a'].headers, data: { ministry_id: mi.id, member_id: ids.membro.id } });
+    expect(team.ok(), await team.text()).toBe(true);
+    expect(await get('membro-a', `members?select=attendance_team&user_id=eq.${as['membro-a'].id}`)).toEqual([{ attendance_team: true }]);
+
+    // A equipe vê os nomes na lista, mas continua sem ler o cadastro dos outros.
+    expect((await roster('membro-a')).map((r) => r.name)).toContain('Fulano da A');
+    expect(await get('membro-a', `members?select=name&id=eq.${ids.fulano.id}`)).toEqual([]);
+    expect((await rpc('membro-a', 'attendance_mark', { p_session: ids.session, p_member: ids.fulano.id })).ok()).toBe(true);
+    const mine = await rpc('membro-a', 'attendance_open', { p_church: church.a, p_title: `${tag} equipe`, p_date: today, p_event: null });
+    expect(mine.ok(), await mine.text()).toBe(true);
+    const mineId = await mine.json();
+    // Apagar: quem abriu a lista (ou a liderança); a lista dos outros, não.
+    const delOther = await api.delete(rest(`attendance_sessions?id=eq.${ids.session}`), { headers: returning(as['membro-a'].headers) });
+    expect(await delOther.text()).not.toContain(ids.session);
+    const delMine = await api.delete(rest(`attendance_sessions?id=eq.${mineId}`), { headers: returning(as['membro-a'].headers) });
+    expect(await delMine.text()).toContain(mineId);
+
+    await api.delete(rest(`ministries?id=eq.${mi.id}`), { headers: as['lider-a'].headers });
+    expect(await roster('membro-a')).toEqual([]);
+    expect((await rpc('membro-a', 'attendance_mark', { p_session: ids.session, p_member: ids.fulano.id })).ok()).toBe(false);
+  });
+
+  test('o relatório é só da liderança e só com totais', async () => {
+    const args = { p_church: church.a, p_from: today, p_to: today };
+    const res = await rpc('lider-a', 'attendance_report', args);
+    expect(res.ok(), await res.text()).toBe(true);
+    const r = await res.json();
+    expect(r.presencas).toBeGreaterThanOrEqual(2);
+    expect(r.por_forma.qr).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(r)).not.toContain('Membro da A');
+    for (const who of ['membro-a', 'adm-b']) expect((await rpc(who, 'attendance_report', args)).ok(), who).toBe(false);
+  });
+});

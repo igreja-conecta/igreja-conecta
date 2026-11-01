@@ -2,7 +2,7 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import { CONFIG } from './config.js';
 import {
   esc, slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, darkPalette, normalizeHex, normalizePhone, fmtPhone,
-  ROLES, isLeaderRole, FEATURES, fold, fmtDate, fmtMoney, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
+  ROLES, isLeaderRole, FEATURES, cardTokenFrom, fold, fmtDate, fmtMoney, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
   parseFinanceCsv, financeKey, FINANCE_CSV_TEMPLATE, FINANCE_CSV_HEADER, FIN_KIND_CSV,
   renderMessage, firstName, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
 } from './util.js';
@@ -11,6 +11,7 @@ import { maybeSuggestInstall, installState, installNow, iconReady, ICON_PREPARIN
 import { pushSupport, pushActive, enablePush, disablePush, syncPush, movePushToPage } from './push.js';
 import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg, qrImage } from './pix.js';
 import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
+import { startQrReader, beep } from './leitor-qr.js';
 import { BOOKS, BIBLE_VERSIONS, bibleUrl, bookName, bookChapters, verseRef, READING_PLANS, planReading, passageLabel, readingLabel } from './biblia.js';
 
 const $view = document.getElementById('view');
@@ -73,7 +74,7 @@ const SCREEN_PREFIX = 'tela:';
 const screenMem = new Map();
 const screenLoading = new Map();
 // Telas com dados sensíveis de outras pessoas: guardadas só na memória, nunca gravadas no aparelho.
-const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:|infantil$|chat$|conversa:|financeiro)/;
+const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:|infantil$|chat$|conversa:|financeiro|presenca)/;
 const screenKey = (name) => `${SCREEN_PREFIX}${state.user?.id}:${state.church?.id}:${name}`;
 
 function screenCached(name) {
@@ -230,6 +231,7 @@ function prefetchScreens() {
     if (visitorTeam()) screenFetch('visitantes', loadVisitors).catch(() => {});
     if (featureOn('infantil')) screenFetch('filhos', loadMyKids).catch(() => {});
     if (kidsTeam()) screenFetch('infantil', loadKids).catch(() => {});
+    if (attendanceTeam()) screenFetch('presenca', loadAttendanceSessions).catch(() => {});
     if (featureOn('galeria')) {
       // E as capas dos álbuns, para a Galeria abrir com as imagens.
       screenFetch('galeria', loadAlbums)
@@ -417,6 +419,7 @@ function errorText(err) {
   if (/duplicate key.*email/i.test(msg)) return 'Esse e-mail já está no cadastro desta igreja.';
   if (/ministries_visitors_idx/i.test(msg)) return 'Outro ministério já recebe os avisos de visitantes. Desmarque nele primeiro.';
   if (/ministries_kids_idx/i.test(msg)) return 'Outro ministério já faz o check-in das crianças. Desmarque nele primeiro.';
+  if (/ministries_attendance_idx/i.test(msg)) return 'Outro ministério já marca a presença nos cultos. Desmarque nele primeiro.';
   if (/ministries_gallery_idx/i.test(msg)) return 'Outro ministério já publica na galeria. Desmarque nele primeiro.';
   if (/fin_categories_name_idx/i.test(msg)) return 'Já existe uma categoria com esse nome.';
   if (/exceeded the maximum allowed size|Payload too large/i.test(msg)) return 'A foto ficou grande demais mesmo reduzida. Tente outra foto.';
@@ -456,6 +459,7 @@ const icon = {
   image: '<svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="m21 16-5-5-8 8.5"/></svg>',
   chart: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16.5V11M12 16.5V6M17 16.5v-8"/></svg>',
   idcard: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16.5a3.4 3.4 0 0 1 6.4 0M14.5 10h4M14.5 13.5h3"/></svg>',
+  presenca: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M15.5 12.5l2.5 2.5 4.5-5"/></svg>',
   child: '<svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="3"/><path d="M12 9v6M8 11.5l4-1 4 1M9.5 21l2.5-6 2.5 6"/></svg>',
   sun: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12H5M19 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>',
   moon: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
@@ -616,7 +620,7 @@ async function loadMemberships() {
   const [mem, pa] = await Promise.all([
     sb
       .from('members')
-      .select('id, role, consent_at, name, treasury, visitor_team, kids_team, gallery_team, church:churches(id, slug, name, logo_url, primary_color)')
+      .select('id, role, consent_at, name, treasury, visitor_team, kids_team, attendance_team, gallery_team, church:churches(id, slug, name, logo_url, primary_color)')
       .eq('user_id', state.user.id)
       .eq('status', 'ativo'),
     sb.rpc('is_platform_admin'),
@@ -720,6 +724,10 @@ const churchRoutes = [
   [/^\/infantil\/etiqueta\/([0-9a-f-]{36})$/, viewKidLabel],
   [/^\/infantil\/retirada$/, viewKidCheckout],
   [/^\/infantil\/salas$/, viewKidRooms],
+  [/^\/presenca$/, viewAttendance],
+  [/^\/presenca\/nova$/, viewAttendanceNew],
+  [/^\/presenca\/([0-9a-f-]{36})$/, viewAttendanceSession],
+  [/^\/presenca\/([0-9a-f-]{36})\/qr$/, viewAttendanceQr],
   [/^\/chat$/, viewChats],
   [/^\/chat\/nova$/, viewChatNew],
   [/^\/chat\/([0-9a-f-]{36})$/, viewConversation],
@@ -1102,13 +1110,14 @@ async function viewChurchHome() {
     ['celulas', icon.users, isLeaderRole(m.role) ? 'Células' : 'Célula', '#/celulas'],
     ['escalas', icon.clipboard, 'Escalas', '#/escalas'],
     ['infantil', icon.child, 'Check-in', '#/infantil'],
+    ['presenca', icon.presenca, 'Presença', '#/presenca'],
     ['carteirinha', icon.idcard, 'Carteirinha', '#/carteirinha'],
     ['galeria', icon.image, 'Galeria', '#/galeria'],
     ['atas', icon.file, 'ATAs', '#/atas'],
     ['visitantes', icon.user, 'Visitantes', '#/visitantes'],
     ['pix', icon.pix, 'Ofertar', '#/ofertar'],
   ].filter(([k]) =>
-    k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : k === 'visitantes' ? visitorTeam() : k === 'infantil' ? kidsTeam() : featureOn(k),
+    k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : k === 'visitantes' ? visitorTeam() : k === 'infantil' ? kidsTeam() : k === 'presenca' ? attendanceTeam() : featureOn(k),
   );
   $view.innerHTML = `
     <div class="page">
@@ -1207,6 +1216,7 @@ async function viewMenu() {
         ${featureOn('carteirinha') ? `<a class="menu-row" href="#/carteirinha">${icon.idcard}<span>Minha carteirinha</span>${icon.chevron}</a>` : ''}
         ${featureOn('infantil') ? `<a class="menu-row" href="#/filhos">${icon.child}<span>Meus filhos</span>${icon.chevron}</a>` : ''}
         ${kidsTeam() ? `<a class="menu-row" href="#/infantil">${icon.child}<span>Check-in infantil</span>${icon.chevron}</a>` : ''}
+        ${attendanceTeam() ? `<a class="menu-row" href="#/presenca">${icon.presenca}<span>Presença nos cultos</span>${icon.chevron}</a>` : ''}
         ${featureOn('escalas') ? `<a class="menu-row" href="#/escalas">${icon.clipboard}<span>Ministérios e escalas</span>${icon.chevron}</a>` : ''}
         ${featureOn('celulas') ? `<a class="menu-row" href="#/celulas">${icon.users}<span>${isLeaderRole(m.role) ? 'Células' : 'Minha célula'}</span>${icon.chevron}</a>` : ''}
         ${featureOn('devocional') ? `<a class="menu-row" href="#/devocional">${icon.book}<span>Devocional</span>${icon.chevron}</a><a class="menu-row" href="#/leitura">${icon.book}<span>Plano de leitura</span>${icon.chevron}</a>` : ''}
@@ -1258,7 +1268,7 @@ async function viewMyData() {
 
       <section class="card">
         <h2>${icon.upload} Baixar meus dados</h2>
-        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, as suas inscrições em eventos, os seus filhos e as entradas deles no infantil, os dados da carteirinha, os álbuns que publicou e os pedidos para tirar fotos, as suas conversas do chat, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
+        <p>Um arquivo com tudo o que o app guarda sobre você: os seus cadastros em cada igreja, as suas células e presenças, os seus ministérios e escalas, as suas inscrições em eventos, os seus filhos e as entradas deles no infantil, as suas presenças nos cultos, os dados da carteirinha, os álbuns que publicou e os pedidos para tirar fotos, as suas conversas do chat, os seus pedidos de oração, os seus planos de leitura, as notificações, as mensagens enviadas, os aparelhos com notificação e o que você publicou.</p>
         <button class="btn" id="export">Baixar arquivo</button>
         <p class="hint">Para corrigir algum dado, use "Meu cadastro" ou fale com a secretaria da igreja.</p>
       </section>
@@ -1444,6 +1454,16 @@ function helpTopics() {
       ? [[
           'Carteirinha digital',
           '<p>Em <a href="#/carteirinha">Menu &gt; Minha carteirinha</a> está a sua carteirinha de membro, com o QR Code. Ela abre mesmo sem internet. Toque em <em>Salvar imagem</em> para guardar na galeria do celular.</p><p>Quem apontar a câmera para o QR Code vê se você é membro ativo, com o nome, o papel e "membro desde" (sem foto, telefone ou e-mail). Se alguém copiou a sua carteirinha, toque em <em>Gerar novo QR Code</em>: o anterior deixa de valer.</p>',
+        ]]
+      : []),
+    ...(features('presenca')
+      ? [[
+          'Presença nos cultos',
+          `<p>A equipe da recepção marca quem veio a cada culto. A sua presença fica guardada para a liderança acompanhar a igreja, e você a encontra em <a href="#/meus-dados">Menu &gt; Meus dados</a>.${features('carteirinha') ? ' Na entrada, mostre o QR Code da <a href="#/carteirinha">sua carteirinha</a> para marcar mais rápido.' : ''}</p>${
+            attendanceTeam()
+              ? `<p><strong>Se você marca a presença:</strong> em <a href="#/presenca">Menu &gt; Presença nos cultos</a>, toque no botão <strong>+</strong>, embaixo à direita, e abra a lista do culto (os cultos de hoje da Agenda aparecem para escolher). Se outra pessoa já abriu a lista com o mesmo nome no mesmo dia, vocês marcam juntos na mesma lista. Busque o nome e toque em <em>Marcar</em>, ou toque em <em>Ler QR Code da carteirinha</em> e aponte a câmera para a carteirinha no celular da pessoa: cada uma lida faz um bip e entra na lista. No alto da lista, o contador mostra quantos foram marcados pela câmera, pelo QR Code e pela lista.</p>`
+              : ''
+          }`,
         ]]
       : []),
     ...(features('infantil')
@@ -1636,7 +1656,7 @@ function helpTopics() {
          <li><strong>Aparência:</strong> nome, nome curto (o que aparece embaixo do ícone), logo e cores. Logo em PNG com fundo transparente fica melhor; escolha o fundo do ícone. Se a cor for clara demais, o app avisa.</li>
          <li><strong>Textos e redes sociais:</strong> boas-vindas, sobre a igreja, endereço e links.</li>
          <li><strong>Dízimos e ofertas (Pix):</strong> o tipo e a chave Pix da igreja e o nome do recebedor. Prefira o CNPJ ou uma chave aleatória: a chave fica visível para qualquer pessoa.</li>
-         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, os relatórios, a galeria de fotos, o chat (e se os membros conversam entre si), o cadastro de visitantes, as ATAs das reuniões, o financeiro com o livro caixa e os dízimos e ofertas (este precisa da chave Pix).</li>
+         <li><strong>Funcionalidades:</strong> ligue ou desligue a agenda, os avisos, os aniversariantes, as datas especiais, os pedidos de oração, as células, as escalas de ministérios, as inscrições em eventos (precisa da agenda), o check-in infantil, a carteirinha digital, a presença nos cultos, os relatórios, a galeria de fotos, o chat (e se os membros conversam entre si), o cadastro de visitantes, as ATAs das reuniões, o financeiro com o livro caixa e os dízimos e ofertas (este precisa da chave Pix).</li>
          <li><strong>Privacidade:</strong> o e-mail para pedidos sobre dados pessoais e, se quiser, um complemento da política.</li>
        </ul>
        <p>O nome e o ícone do app instalado mudam em até 15 minutos, quando o site é publicado de novo sozinho. Até lá, o botão de instalar avisa que o ícone está sendo preparado. Quem já instalou pode precisar reinstalar para ver o ícone novo.</p>`,
@@ -5087,7 +5107,7 @@ async function loadSchedules() {
 
 async function loadMinistry(id) {
   const [miRes, rosterRes, schedRes, manageRes] = await Promise.all([
-    sb.from('ministries').select('id, name, description, receives_visitors, kids_checkin, gallery_publish, active').eq('id', id).maybeSingle(),
+    sb.from('ministries').select('id, name, description, receives_visitors, kids_checkin, attendance_checkin, gallery_publish, active').eq('id', id).maybeSingle(),
     sb.rpc('ministry_roster', { p_ministry: id }),
     sb.rpc('ministry_schedules', { p_ministry: id }),
     sb.rpc('can_manage_ministry', { p_ministry: id }),
@@ -5222,13 +5242,13 @@ function drawSchedules(data) {
 async function viewMinistryForm(ctx, id) {
   if (!requireMemberFeature(id ? `/ministerios/${id}/editar` : '/ministerios/novo', 'escalas')) return;
   if (!isLeaderRole(myRole())) return navigate('/escalas');
-  let mi = { name: '', description: '', receives_visitors: false, kids_checkin: false, gallery_publish: false, active: true };
+  let mi = { name: '', description: '', receives_visitors: false, kids_checkin: false, attendance_checkin: false, gallery_publish: false, active: true };
   if (id) {
     const data = await editItem(
       ctx,
       screenCached(`ministerio:${id}`)?.mi,
       async () => {
-        const { data: row, error } = await sb.from('ministries').select('id, name, description, receives_visitors, kids_checkin, gallery_publish, active').eq('id', id).maybeSingle();
+        const { data: row, error } = await sb.from('ministries').select('id, name, description, receives_visitors, kids_checkin, attendance_checkin, gallery_publish, active').eq('id', id).maybeSingle();
         if (error) throw error;
         return row;
       },
@@ -5264,6 +5284,12 @@ async function viewMinistryForm(ctx, id) {
           : ''
       }
       ${
+        featureOn('presenca')
+          ? `<label class="check"><input type="checkbox" name="attendance_checkin" ${mi.attendance_checkin ? 'checked' : ''}> Marca a presença nos cultos
+              <small class="hint">A equipe deste ministério abre as listas de presença e marca quem veio. Ela vê só os nomes dos membros. Só um ministério por igreja. Sem ele, só a liderança marca.</small></label>`
+          : ''
+      }
+      ${
         featureOn('galeria')
           ? `<label class="check"><input type="checkbox" name="gallery_publish" ${mi.gallery_publish ? 'checked' : ''}> Publica fotos na galeria
               <small class="hint">A equipe deste ministério cria álbuns, envia e apaga fotos. Só um ministério por igreja. Sem ele, só a liderança publica.</small></label>`
@@ -5283,6 +5309,7 @@ async function viewMinistryForm(ctx, id) {
       form.description.value = about;
       if (form.receives_visitors) form.receives_visitors.checked = name === 'Acolhimento';
       if (form.kids_checkin) form.kids_checkin.checked = name === 'Infantil';
+      if (form.attendance_checkin) form.attendance_checkin.checked = name === 'Acolhimento';
       if (form.gallery_publish) form.gallery_publish.checked = name === 'Mídia';
     };
   });
@@ -5293,6 +5320,7 @@ async function viewMinistryForm(ctx, id) {
       description: form.description.value.trim() || null,
       ...(form.receives_visitors ? { receives_visitors: form.receives_visitors.checked } : {}),
       ...(form.kids_checkin ? { kids_checkin: form.kids_checkin.checked } : {}),
+      ...(form.attendance_checkin ? { attendance_checkin: form.attendance_checkin.checked } : {}),
       ...(form.gallery_publish ? { gallery_publish: form.gallery_publish.checked } : {}),
     };
     const btn = form.querySelector('button.primary');
@@ -5364,6 +5392,7 @@ function drawMinistry(id, { mi, roster, schedules, manage }, photos) {
       ${mi.description ? `<p>${esc(mi.description)}</p>` : ''}
       ${mi.receives_visitors && featureOn('visitantes') ? '<p class="hint">Esta equipe recebe os avisos de visitantes e faz o acompanhamento em Menu &gt; Visitantes.</p>' : ''}
       ${mi.kids_checkin && featureOn('infantil') ? '<p class="hint">Esta equipe faz o check-in das crianças em Menu &gt; Check-in infantil.</p>' : ''}
+      ${mi.attendance_checkin && featureOn('presenca') ? '<p class="hint">Esta equipe marca a presença nos cultos em Menu &gt; Presença nos cultos.</p>' : ''}
       ${
         manage || leader
           ? `<div class="actions-row">
@@ -6277,6 +6306,367 @@ async function viewCardVerify(ctx, token) {
 }
 
 // ---------------------------------------------------------------------
+// Presença nos cultos: a equipe abre a lista do culto e marca quem veio, tocando no nome ou
+// lendo o QR Code da carteirinha. O contador mostra como cada presença foi marcada.
+// ---------------------------------------------------------------------
+// Marca a presença: a liderança e a equipe do ministério marcado "Marca a presença nos cultos".
+const attendanceTeam = () => featureOn('presenca') && (isLeaderRole(myRole()) || (isActiveMember() && !!myMember().attendance_team));
+const ATTENDANCE_METHODS = { lista: 'Lista', qr: 'QR Code', camera: 'Câmera' };
+const QR_CAMERA_KEY = 'leitor-camera';
+
+function requireAttendanceTeam(next) {
+  if (!requireMemberFeature(next, 'presenca')) return false;
+  if (attendanceTeam()) return true;
+  navigate('/');
+  return false;
+}
+
+// Listas dos últimos 60 dias, com o contador de cada uma.
+async function loadAttendanceSessions() {
+  const { data, error } = await sb.rpc('attendance_sessions_list', { p_church: state.church.id, p_since: isoLocal(addDays(new Date(), -60)) });
+  if (error) throw error;
+  return data;
+}
+
+async function loadAttendanceSession(id) {
+  const [s, r] = await Promise.all([
+    sb.from('attendance_sessions').select('id, title, session_date, event_id, created_by').eq('id', id).maybeSingle(),
+    sb.rpc('attendance_roster', { p_session: id }),
+  ]);
+  if (s.error) throw s.error;
+  if (r.error) throw r.error;
+  return { session: s.data, roster: r.data };
+}
+
+// Contador: total e por forma de marcar (lista, QR, câmera).
+function attendanceCounts(roster) {
+  const out = { total: 0, lista: 0, qr: 0, camera: 0, members: 0 };
+  for (const p of roster) {
+    out.members++;
+    if (!p.method) continue;
+    out.total++;
+    out[p.method]++;
+  }
+  return out;
+}
+
+const attendanceTiles = (c) => `
+  <div class="stat-grid attendance-count">
+    ${statTile('Presentes', c.total, `de ${c.members} ${c.members === 1 ? 'membro' : 'membros'}`)}
+    ${statTile('Pela câmera', c.camera)}
+    ${statTile('Pelo QR Code', c.qr)}
+    ${statTile('Pela lista', c.lista)}
+  </div>`;
+
+// Depois de marcar ou desmarcar: o guardado da lista e o contador da tela de listas, sem esperar o banco.
+function attendanceChanged(id, data) {
+  screenUpdate(`presenca:${id}`, data);
+  const list = screenCached('presenca');
+  if (!list) return;
+  const c = attendanceCounts(data.roster);
+  screenUpdate(
+    'presenca',
+    list.map((s) => (s.id === id ? { ...s, total: c.total, by_list: c.lista, by_qr: c.qr, by_camera: c.camera } : s)),
+  );
+}
+
+async function viewAttendance(ctx) {
+  if (!requireAttendanceTeam('/presenca')) return;
+  await screenShow(ctx, 'presenca', loadAttendanceSessions, drawAttendance);
+}
+
+function drawAttendance(rows) {
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Presença nos cultos</h1>
+      <p class="hint">Abra a lista do culto e marque quem veio: tocando no nome${featureOn('carteirinha') ? ' ou lendo o QR Code da carteirinha' : ''}.</p>
+      ${
+        rows.length
+          ? `<div class="list">${rows
+              .map(
+                (s) => `
+            <a class="member-row" href="#/presenca/${s.id}">
+              <span class="avatar">${icon.presenca}</span>
+              <span><strong>${esc(s.title)}</strong>
+                <small>${esc(fmtLongDay(s.session_date))} · ${s.total} ${s.total === 1 ? 'presente' : 'presentes'}</small>
+                <small>Câmera ${s.by_camera} · QR Code ${s.by_qr} · Lista ${s.by_list}</small></span>
+              ${icon.chevron}
+            </a>`,
+              )
+              .join('')}</div>`
+          : '<div class="empty"><p>Nenhuma lista nos últimos 60 dias. Toque no <strong>+</strong> para abrir a lista do culto de hoje.</p></div>'
+      }
+      ${fab('#/presenca/nova', 'Nova lista de presença')}
+    </div>`;
+}
+
+// Nova lista: sugere os cultos e eventos de hoje da Agenda (guardada no aparelho).
+async function viewAttendanceNew(ctx) {
+  if (!requireAttendanceTeam('/presenca/nova')) return;
+  const today = isoLocal(new Date());
+  const todays = (all) => (all || []).filter((ev) => isoLocal(new Date(ev.starts_at)) === today);
+  const weekday = new Date().toLocaleDateString('pt-BR', { weekday: 'long' });
+  const first = featureOn('agenda') ? todays(screenCached('agenda'))[0] : null;
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/presenca" class="back">← Presença</a>
+      <h1>Nova lista de presença</h1>
+      <form id="att-new" class="form">
+        <div id="att-events"></div>
+        <label>Nome da lista<input name="title" required minlength="2" maxlength="80" value="${esc(first?.title || `Culto de ${weekday}`)}" placeholder="Culto de domingo"></label>
+        <input type="hidden" name="event_id" value="${esc(first?.event_id || '')}">
+        <label>Data<input name="date" type="date" required value="${today}" max="${isoLocal(addDays(new Date(), 1))}" min="${isoLocal(addDays(new Date(), -365))}"></label>
+        <p class="hint">Se alguém já abriu a lista com o mesmo nome no mesmo dia, vocês marcam na mesma lista.</p>
+        <button class="btn primary big">Abrir lista</button>
+      </form>
+    </div>`;
+  const form = document.getElementById('att-new');
+  let chosen = first ? { title: first.title, event_id: first.event_id } : null;
+  const showEvents = (list) => {
+    const box = document.getElementById('att-events');
+    if (!box) return;
+    box.innerHTML = list.length
+      ? `<p class="hint">Hoje na agenda:</p><div class="chips">${list
+          .map((ev) => `<button type="button" class="chip" data-event="${esc(ev.event_id)}" data-title="${esc(ev.title)}">${esc(ev.title)} · ${esc(kidTime(ev.starts_at))}</button>`)
+          .join('')}</div>`
+      : '';
+    box.querySelectorAll('[data-event]').forEach((b) => {
+      b.onclick = () => {
+        chosen = { title: b.dataset.title, event_id: b.dataset.event };
+        form.title.value = chosen.title;
+        form.event_id.value = chosen.event_id;
+        form.date.value = today;
+      };
+    });
+  };
+  if (featureOn('agenda')) {
+    showEvents(todays(screenCached('agenda')));
+    screenFetch('agenda', loadAgenda)
+      .then((all) => ctx.alive() && showEvents(todays(all)))
+      .catch(() => {});
+  }
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    // O evento só vale se a lista continua com o nome dele e a data de hoje.
+    const linked = chosen && form.title.value.trim() === chosen.title && form.date.value === today ? chosen.event_id : null;
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    const { data: id, error } = await sb.rpc('attendance_open', {
+      p_church: state.church.id,
+      p_title: form.title.value.trim(),
+      p_date: form.date.value,
+      p_event: linked || null,
+    });
+    btn.disabled = false;
+    if (error) return toast(errorText(error), 'error');
+    screenForget('presenca');
+    navigate(`/presenca/${id}`);
+  });
+}
+
+async function viewAttendanceSession(ctx, id) {
+  if (!requireAttendanceTeam(`/presenca/${id}`)) return;
+  await screenShow(ctx, `presenca:${id}`, () => loadAttendanceSession(id), (d) => drawAttendanceSession(ctx, id, d));
+}
+
+function drawAttendanceSession(ctx, id, data) {
+  const { session, roster } = data;
+  if (!session) {
+    $view.innerHTML = '<div class="empty"><h2>Lista não encontrada</h2><a class="btn" href="#/presenca">Voltar</a></div>';
+    return;
+  }
+  const c = attendanceCounts(roster);
+  const show = ctx.params.get('ver') || 'todos';
+  const term = fold(ctx.params.get('busca') || '');
+  const list = roster.filter(
+    (p) => (show === 'presentes' ? p.method : show === 'faltam' ? !p.method : true) && (!term || fold(p.name).includes(term)),
+  );
+  const canDelete = isLeaderRole(myRole()) || session.created_by === state.user.id;
+  const link = (ver) => `#/presenca/${id}?ver=${ver}${term ? `&busca=${encodeURIComponent(ctx.params.get('busca'))}` : ''}`;
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/presenca" class="back">← Presença</a>
+      <h1>${esc(session.title)}</h1>
+      <p class="hint">${esc(fmtLongDay(session.session_date))}</p>
+      ${attendanceTiles(c)}
+      ${
+        featureOn('carteirinha')
+          ? `<div class="actions-row"><a class="btn primary" href="#/presenca/${id}/qr">${icon.qr} Ler QR Code da carteirinha</a></div>`
+          : ''
+      }
+      <form id="att-search" class="form"><label>Buscar<input name="q" type="search" value="${esc(ctx.params.get('busca') || '')}" placeholder="Nome do membro" autocomplete="off"></label></form>
+      <div class="chips filters">
+        <a class="chip ${show === 'todos' ? 'active' : ''}" href="${link('todos')}">Todos (${c.members})</a>
+        <a class="chip ${show === 'presentes' ? 'active' : ''}" href="${link('presentes')}">Presentes (${c.total})</a>
+        <a class="chip ${show === 'faltam' ? 'active' : ''}" href="${link('faltam')}">Faltam (${c.members - c.total})</a>
+      </div>
+      <div class="list">${
+        list
+          .map(
+            (p) => `
+        <div class="member-row" data-person="${p.member_id}">
+          ${avatar(p.name, null)}
+          <span><strong>${esc(p.name)}</strong>${p.method ? `<small>${esc(ATTENDANCE_METHODS[p.method])} · ${esc(kidTime(p.marked_at))}</small>` : ''}</span>
+          <span class="tags">${
+            p.method
+              ? `<span class="tag ok">Presente</span><button type="button" class="btn small" data-unmark="${p.member_id}" aria-label="Desmarcar ${esc(p.name)}">Desmarcar</button>`
+              : `<button type="button" class="btn small primary" data-mark="${p.member_id}" aria-label="Marcar ${esc(p.name)}">Marcar</button>`
+          }</span>
+        </div>`,
+          )
+          .join('') || `<div class="empty"><p>${term ? 'Ninguém com esse nome.' : show === 'presentes' ? 'Ninguém marcado ainda.' : 'Ninguém aqui.'}</p></div>`
+      }</div>
+      ${canDelete ? '<button class="btn danger-outline" type="button" id="att-delete">Apagar esta lista</button>' : ''}
+    </div>`;
+
+  const search = document.getElementById('att-search');
+  search.addEventListener('submit', (e) => e.preventDefault());
+  let timer;
+  search.q.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (!ctx.alive()) return;
+      const q = search.q.value.trim();
+      history.replaceState(null, '', `#/presenca/${id}?ver=${show}${q ? `&busca=${encodeURIComponent(q)}` : ''}`);
+      ctx.params.set('busca', q);
+      const pos = search.q.selectionStart;
+      drawAttendanceSession(ctx, id, data);
+      const input = document.getElementById('att-search').q;
+      input.focus();
+      input.setSelectionRange(pos, pos);
+    }, 200);
+  });
+
+  // Marcar e desmarcar: muda na hora e confere com o banco; se der erro, volta como estava.
+  const toggle = async (memberId, mark) => {
+    const p = roster.find((x) => x.member_id === memberId);
+    if (!p) return;
+    const before = { method: p.method, marked_at: p.marked_at };
+    Object.assign(p, mark ? { method: 'lista', marked_at: new Date().toISOString() } : { method: null, marked_at: null });
+    attendanceChanged(id, data);
+    const y = window.scrollY;
+    drawAttendanceSession(ctx, id, data);
+    window.scrollTo(0, y);
+    const { error } = await sb.rpc(mark ? 'attendance_mark' : 'attendance_unmark', { p_session: id, p_member: memberId });
+    if (!error) return;
+    Object.assign(p, before);
+    attendanceChanged(id, data);
+    if (ctx.alive()) {
+      drawAttendanceSession(ctx, id, data);
+      window.scrollTo(0, y);
+    }
+    toast(errorText(error), 'error');
+  };
+  $view.querySelectorAll('[data-mark]').forEach((b) => (b.onclick = () => toggle(b.dataset.mark, true)));
+  $view.querySelectorAll('[data-unmark]').forEach((b) => (b.onclick = () => toggle(b.dataset.unmark, false)));
+
+  document.getElementById('att-delete')?.addEventListener('click', async () => {
+    if (!await ask(`Apagar a lista "${session.title}" com as ${c.total} presenças marcadas?`, { danger: true, ok: 'Apagar' })) return;
+    const { error } = await sb.from('attendance_sessions').delete().eq('id', id);
+    if (error) return toast(errorText(error), 'error');
+    screenForget(`presenca:${id}`);
+    screenForget('presenca');
+    toast('Lista apagada.');
+    navigate('/presenca');
+  });
+}
+
+// Leitor do QR Code da carteirinha: a câmera fica aberta e cada carteirinha lida marca a presença.
+async function viewAttendanceQr(ctx, id) {
+  if (!requireAttendanceTeam(`/presenca/${id}/qr`)) return;
+  const data = screenCached(`presenca:${id}`);
+  const session = data?.session;
+  $view.innerHTML = `
+    <div class="page qr-reader">
+      <a href="#/presenca/${id}" class="back">← Lista de presença</a>
+      <h1>Ler carteirinha</h1>
+      ${session ? `<p class="hint">${esc(session.title)} · ${esc(fmtLongDay(session.session_date))}</p>` : ''}
+      <div class="qr-video"><video id="qr-video" playsinline muted></video><span class="qr-frame" aria-hidden="true"></span></div>
+      <div id="qr-result" class="qr-result" role="status" aria-live="polite">Abrindo a câmera…</div>
+      <div class="actions-row">
+        <button class="btn" type="button" id="qr-flip">Trocar câmera</button>
+        <a class="btn" href="#/presenca/${id}">Marcar pela lista</a>
+      </div>
+      <p class="hint" id="qr-count">${data ? `${attendanceCounts(data.roster).total} presentes nesta lista` : ''}</p>
+      <ul class="qr-recent" id="qr-recent"></ul>
+      <p class="hint">Peça para a pessoa abrir <em>Minha carteirinha</em> no app e mostrar o QR Code. A imagem da câmera não é gravada nem enviada.</p>
+    </div>`;
+  const video = document.getElementById('qr-video');
+  const result = document.getElementById('qr-result');
+  const show = (text, kind = '') => {
+    result.textContent = text;
+    result.className = `qr-result ${kind}`;
+  };
+  let facing = 'environment';
+  try {
+    facing = localStorage.getItem(QR_CAMERA_KEY) || 'environment';
+  } catch {}
+  let stop = null;
+  let busy = false;
+  window.addEventListener('hashchange', () => stop?.(), { once: true });
+
+  const onCode = async (text) => {
+    if (busy) return;
+    const token = cardTokenFrom(text);
+    if (!token) {
+      beep(false);
+      return show('Este QR Code não é de uma carteirinha.', 'error');
+    }
+    busy = true;
+    const { data: rows, error } = await sb.rpc('attendance_mark_card', { p_session: id, p_token: token });
+    busy = false;
+    if (!ctx.alive()) return;
+    if (error) {
+      beep(false);
+      return show(errorText(error), 'error');
+    }
+    const [r] = rows;
+    beep(true);
+    show(r.already ? `${firstName(r.name)} já estava na lista.` : `✓ Bom culto, ${firstName(r.name)}!`, 'ok');
+    const li = document.createElement('li');
+    li.textContent = `${r.already ? '•' : '✓'} ${r.name} · ${kidTime(new Date().toISOString())}`;
+    document.getElementById('qr-recent')?.prepend(li);
+    const saved = screenCached(`presenca:${id}`);
+    const p = saved?.roster.find((x) => x.member_id === r.member_id);
+    if (p && !p.method) {
+      Object.assign(p, { method: 'qr', marked_at: new Date().toISOString() });
+      attendanceChanged(id, saved);
+    } else if (!p) {
+      screenForget(`presenca:${id}`);
+      screenForget('presenca');
+    }
+    const count = document.getElementById('qr-count');
+    if (count && saved) count.textContent = `${attendanceCounts(saved.roster).total} presentes nesta lista`;
+  };
+
+  const open = async () => {
+    stop?.();
+    show('Abrindo a câmera…');
+    try {
+      stop = await startQrReader(video, { facing, onCode, alive: ctx.alive });
+      if (ctx.alive()) show('Aponte a câmera para o QR Code da carteirinha.');
+    } catch (err) {
+      if (!ctx.alive()) return;
+      const denied = /NotAllowed|Permission/i.test(err?.name || err?.message || '');
+      show(
+        denied
+          ? 'O app não tem permissão para usar a câmera. Permita a câmera nas configurações do navegador e toque em "Trocar câmera".'
+          : `Não foi possível abrir a câmera. ${err?.message?.startsWith('Não') ? err.message : 'Confira se outro app não está usando a câmera.'}`,
+        'error',
+      );
+    }
+  };
+  document.getElementById('qr-flip').onclick = () => {
+    facing = facing === 'environment' ? 'user' : 'environment';
+    try {
+      localStorage.setItem(QR_CAMERA_KEY, facing);
+    } catch {}
+    open();
+  };
+  open();
+}
+
+// ---------------------------------------------------------------------
 // Relatórios da liderança: só totais, calculados no banco (church_report)
 // ---------------------------------------------------------------------
 const REPORT_PERIODS = [
@@ -6308,9 +6698,14 @@ function reportPeriod(key) {
 }
 
 async function loadReport(p) {
-  const { data, error } = await sb.rpc('church_report', { p_church: state.church.id, p_from: p.from, p_to: p.to });
-  if (error) throw error;
-  return data;
+  const args = { p_church: state.church.id, p_from: p.from, p_to: p.to };
+  const [main, att] = await Promise.all([
+    sb.rpc('church_report', args),
+    featureOn('presenca') ? sb.rpc('attendance_report', args) : null,
+  ]);
+  if (main.error) throw main.error;
+  if (att?.error) throw att.error;
+  return att ? { ...main.data, presenca: att.data } : main.data;
 }
 
 async function viewReports(ctx) {
@@ -6450,6 +6845,35 @@ function reportSections(r) {
         ['Já tinham vindo', v.ja_tinham_vindo],
         ...v.por_mes.map((x) => [`Visitantes em ${x.mes}`, x.total]),
         ...Object.entries(v.como_conheceram).map(([k, n]) => [`Conheceu: ${VISITOR_SOURCES[k] || 'Não informado'}`, n]),
+      ],
+    };
+  }
+
+  if (r.presenca) {
+    const a = r.presenca;
+    const forms = [
+      ['camera', 'Pela câmera'],
+      ['qr', 'Pelo QR Code da carteirinha'],
+      ['lista', 'Pela lista'],
+    ];
+    sections.presenca = {
+      title: 'Presença nos cultos',
+      html: `
+        <div class="stat-grid">
+          ${statTile('Cultos com lista', a.cultos)}
+          ${statTile('Presenças', a.presencas)}
+          ${statTile('Média por culto', a.media_por_culto ?? '—')}
+          ${statTile('Pessoas diferentes', a.pessoas_diferentes)}
+        </div>
+        ${a.por_culto.length ? barChart('Presentes por culto', a.por_culto.slice(-26).map((x) => ({ label: fmtDate(x.dia).slice(0, 5), value: x.total }))) : '<p class="hint">Nenhuma lista de presença no período.</p>'}
+        <h3>Como a presença foi marcada</h3>
+        ${hBars(forms.map(([k, label]) => ({ label, value: a.por_forma[k] })))}`,
+      csv: [
+        ['Dia', 'Culto', 'Presentes'],
+        ...a.por_culto.map((x) => [fmtDate(x.dia), x.titulo, x.total]),
+        [],
+        ['Forma', 'Presenças'],
+        ...forms.map(([k, label]) => [label, a.por_forma[k]]),
       ],
     };
   }
