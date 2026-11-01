@@ -145,6 +145,34 @@ test('o membro marcado pela câmera recebe o aviso e toca em "Não fui eu"', asy
   await expect(page.getByText('Você não está marcado nesta lista de presença.')).toBeVisible();
 });
 
+// Quem chega com o rosto para baixo: as primeiras leituras saem longe do cadastro (0,6) e não marcam;
+// quando levanta o rosto (0,2 do cadastro, mas só 0,4 da leitura ruim), o totem tenta de novo na hora.
+// Antes, a leitura ruim bloqueava a mesma pessoa por 20 segundos.
+test('quem chega com o rosto para baixo é reconhecido assim que levanta o rosto', async ({ page }) => {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const session = await (await rpc('adm-a', 'attendance_open', { p_church: ids.church, p_title: `Culto ${tag} rosto baixo`, p_date: today, p_event: null })).json();
+  const shift = (d, x) => d.map((v, i) => (i === 0 ? Math.round((v + x) * 10000) / 10000 : v));
+  await page.addInitScript(([bad, good]) => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const canvas = Object.assign(document.createElement('canvas'), { width: 480, height: 640 });
+      const g = canvas.getContext('2d');
+      setInterval(() => {
+        g.fillStyle = '#888';
+        g.fillRect(0, 0, 480, 640);
+      }, 100);
+      return canvas.captureStream(10);
+    };
+    const box = { x: 0.3, y: 0.2, width: 0.4, height: 0.5 };
+    let reads = 0;
+    window.__rostoFalso = {
+      detect: async () => [{ descriptor: ++reads <= 2 ? bad : good, score: 0.95, box }],
+      track: async () => [{ score: 0.95, box, eyes: 0.3 }],
+    };
+  }, [shift(descriptor(3), 0.6), shift(descriptor(3), 0.2)]);
+  await openLoggedIn(page, as['adm-a'].session, `/i/teste-a/#/presenca/${session}/totem`);
+  await expect(page.locator('#totem-msg')).toHaveText('✓ Bom culto, Admin!', { timeout: 15000 });
+});
+
 test('no modo grupo o totem marca duas pessoas de uma vez e cada uma pode ser desfeita', async ({ page }) => {
   const saved = await rpc('adm-a', 'face_save', {
     p_member: ids.adm, p_embedding: descriptor(3), p_samples: 5, p_model: FACE_MODEL, p_term_version: '2026-11-01', p_adult_confirmed: true,

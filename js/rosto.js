@@ -11,8 +11,16 @@ export const ENROLL_STEPS = [
   'Vire o rosto um pouco para a esquerda',
   'Agora um pouco para a direita',
   'Levante um pouco o queixo',
-  'Olhe para a câmera de novo',
+  'Agora abaixe um pouco o rosto',
 ];
+// Totem: quantas leituras seguidas da mesma pessoa antes de dizer "Não reconheci" (quem chega
+// com o rosto um pouco para baixo costuma ser reconhecido na segunda ou terceira).
+export const FACE_TRIES = 4;
+// Quem foi reconhecido não é lido de novo por 20 s; quem não foi, só espera um pouco.
+const SEEN_MS = 20000;
+const MISSED_MS = 2500;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const isRecent = (recent, d, now) => recent.some((r) => now - r.at < r.ms && faceDistance(r.d, d) < 0.45);
 // Capturas da mesma pessoa ficam bem perto (no teste: até 0,16); pessoas diferentes, a partir de 0,5.
 const SAME_PERSON = 0.4;
 
@@ -247,7 +255,9 @@ export async function watchFaces(video, { requireBlink = () => true, onState, on
   const detect = reader(face, 'detect');
   let eyes = [];
   let seenAt = 0;
-  const recent = [];
+  let recent = [];
+  let tries = 0;
+  let blinkOk = 0;
   let last = '';
   const state = (s) => s !== last && onState((last = s));
   while (alive() && video.isConnected) {
@@ -257,7 +267,10 @@ export async function watchFaces(video, { requireBlink = () => true, onState, on
     onInfo(`${face.backend || '?'} · ${Math.round(performance.now() - t0)} ms${found[0]?.eyes ? ` · olhos ${found[0].eyes.toFixed(2)}` : ''}`);
     const near = found.filter((f) => f.box.width >= 0.15 && f.score >= 0.6).sort((a, b) => b.box.width - a.box.width);
     if (!near.length) {
-      if (now - seenAt > 1500) eyes = [];
+      if (now - seenAt > 1500) {
+        eyes = [];
+        tries = 0;
+      }
       state(found.length ? 'longe' : frameBrightness(video) < 10 ? 'preta' : 'vazio');
     } else if (near.length > 1 && near[1].box.width > near[0].box.width * 0.8) {
       state('varios');
@@ -265,19 +278,27 @@ export async function watchFaces(video, { requireBlink = () => true, onState, on
       seenAt = now;
       eyes.push(near[0].eyes);
       if (eyes.length > 30) eyes.shift();
-      if (requireBlink() && !blinked(eyes)) {
+      // Depois de piscar, as novas tentativas da mesma pessoa não pedem para piscar de novo.
+      if (requireBlink() && !(tries && now - blinkOk < 8000) && !blinked(eyes)) {
         state('piscar');
       } else {
+        if (!tries) blinkOk = now;
         state('lendo');
         const full = (await detect(video)).sort((a, b) => b.box.width - a.box.width)[0];
         eyes = [];
-        if (full) {
-          while (recent.length && now - recent[0].at > 20000) recent.shift();
-          if (!recent.some((r) => faceDistance(r.d, full.descriptor) < 0.45)) {
-            recent.push({ d: full.descriptor, at: now });
-            await onFace(full.descriptor);
-            last = '';
-            await new Promise((r) => setTimeout(r, 1500));
+        recent = recent.filter((r) => now - r.at < r.ms);
+        if (full && !isRecent(recent, full.descriptor, now)) {
+          tries++;
+          const lastTry = tries >= FACE_TRIES;
+          // onFace devolve true quando terminou com essa pessoa (reconhecida ou erro).
+          const done = await onFace(full.descriptor, { lastTry, tries });
+          last = '';
+          if (done || lastTry) {
+            recent.push({ d: full.descriptor, at: Date.now(), ms: done ? SEEN_MS : MISSED_MS });
+            tries = 0;
+            await sleep(1500);
+          } else {
+            await sleep(350);
           }
         }
       }
@@ -300,7 +321,7 @@ export async function watchGroup(video, { onState, onFaces, onProgress = () => {
   const face = await loadFaceEngine(onProgress);
   const detect = reader(face, 'detect', { group: true });
   let previous = [];
-  const recent = [];
+  let recent = [];
   let last = '';
   const state = (s, n = 0) => s + n !== last && onState(s, n, (last = s + n));
   while (alive() && video.isConnected) {
@@ -312,13 +333,14 @@ export async function watchGroup(video, { onState, onFaces, onProgress = () => {
     onInfo(`${face.backend || '?'} · ${Math.round(performance.now() - t0)} ms · ${near.length} ${near.length === 1 ? 'rosto' : 'rostos'} · ${video.videoWidth}×${video.videoHeight}`);
     if (!near.length) state(found.length ? 'longe' : frameBrightness(video) < 10 ? 'preta' : 'vazio');
     else state('grupo', near.length);
-    while (recent.length && now - recent[0].at > 20000) recent.shift();
-    const fresh = stableFaces(previous, near).filter((f) => !recent.some((r) => faceDistance(r.d, f.descriptor) < 0.45));
+    recent = recent.filter((r) => now - r.at < r.ms);
+    const fresh = stableFaces(previous, near).filter((f) => !isRecent(recent, f.descriptor, now));
     previous = near;
     if (fresh.length) {
       const batch = fresh.sort((a, b) => b.box.width - a.box.width).slice(0, 10);
-      for (const f of batch) recent.push({ d: f.descriptor, at: now });
-      await onFaces(batch.map((f) => f.descriptor));
+      // onFaces devolve as posições reconhecidas: essas param por 20 s; as outras tentam de novo logo.
+      const hit = new Set((await onFaces(batch.map((f) => f.descriptor))) ?? batch.map((_, i) => i));
+      batch.forEach((f, i) => recent.push({ d: f.descriptor, at: Date.now(), ms: hit.has(i) ? SEEN_MS : MISSED_MS }));
       last = '';
     }
     await new Promise((r) => setTimeout(r, 120));
