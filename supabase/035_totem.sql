@@ -123,8 +123,9 @@ begin
   if v_church is null then
     raise exception 'Lista não encontrada.' using errcode = '42501';
   end if;
-  if not ((p_source = 'membro' and p_member = public.my_member_id(v_church))
-          or (p_source = 'totem' and public.can_attendance(v_church))) then
+  -- coalesce: quem não é da igreja não tem cadastro nela (my_member_id nulo); nulo não pode passar.
+  if not coalesce((p_source = 'membro' and p_member = public.my_member_id(v_church))
+                  or (p_source = 'totem' and public.can_attendance(v_church)), false) then
     raise exception 'Só a própria pessoa ou a equipe da presença desfaz.' using errcode = '42501';
   end if;
   delete from public.attendance where session_id = p_session and member_id = p_member and method = 'camera';
