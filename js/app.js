@@ -12,6 +12,7 @@ import { pushSupport, pushActive, enablePush, disablePush, syncPush, movePushToP
 import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg, qrImage } from './pix.js';
 import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
 import { startQrReader, beep } from './leitor-qr.js';
+import { ENROLL_STEPS, FACE_MODEL, openCamera, enrollFace } from './rosto.js';
 import { BOOKS, BIBLE_VERSIONS, bibleUrl, bookName, bookChapters, verseRef, READING_PLANS, planReading, passageLabel, readingLabel } from './biblia.js';
 
 const $view = document.getElementById('view');
@@ -74,7 +75,7 @@ const SCREEN_PREFIX = 'tela:';
 const screenMem = new Map();
 const screenLoading = new Map();
 // Telas com dados sensíveis de outras pessoas: guardadas só na memória, nunca gravadas no aparelho.
-const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:|infantil$|chat$|conversa:|financeiro|presenca)/;
+const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:|infantil$|chat$|conversa:|financeiro|presenca|rosto:)/;
 const screenKey = (name) => `${SCREEN_PREFIX}${state.user?.id}:${state.church?.id}:${name}`;
 
 function screenCached(name) {
@@ -677,6 +678,8 @@ const churchRoutes = [
   [/^\/membros\/novo$/, viewMemberForm],
   [/^\/membros\/importar$/, viewImport],
   [/^\/membros\/([0-9a-f-]{36})$/, viewMemberForm],
+  [/^\/membros\/([0-9a-f-]{36})\/rosto$/, viewMemberFace],
+  [/^\/membros\/([0-9a-f-]{36})\/rosto\/cadastrar$/, viewMemberFaceEnroll],
   [/^\/privacidade$/, viewChurchPrivacy],
   [/^\/meus-dados$/, viewMyData],
   [/^\/ajuda$/, viewHelp],
@@ -728,6 +731,8 @@ const churchRoutes = [
   [/^\/presenca\/nova$/, viewAttendanceNew],
   [/^\/presenca\/([0-9a-f-]{36})$/, viewAttendanceSession],
   [/^\/presenca\/([0-9a-f-]{36})\/qr$/, viewAttendanceQr],
+  [/^\/rosto$/, viewMyFace],
+  [/^\/rosto\/cadastrar$/, viewMyFaceEnroll],
   [/^\/chat$/, viewChats],
   [/^\/chat\/nova$/, viewChatNew],
   [/^\/chat\/([0-9a-f-]{36})$/, viewConversation],
@@ -1214,6 +1219,7 @@ async function viewMenu() {
         ${visitorTeam() ? `<a class="menu-row" href="#/visitantes">${icon.user}<span>Visitantes</span>${icon.chevron}</a>` : ''}
         ${featureOn('galeria') ? `<a class="menu-row" href="#/galeria">${icon.image}<span>Galeria de fotos</span>${icon.chevron}</a>` : ''}
         ${featureOn('carteirinha') ? `<a class="menu-row" href="#/carteirinha">${icon.idcard}<span>Minha carteirinha</span>${icon.chevron}</a>` : ''}
+        ${faceOn() ? `<a class="menu-row" href="#/rosto">${icon.user}<span>Meu rosto (presença)</span>${icon.chevron}</a>` : ''}
         ${featureOn('infantil') ? `<a class="menu-row" href="#/filhos">${icon.child}<span>Meus filhos</span>${icon.chevron}</a>` : ''}
         ${kidsTeam() ? `<a class="menu-row" href="#/infantil">${icon.child}<span>Check-in infantil</span>${icon.chevron}</a>` : ''}
         ${attendanceTeam() ? `<a class="menu-row" href="#/presenca">${icon.presenca}<span>Presença nos cultos</span>${icon.chevron}</a>` : ''}
@@ -1462,6 +1468,16 @@ function helpTopics() {
           `<p>A equipe da recepção marca quem veio a cada culto. A sua presença fica guardada para a liderança acompanhar a igreja, e você a encontra em <a href="#/meus-dados">Menu &gt; Meus dados</a>.${features('carteirinha') ? ' Na entrada, mostre o QR Code da <a href="#/carteirinha">sua carteirinha</a> para marcar mais rápido.' : ''}</p>${
             attendanceTeam()
               ? `<p><strong>Se você marca a presença:</strong> em <a href="#/presenca">Menu &gt; Presença nos cultos</a>, toque no botão <strong>+</strong>, embaixo à direita, e abra a lista do culto (os cultos de hoje da Agenda aparecem para escolher). Se outra pessoa já abriu a lista com o mesmo nome no mesmo dia, vocês marcam juntos na mesma lista. Busque o nome e toque em <em>Marcar</em>, ou toque em <em>Ler QR Code da carteirinha</em> e aponte a câmera para a carteirinha no celular da pessoa: cada uma lida faz um bip e entra na lista. No alto da lista, o contador mostra quantos foram marcados pela câmera, pelo QR Code e pela lista.</p>`
+              : ''
+          }`,
+        ]]
+      : []),
+    ...(faceOn()
+      ? [[
+          'Reconhecimento facial (presença)',
+          `<p>É opcional. Em <a href="#/rosto">Menu &gt; Meu rosto (presença)</a>, leia o termo, toque em <em>Eu autorizo</em> e siga os passos na câmera (olhar para a frente e virar um pouco o rosto). O app guarda só uma assinatura numérica do rosto, calculada no seu celular: nenhuma foto é guardada nem enviada, e ninguém lê esses números, nem a liderança. Só para maiores de 18 anos. Para apagar, toque em <em>Apagar meu cadastro facial</em> na mesma tela.</p>${
+            canEnrollFaces()
+              ? `<p><strong>Secretaria:</strong> para quem não usa o app, abra o cadastro em <a href="#/membros">Membros</a> e toque em <em>Rosto para a presença</em>. Entregue o aparelho à pessoa: ela mesma lê o termo e toca em <em>Eu autorizo</em>. Quem usa o app recebe um aviso. Desligar o reconhecimento facial em Configurar apaga todos os rostos da igreja.</p>`
               : ''
           }`,
         ]]
@@ -2238,6 +2254,7 @@ async function viewMemberForm(ctx, id) {
       <button class="btn primary big">${isNew ? 'Cadastrar' : 'Salvar'}</button>
       ${admin && linked ? '<button type="button" class="btn" id="unlink">Desligar a conta do app</button>' : ''}
       ${canDelete ? '<button type="button" class="btn danger-outline" id="delete">Excluir cadastro</button>' : ''}
+      ${!isNew && canEnrollFaces() && m.status === 'ativo' ? `<a class="btn" href="#/membros/${m.id}/rosto">${icon.user} Rosto para a presença</a>` : ''}
     </form>`;
 
   const form = document.getElementById('member');
@@ -2612,6 +2629,12 @@ async function viewSettings(ctx) {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const facialNow = form.feature_presenca_facial.checked && form.feature_presenca.checked;
+    if (form.feature_presenca_facial.checked && !form.feature_presenca.checked)
+      return toast('Para ligar o reconhecimento facial, ligue também a Presença nos cultos.', 'error');
+    if (c.features?.presenca && c.features?.presenca_facial && !facialNow &&
+      !await ask('Desligar o reconhecimento facial apaga todos os rostos cadastrados na igreja. Para usar de novo, cada pessoa precisa cadastrar outra vez. Continuar?', { danger: true, ok: 'Desligar e apagar' }))
+      return;
     const btn = form.querySelector('button.primary');
     btn.disabled = true;
     btn.textContent = 'Salvando…';
@@ -6664,6 +6687,210 @@ async function viewAttendanceQr(ctx, id) {
     open();
   };
   open();
+}
+
+// ---------------------------------------------------------------------
+// Cadastro do rosto (reconhecimento facial da presença): só com a autorização da pessoa,
+// pelo próprio membro (Menu > Meu rosto) ou pela secretaria, com a pessoa presente.
+// Nenhuma foto é guardada: só a assinatura numérica do rosto, calculada no aparelho.
+// ---------------------------------------------------------------------
+const faceOn = () => featureOn('presenca') && featureOn('presenca_facial');
+const canEnrollFaces = () => faceOn() && ['admin', 'secretaria'].includes(myRole());
+// Mudou o texto do termo? Troque a versão: o banco guarda qual versão cada pessoa aceitou.
+const FACE_TERM_VERSION = '2026-11-01';
+const faceTerm = (own) => `
+  <section class="card face-term">
+    <h2>Termo de consentimento: reconhecimento facial</h2>
+    <ul>
+      <li><strong>Para que serve:</strong> marcar ${own ? 'a sua presença' : 'a presença'} nos cultos quando passar pela câmera na entrada da igreja.</li>
+      <li><strong>O que é guardado:</strong> só uma assinatura numérica do rosto (128 números), calculada neste aparelho. <strong>Nenhuma foto é guardada nem enviada.</strong></li>
+      <li><strong>Quem vê:</strong> ninguém lê esses números, nem a liderança. O banco só os compara com o rosto de quem passa pela câmera da igreja.</li>
+      <li><strong>É opcional:</strong> sem o cadastro, a presença continua pela lista ou pela carteirinha, sem diferença nenhuma.</li>
+      <li><strong>Dá para apagar quando quiser:</strong> em Menu &gt; Meu rosto ou pedindo à secretaria. Sair da igreja também apaga.</li>
+      <li>O rosto é um dado pessoal sensível (LGPD, art. 11): só é usado com esta autorização, que fica registrada com a data.</li>
+    </ul>
+  </section>`;
+
+async function loadFaceStatus(memberId) {
+  const { data, error } = await sb.rpc('face_status', { p_member: memberId });
+  if (error) throw error;
+  return data[0] ?? { registered: false, needs_adult: true };
+}
+
+function requireFaceOn(next) {
+  if (!requireMemberFeature(next, 'presenca_facial')) return false;
+  if (faceOn()) return true;
+  navigate('/');
+  return false;
+}
+
+const faceWhen = (s) =>
+  `Cadastrado em ${new Date(s.registered_at).toLocaleDateString('pt-BR')}${s.via === 'secretaria' ? ', pela secretaria' : ''}.`;
+
+// Situação do cadastro (do próprio membro ou, para a secretaria, de outra pessoa).
+function drawFaceStatus({ own, name, back, backText, enrollHref, memberId, cacheName }, s) {
+  $view.innerHTML = `
+    <div class="page">
+      ${back ? `<a href="${back}" class="back">← ${esc(backText)}</a>` : ''}
+      <h1>${own ? 'Meu rosto' : `Rosto de ${esc(firstName(name))}`}</h1>
+      <p class="hint">Reconhecimento facial para a presença nos cultos.</p>
+      ${
+        s.registered
+          ? `<section class="card"><h2>✓ Rosto cadastrado</h2><p>${esc(faceWhen(s))}</p>
+              <p class="hint">Nenhuma foto foi guardada, só a assinatura numérica do rosto.</p></section>
+             <div class="actions-row">
+               <a class="btn" href="${enrollHref}">Cadastrar de novo</a>
+               <button class="btn danger-outline" type="button" id="face-delete">${own ? 'Apagar meu cadastro facial' : 'Apagar o cadastro facial'}</button>
+             </div>`
+          : `<section class="card"><h2>Sem cadastro facial</h2>
+              <p>${own ? 'Com o rosto cadastrado, a sua presença é marcada quando você passa pela câmera na entrada da igreja.' : 'Com o rosto cadastrado, a presença é marcada quando a pessoa passa pela câmera na entrada da igreja.'} É opcional: sem o cadastro, a presença continua pela lista ou pela carteirinha.</p>
+              <p class="hint">Só para maiores de 18 anos.</p></section>
+             <a class="btn primary big" href="${enrollHref}">${own ? 'Cadastrar meu rosto' : 'Cadastrar o rosto'}</a>`
+      }
+    </div>`;
+  document.getElementById('face-delete')?.addEventListener('click', async () => {
+    const msg = own
+      ? 'Apagar o seu cadastro facial? A presença continua pela lista ou pela carteirinha.'
+      : `Apagar o cadastro facial de ${name}? A pessoa recebe um aviso, se usar o app.`;
+    if (!await ask(msg, { danger: true, ok: 'Apagar' })) return;
+    const { error } = await sb.rpc('face_delete', { p_member: memberId });
+    if (error) return toast(errorText(error), 'error');
+    screenUpdate(cacheName, { ...s, registered: false, registered_at: null, via: null });
+    toast('Cadastro facial apagado.');
+    drawFaceStatus({ own, name, back, backText, enrollHref, memberId, cacheName }, screenCached(cacheName));
+  });
+}
+
+async function viewMyFace(ctx) {
+  if (!requireFaceOn('/rosto')) return;
+  const me = myMember();
+  const opts = { own: true, name: me.name, enrollHref: '#/rosto/cadastrar', memberId: me.id, cacheName: 'rosto' };
+  await screenShow(ctx, 'rosto', () => loadFaceStatus(me.id), (s) => drawFaceStatus(opts, s));
+}
+
+// Para a secretaria: na ficha do membro, com a pessoa presente.
+async function loadMemberFace(id) {
+  const [s, m] = await Promise.all([loadFaceStatus(id), sb.from('members').select('name').eq('id', id).maybeSingle()]);
+  if (m.error) throw m.error;
+  return { ...s, name: m.data?.name || '' };
+}
+
+async function viewMemberFace(ctx, id) {
+  if (!requireFaceOn(`/membros/${id}/rosto`)) return;
+  if (!canEnrollFaces()) return navigate(`/membros/${id}`);
+  await screenShow(ctx, `rosto:${id}`, () => loadMemberFace(id), (s) =>
+    drawFaceStatus(
+      { own: false, name: s.name, back: `#/membros/${id}`, backText: s.name, enrollHref: `#/membros/${id}/rosto/cadastrar`, memberId: id, cacheName: `rosto:${id}` },
+      s,
+    ),
+  );
+}
+
+async function viewMyFaceEnroll(ctx) {
+  if (!requireFaceOn('/rosto/cadastrar')) return;
+  const me = myMember();
+  drawFaceEnroll(ctx, { own: true, memberId: me.id, name: me.name, status: screenCached('rosto'), cacheName: 'rosto', back: '/rosto' });
+}
+
+async function viewMemberFaceEnroll(ctx, id) {
+  if (!requireFaceOn(`/membros/${id}/rosto/cadastrar`)) return;
+  if (!canEnrollFaces()) return navigate(`/membros/${id}`);
+  const s = screenCached(`rosto:${id}`);
+  if (!s) return navigate(`/membros/${id}/rosto`);
+  drawFaceEnroll(ctx, { own: false, memberId: id, name: s.name, status: s, cacheName: `rosto:${id}`, back: `/membros/${id}/rosto` });
+}
+
+// Termo, autorização e a câmera guiada.
+function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
+  const needsAdult = status?.needs_adult ?? true;
+  $view.innerHTML = `
+    <div class="page face-enroll">
+      <a href="#${back}" class="back">← ${own ? 'Meu rosto' : esc(name)}</a>
+      <h1>${own ? 'Cadastrar meu rosto' : `Cadastrar o rosto de ${esc(firstName(name))}`}</h1>
+      ${own ? '' : `<p class="notice"><strong>Entregue o aparelho a ${esc(firstName(name))}:</strong> a própria pessoa lê o termo e toca em <em>Eu autorizo</em>.</p>`}
+      <form id="face-consent" class="form">
+        ${faceTerm(own)}
+        ${needsAdult ? `<label class="check"><input type="checkbox" name="adult" required> ${own ? 'Tenho 18 anos ou mais.' : 'A pessoa tem 18 anos ou mais.'}</label>` : ''}
+        <label class="check"><input type="checkbox" name="agree" required> ${own ? 'Li e autorizo o cadastro do meu rosto para a presença nos cultos.' : `Eu, ${esc(name)}, li e autorizo o cadastro do meu rosto para a presença nos cultos.`}</label>
+        <button class="btn primary big">Eu autorizo</button>
+      </form>
+      <div id="face-camera" hidden>
+        <div class="qr-video face-video"><video id="face-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div>
+        <p class="face-step" id="face-step" role="status" aria-live="polite">Abrindo a câmera…</p>
+        <div class="face-dots" id="face-dots">${ENROLL_STEPS.map(() => '<span></span>').join('')}</div>
+        <p class="hint center" id="face-hint" aria-live="polite"></p>
+        <div class="actions-row">
+          <button class="btn" type="button" id="face-flip">Trocar câmera</button>
+          <a class="btn" href="#${back}">Cancelar</a>
+        </div>
+        <p class="hint">A câmera só calcula a assinatura do rosto neste aparelho. Nenhuma foto é guardada nem enviada.</p>
+      </div>
+    </div>`;
+  const form = document.getElementById('face-consent');
+  const video = document.getElementById('face-video');
+  const stepEl = document.getElementById('face-step');
+  const hintEl = document.getElementById('face-hint');
+  let facing = own ? 'user' : 'environment';
+  let close = null;
+  let run = 0;
+  window.addEventListener('hashchange', () => close?.(), { once: true });
+  const adult = () => !!form.adult?.checked;
+
+  const start = async () => {
+    const mine = ++run;
+    close?.();
+    stepEl.textContent = 'Abrindo a câmera…';
+    hintEl.textContent = '';
+    try {
+      close = await openCamera(video, facing);
+      video.classList.toggle('mirror', facing === 'user');
+      stepEl.textContent = 'Preparando o reconhecimento…';
+      const alive = () => ctx.alive() && mine === run;
+      const result = await enrollFace(video, {
+        alive,
+        onStep: (i, text) => {
+          stepEl.textContent = text;
+          [...document.getElementById('face-dots').children].forEach((d, j) => d.classList.toggle('done', j < i));
+        },
+        onHint: (text) => (hintEl.textContent = text),
+      });
+      close();
+      if (!alive()) return;
+      stepEl.textContent = 'Salvando…';
+      const { error } = await sb.rpc('face_save', {
+        p_member: memberId,
+        p_embedding: result.descriptor,
+        p_samples: result.samples,
+        p_model: FACE_MODEL,
+        p_term_version: FACE_TERM_VERSION,
+        p_adult_confirmed: adult(),
+      });
+      if (error) throw error;
+      screenForget(cacheName);
+      toast(own ? 'Pronto: seu rosto foi cadastrado.' : 'Pronto: rosto cadastrado.');
+      navigate(back);
+    } catch (err) {
+      close?.();
+      if (!ctx.alive() || mine !== run || err?.message === 'cancelado') return;
+      const denied = /NotAllowed|Permission/i.test(err?.name || err?.message || '');
+      stepEl.textContent = denied
+        ? 'O app não tem permissão para usar a câmera. Permita a câmera nas configurações do navegador e toque em "Trocar câmera".'
+        : errorText(err).startsWith('Não') || err?.code
+          ? errorText(err)
+          : 'Não foi possível usar a câmera agora. Confira a internet e tente de novo.';
+    }
+  };
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    form.hidden = true;
+    document.getElementById('face-camera').hidden = false;
+    start();
+  });
+  document.getElementById('face-flip').onclick = () => {
+    facing = facing === 'user' ? 'environment' : 'user';
+    start();
+  };
 }
 
 // ---------------------------------------------------------------------

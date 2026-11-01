@@ -2116,3 +2116,104 @@ test.describe('Presença nos cultos (033)', () => {
     for (const who of ['membro-a', 'adm-b']) expect((await rpc(who, 'attendance_report', args)).ok(), who).toBe(false);
   });
 });
+
+test.describe('Cadastro do rosto (034)', () => {
+  const tag = `Rosto ${Date.now().toString(36)}`;
+  const vec = (k = 1) => Array.from({ length: 128 }, (_, i) => Math.round(Math.sin(i * k) * 1000) / 10000);
+  const ids = {};
+  const save = (who, member, extra = {}) =>
+    rpc(who, 'face_save', { p_member: member, p_embedding: vec(), p_samples: 5, p_model: 'teste', p_term_version: '2026-11-01', p_adult_confirmed: false, ...extra });
+  const status = async (who, member) => (await (await rpc(who, 'face_status', { p_member: member })).json())[0];
+
+  test.beforeAll(async () => {
+    const people = await get('lider-a', 'members?select=id,name,birth_date&name=in.("Membro da A","Fulano da A")');
+    ids.membro = people.find((p) => p.name === 'Membro da A').id;
+    ids.fulano = people.find((p) => p.name === 'Fulano da A').id;
+    [{ id: ids.b }] = await get('adm-b', `members?select=id&user_id=eq.${as['adm-b'].id}`);
+    // Se uma rodada parou no meio, ficou rosto cadastrado.
+    for (const id of [ids.membro, ids.fulano]) await rpc('adm-a', 'face_delete', { p_member: id });
+    await rpc('adm-b', 'face_delete', { p_member: ids.b });
+  });
+
+  test.afterAll(async () => {
+    if (!api) return;
+    for (const id of [ids.membro, ids.fulano]) await rpc('adm-a', 'face_delete', { p_member: id });
+    await rpc('adm-b', 'face_delete', { p_member: ids.b });
+    await api.delete(rest(`members?name=like.${encodeURIComponent(tag)}*`), { headers: as['adm-a'].headers });
+  });
+
+  test('o próprio membro cadastra o rosto com a autorização; ninguém lê as tabelas, nem a liderança', async () => {
+    expect(await status('membro-a', ids.membro)).toMatchObject({ registered: false });
+    // Sem data de nascimento: precisa confirmar 18+.
+    const noAdult = await save('membro-a', ids.membro);
+    expect(noAdult.ok()).toBe(false);
+    expect(await noAdult.text()).toContain('18 anos');
+    expect((await save('membro-a', ids.membro, { p_embedding: vec().slice(1) })).ok()).toBe(false);
+    expect((await save('membro-a', ids.membro, { p_samples: 1, p_adult_confirmed: true })).ok()).toBe(false);
+    const ok = await save('membro-a', ids.membro, { p_adult_confirmed: true });
+    expect(ok.ok(), await ok.text()).toBe(true);
+    expect(await status('membro-a', ids.membro)).toMatchObject({ registered: true, via: 'proprio', term_version: '2026-11-01' });
+
+    for (const who of ['membro-a', 'adm-a', 'lider-a', 'adm-b']) {
+      for (const table of ['face_templates', 'face_consents']) {
+        const res = await api.get(rest(`${table}?select=*`), { headers: as[who].headers });
+        if (res.ok()) expect(await res.json(), `${who} ${table}`).toEqual([]);
+      }
+    }
+    const direct = await api.post(rest('face_templates'), {
+      headers: as['adm-a'].headers,
+      data: { member_id: ids.fulano, church_id: church.a, embedding: `[${vec().join(',')}]`, samples: 5, model: 'x', consent_id: '00000000-0000-0000-0000-000000000000' },
+    });
+    expect(direct.ok()).toBe(false);
+    // O status de outra pessoa: só a própria, a secretaria e o administrador.
+    for (const who of ['lider-a', 'adm-b']) expect((await rpc(who, 'face_status', { p_member: ids.membro })).ok(), who).toBe(false);
+  });
+
+  test('a secretaria (ou o administrador) cadastra quem é maior de idade; o membro recebe o aviso', async () => {
+    for (const who of ['lider-a', 'membro-a', 'adm-b']) expect((await save(who, ids.fulano)).ok(), who).toBe(false);
+    const ok = await save('adm-a', ids.fulano); // tem data de nascimento (1980): não precisa confirmar
+    expect(ok.ok(), await ok.text()).toBe(true);
+    expect(await status('adm-a', ids.fulano)).toMatchObject({ registered: true, via: 'secretaria' });
+
+    const made = await api.post(rest('members'), {
+      headers: returning(as['adm-a'].headers),
+      data: { church_id: church.a, name: `${tag} Menor`, birth_date: `${new Date().getFullYear() - 12}-01-10` },
+    });
+    expect(made.ok(), await made.text()).toBe(true);
+    const [kid] = await made.json();
+    const minor = await save('adm-a', kid.id, { p_adult_confirmed: true });
+    expect(minor.ok()).toBe(false);
+    expect(await minor.text()).toContain('maiores de 18');
+
+    // Cadastrar de novo, pela secretaria: o membro com o app fica sabendo.
+    expect((await save('adm-a', ids.membro, { p_adult_confirmed: true })).ok()).toBe(true);
+    expect(await status('membro-a', ids.membro)).toMatchObject({ registered: true, via: 'secretaria' });
+    const notes = await get('membro-a', 'notifications?select=title,url&title=eq.Seu%20rosto%20foi%20cadastrado');
+    expect(notes.length).toBeGreaterThan(0);
+    expect(notes[0].url).toBe('#/rosto');
+
+    const data = await (await rpc('membro-a', 'export_my_data')).json();
+    const face = data.igrejas.find((c) => c.endereco_no_app === '/i/teste-a/').cadastro_facial;
+    expect(face.cadastrado).toBe(true);
+    expect(face.autorizacoes.map((a) => a.cadastrado_por)).toEqual(['secretaria', 'você']);
+    expect(JSON.stringify(face)).not.toMatch(/embedding|0\.0841/);
+  });
+
+  test('apagar: o próprio membro ou a secretaria; desligar o reconhecimento facial apaga os rostos da igreja', async () => {
+    expect((await rpc('lider-a', 'face_delete', { p_member: ids.membro })).ok()).toBe(false);
+    expect((await rpc('membro-a', 'face_delete', { p_member: ids.membro })).ok()).toBe(true);
+    expect(await status('membro-a', ids.membro)).toMatchObject({ registered: false });
+
+    expect((await save('adm-b', ids.b, { p_adult_confirmed: true })).ok()).toBe(true);
+    expect((await status('adm-b', ids.b)).registered).toBe(true);
+    const [b] = await get('adm-b', `churches?select=features&id=eq.${church.b}`);
+    const setFeatures = (features) => api.patch(rest(`churches?id=eq.${church.b}`), { headers: as['adm-b'].headers, data: { features } });
+    expect((await setFeatures({ ...b.features, presenca_facial: false })).ok()).toBe(true);
+    try {
+      expect((await save('adm-b', ids.b, { p_adult_confirmed: true })).ok()).toBe(false);
+    } finally {
+      await setFeatures(b.features);
+    }
+    expect((await status('adm-b', ids.b)).registered).toBe(false);
+  });
+});

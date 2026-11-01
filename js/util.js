@@ -122,6 +122,7 @@ export const FEATURES = [
   { key: 'infantil', label: 'Check-in do ministério infantil', phase: 3 },
   { key: 'carteirinha', label: 'Carteirinha digital', phase: 3 },
   { key: 'presenca', label: 'Presença nos cultos', phase: 3 },
+  { key: 'presenca_facial', label: 'Presença: reconhecimento facial (precisa da presença; desligar apaga os rostos)', phase: 3 },
   { key: 'relatorios', label: 'Relatórios', phase: 3 },
   { key: 'galeria', label: 'Galeria de fotos', phase: 3 },
   { key: 'devocional', label: 'Devocional e plano de leitura', phase: 3 },

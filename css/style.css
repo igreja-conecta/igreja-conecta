@@ -925,3 +925,13 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 .qr-result.error { border-color: var(--danger); color: var(--danger); }
 .qr-recent { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 4px; }
 .qr-recent li { padding: 6px 10px; border-bottom: 1px solid var(--line); }
+
+/* Cadastro do rosto: termo, câmera com a moldura oval e os passos */
+.face-term ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 6px; }
+.face-video { aspect-ratio: 3 / 4; max-width: 360px; }
+.face-video video.mirror { transform: scaleX(-1); }
+.face-oval { position: absolute; inset: 12% 18%; border: 3px dashed rgba(255, 255, 255, .9); border-radius: 50%; pointer-events: none; }
+.face-step { text-align: center; font-weight: 700; font-size: 1.2rem; margin: 8px 0 4px; }
+.face-dots { display: flex; justify-content: center; gap: 8px; margin: 6px 0; }
+.face-dots span { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--brand); }
+.face-dots span.done { background: var(--brand); }

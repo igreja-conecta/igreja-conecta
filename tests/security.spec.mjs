@@ -354,3 +354,22 @@ test.describe('Banco: visitante sem login (presença nos cultos)', () => {
     for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (cadastro do rosto)', () => {
+  test('não lê nem grava rostos e autorizações; não chama as funções', async ({ request }) => {
+    for (const table of ['face_templates', 'face_consents']) {
+      const res = await request.get(rest(`${table}?select=*`), { headers });
+      if (res.ok()) expect(await res.json(), table).toEqual([]);
+    }
+    const calls = {
+      face_on: { p_church: UUID },
+      can_enroll_faces: { p_church: UUID },
+      face_actor: { p_member: UUID },
+      face_status: { p_member: UUID },
+      face_save: { p_member: UUID, p_embedding: Array(128).fill(0), p_samples: 5, p_model: 'x', p_term_version: '1', p_adult_confirmed: true },
+      face_delete: { p_member: UUID },
+    };
+    for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
+    expect((await rpc(request, 'churches_face_off')).ok()).toBe(false);
+  });
+});
