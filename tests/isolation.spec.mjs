@@ -2155,7 +2155,7 @@ test.describe('Cadastro do rosto (034)', () => {
     expect(await status('membro-a', ids.membro)).toMatchObject({ registered: true, via: 'proprio', term_version: '2026-11-01' });
 
     for (const who of ['membro-a', 'adm-a', 'lider-a', 'adm-b']) {
-      for (const table of ['face_templates', 'face_consents']) {
+      for (const table of ['face_templates', 'face_consents', 'face_angles']) {
         const res = await api.get(rest(`${table}?select=*`), { headers: as[who].headers });
         if (res.ok()) expect(await res.json(), `${who} ${table}`).toEqual([]);
       }
@@ -2397,5 +2397,64 @@ test.describe('Totem em grupo (037)', () => {
     expect((await many('lider-a', { a: 1 })).ok()).toBe(false);
     expect((await many('lider-a', [['x']])).ok()).toBe(false);
     expect(await (await many('lider-a', [])).json()).toEqual([]);
+  });
+});
+
+test.describe('Cadastro com vários ângulos do rosto (038)', () => {
+  const tag = `Angulos ${Date.now().toString(36)}`;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const vec = (k) => Array.from({ length: 128 }, (_, i) => Math.round(Math.sin(i * k) * 1000) / 10000);
+  const plus = (v, x) => v.map((n) => Math.round((n + x) * 10000) / 10000);
+  const model = 'teste-angulos';
+  const ids = {};
+  const save = (member, embedding, angles) =>
+    rpc('adm-a', 'face_save', {
+      p_member: member, p_embedding: embedding, p_samples: 5, p_model: model, p_term_version: '2026-11-01', p_adult_confirmed: false,
+      ...(angles === undefined ? {} : { p_angles: angles }),
+    });
+  const match = async (embedding) =>
+    (await (await rpc('lider-a', 'face_match', { p_session: ids.session, p_embedding: embedding, p_model: model })).json()).map((r) => r.member_id);
+
+  test.beforeAll(async () => {
+    for (const key of ['ana', 'bia']) {
+      const made = await api.post(rest('members'), {
+        headers: returning(as['adm-a'].headers),
+        data: { church_id: church.a, name: `${tag} ${key}`, birth_date: '1990-01-01' },
+      });
+      [{ id: ids[key] }] = await made.json();
+    }
+    ids.session = await (await rpc('lider-a', 'attendance_open', { p_church: church.a, p_title: tag, p_date: today, p_event: null })).json();
+  });
+
+  test.afterAll(async () => {
+    if (!api) return;
+    await api.delete(rest(`attendance_sessions?title=eq.${encodeURIComponent(tag)}`), { headers: as['lider-a'].headers });
+    await api.delete(rest(`members?name=like.${encodeURIComponent(tag)}*`), { headers: as['adm-a'].headers });
+  });
+
+  test('o totem acha a pessoa pelo ângulo mais parecido; cadastro sem ângulos ainda vale', async () => {
+    // Ana: a média e dois ângulos (um deles bem diferente da média). Bia: só a média, como antes.
+    const ana = await save(ids.ana, vec(2), [vec(2), vec(7)]);
+    expect(ana.ok(), await ana.text()).toBe(true);
+    const bia = await save(ids.bia, vec(5));
+    expect(bia.ok(), await bia.text()).toBe(true);
+    expect(await match(plus(vec(7), 0.005))).toEqual([ids.ana]); // pelo ângulo
+    expect(await match(plus(vec(5), 0.005))).toEqual([ids.bia]); // pela média
+    expect(await match(vec(11))).toEqual([]); // ninguém
+    // Cadastrar de novo troca os ângulos: sem eles, o ângulo antigo não reconhece mais.
+    expect((await save(ids.ana, vec(2), [])).ok()).toBe(true);
+    expect(await match(plus(vec(7), 0.005))).toEqual([]);
+    // Apagar o rosto apaga tudo.
+    expect((await save(ids.ana, vec(2), [vec(7)])).ok()).toBe(true);
+    expect((await rpc('adm-a', 'face_delete', { p_member: ids.ana })).ok()).toBe(true);
+    expect(await match(plus(vec(7), 0.005))).toEqual([]);
+  });
+
+  test('recusa ângulos demais ou mal formados', async () => {
+    expect((await save(ids.bia, vec(5), Array.from({ length: 11 }, () => vec(5)))).ok()).toBe(false);
+    expect((await save(ids.bia, vec(5), [vec(5).slice(1)])).ok()).toBe(false);
+    expect((await save(ids.bia, vec(5), [vec(5).map(String)])).ok()).toBe(false);
+    expect((await save(ids.bia, vec(5), [plus(vec(5), 9)])).ok()).toBe(false);
+    expect((await save(ids.bia, vec(5), { a: 1 })).ok()).toBe(false);
   });
 });

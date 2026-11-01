@@ -12,7 +12,7 @@ import { pushSupport, pushActive, enablePush, disablePush, syncPush, movePushToP
 import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg, qrImage } from './pix.js';
 import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
 import { startQrReader, beep } from './leitor-qr.js';
-import { ENROLL_STEPS, FACE_MODEL, openCamera, enrollFace, watchFaces, watchGroup } from './rosto.js';
+import { TURN_SHOTS, FACE_MODEL, openCamera, enrollFace, watchFaces, watchGroup } from './rosto.js';
 // Erros do rosto com texto para a pessoa (faceError em js/rosto.js) aparecem como estão.
 const faceErrorText = (err, fallback) =>
   /NotAllowed|Permission/i.test(err?.name || err?.message || '')
@@ -1489,7 +1489,7 @@ function helpTopics() {
     ...(faceOn()
       ? [[
           'Reconhecimento facial (presença)',
-          `<p>É opcional. Em <a href="#/rosto">Menu &gt; Meu rosto (presença)</a>, leia o termo, toque em <em>Eu autorizo</em> e siga os passos na câmera (olhar para a frente e virar um pouco o rosto). O app guarda só uma assinatura numérica do rosto, calculada no seu celular: nenhuma foto é guardada nem enviada, e ninguém lê esses números, nem a liderança. Só para maiores de 18 anos. Para apagar, toque em <em>Apagar meu cadastro facial</em> na mesma tela.</p>${
+          `<p>É opcional. Em <a href="#/rosto">Menu &gt; Meu rosto (presença)</a>, leia o termo, toque em <em>Eu autorizo</em> e olhe para a câmera e gire a cabeça devagar, em círculo, até completar o anel. O app guarda só assinaturas numéricas do rosto (uma de cada ângulo), calculada no seu celular: nenhuma foto é guardada nem enviada, e ninguém lê esses números, nem a liderança. Só para maiores de 18 anos. Para apagar, toque em <em>Apagar meu cadastro facial</em> na mesma tela.</p>${
             canEnrollFaces()
               ? `<p><strong>Secretaria:</strong> para quem não usa o app, abra o cadastro em <a href="#/membros">Membros</a> e toque em <em>Rosto para a presença</em>. Entregue o aparelho à pessoa: ela mesma lê o termo e toca em <em>Eu autorizo</em>. Quem usa o app recebe um aviso. Desligar o reconhecimento facial em Configurar apaga todos os rostos da igreja.</p>`
               : ''
@@ -6740,13 +6740,14 @@ async function viewAttendanceQr(ctx, id) {
 const faceOn = () => featureOn('presenca') && featureOn('presenca_facial');
 const canEnrollFaces = () => faceOn() && ['admin', 'secretaria'].includes(myRole());
 // Mudou o texto do termo? Troque a versão: o banco guarda qual versão cada pessoa aceitou.
-const FACE_TERM_VERSION = '2026-11-01';
+// Mudou o texto do termo? Troque a versão (a autorização guarda qual versão a pessoa leu).
+const FACE_TERM_VERSION = '2026-11-01.2';
 const faceTerm = (own) => `
   <section class="card face-term">
     <h2>Termo de consentimento: reconhecimento facial</h2>
     <ul>
       <li><strong>Para que serve:</strong> marcar ${own ? 'a sua presença' : 'a presença'} nos cultos quando passar pela câmera na entrada da igreja.</li>
-      <li><strong>O que é guardado:</strong> só uma assinatura numérica do rosto (128 números), calculada neste aparelho. <strong>Nenhuma foto é guardada nem enviada.</strong></li>
+      <li><strong>O que é guardado:</strong> só assinaturas numéricas do rosto (128 números cada; uma de cada ângulo, até 10), calculadas neste aparelho. <strong>Nenhuma foto é guardada nem enviada.</strong></li>
       <li><strong>Quem vê:</strong> ninguém lê esses números, nem a liderança. O banco só os compara com o rosto de quem passa pela câmera da igreja.</li>
       <li><strong>É opcional:</strong> sem o cadastro, a presença continua pela lista ou pela carteirinha, sem diferença nenhuma.</li>
       <li><strong>Dá para apagar quando quiser:</strong> em Menu &gt; Meu rosto ou pedindo à secretaria. Sair da igreja também apaga.</li>
@@ -6844,6 +6845,19 @@ async function viewMemberFaceEnroll(ctx, id) {
 }
 
 // Termo, autorização e a câmera guiada.
+// Anel em volta do rosto, uma parte para cada ângulo guardado (vai se completando enquanto a pessoa gira).
+function faceRing() {
+  const r = 46;
+  const gap = 4; // graus entre as partes
+  const pt = (deg) => {
+    const a = ((deg - 90) * Math.PI) / 180;
+    return `${(50 + r * Math.cos(a)).toFixed(2)} ${(50 + r * Math.sin(a)).toFixed(2)}`;
+  };
+  const step = 360 / TURN_SHOTS;
+  const parts = Array.from({ length: TURN_SHOTS }, (_, i) => `<path d="M ${pt(i * step + gap / 2)} A ${r} ${r} 0 0 1 ${pt((i + 1) * step - gap / 2)}"/>`);
+  return `<svg class="face-ring" id="face-ring" viewBox="0 0 100 100" aria-hidden="true">${parts.join('')}</svg>`;
+}
+
 function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
   const needsAdult = status?.needs_adult ?? true;
   $view.innerHTML = `
@@ -6858,9 +6872,9 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
         <button class="btn primary big">Eu autorizo</button>
       </form>
       <div id="face-camera" hidden>
-        <div class="qr-video face-video"><video id="face-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div>
+        <div class="qr-video face-video"><video id="face-video" playsinline muted></video>${faceRing()}</div>
         <p class="face-step" id="face-step" role="status" aria-live="polite">Abrindo a câmera…</p>
-        <div class="face-dots" id="face-dots">${ENROLL_STEPS.map(() => '<span></span>').join('')}</div>
+        <p class="hint center" id="face-count">0 de ${TURN_SHOTS}</p>
         <p class="hint center" id="face-hint" aria-live="polite"></p>
         <p class="hint center face-diag" id="face-diag"></p>
         <div class="actions-row">
@@ -6892,9 +6906,10 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
       const alive = () => ctx.alive() && mine === run;
       const result = await enrollFace(video, {
         alive,
-        onStep: (i, text) => {
-          stepEl.textContent = text;
-          [...document.getElementById('face-dots').children].forEach((d, j) => d.classList.toggle('done', j < i));
+        onStep: (text) => (stepEl.textContent = text),
+        onTurn: (n) => {
+          document.querySelectorAll('#face-ring path').forEach((p, j) => p.classList.toggle('done', j < n));
+          document.getElementById('face-count').textContent = `${n} de ${TURN_SHOTS}`;
         },
         onHint: (text) => (hintEl.textContent = text),
         onInfo: (text) => (document.getElementById('face-diag').textContent = text),
@@ -6910,6 +6925,7 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
         p_model: FACE_MODEL,
         p_term_version: FACE_TERM_VERSION,
         p_adult_confirmed: adult(),
+        p_angles: result.angles,
       });
       if (error) throw error;
       screenForget(cacheName);

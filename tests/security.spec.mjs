@@ -357,7 +357,7 @@ test.describe('Banco: visitante sem login (presença nos cultos)', () => {
 
 test.describe('Banco: visitante sem login (cadastro do rosto)', () => {
   test('não lê nem grava rostos e autorizações; não chama as funções', async ({ request }) => {
-    for (const table of ['face_templates', 'face_consents']) {
+    for (const table of ['face_templates', 'face_consents', 'face_angles']) {
       const res = await request.get(rest(`${table}?select=*`), { headers });
       if (res.ok()) expect(await res.json(), table).toEqual([]);
     }

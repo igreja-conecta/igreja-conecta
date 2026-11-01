@@ -47,9 +47,10 @@ test.afterAll(async () => {
 });
 
 // Câmera (um quadro cinza) e reconhecimento de mentira: sempre "um rosto, perto e nítido",
-// com a assinatura k; os olhos piscam a cada 6 leituras.
-async function fakeFace(page, k) {
-  await page.addInitScript((d) => {
+// com a assinatura k; os olhos piscam a cada 6 leituras. Com turn, cada leitura sai um pouco
+// diferente (como alguém girando a cabeça): é o que o cadastro precisa para completar o anel.
+async function fakeFace(page, k, { turn = false } = {}) {
+  await page.addInitScript(([d, turn]) => {
     navigator.mediaDevices.getUserMedia = async () => {
       const canvas = Object.assign(document.createElement('canvas'), { width: 480, height: 640 });
       const g = canvas.getContext('2d');
@@ -61,15 +62,19 @@ async function fakeFace(page, k) {
     };
     const box = { x: 0.3, y: 0.2, width: 0.4, height: 0.5 };
     let n = 0;
+    let reads = 0;
     window.__rostoFalso = {
-      detect: async () => [{ descriptor: d, score: 0.95, box }],
+      detect: async () => {
+        const j = reads++ % 9;
+        return [{ descriptor: turn && j ? d.map((v, i) => (i === j ? v + 0.2 : v)) : d, score: 0.95, box }];
+      },
       track: async () => [{ score: 0.95, box, eyes: ++n % 6 === 0 ? 0.1 : 0.3 }],
     };
-  }, descriptor(k));
+  }, [descriptor(k), turn]);
 }
 
 test('o administrador lê o termo, autoriza, cadastra e apaga o próprio rosto', async ({ page }) => {
-  await fakeFace(page, 1);
+  await fakeFace(page, 1, { turn: true });
   await openLoggedIn(page, as['adm-a'].session, '/i/teste-a/#/menu');
   await page.getByRole('link', { name: 'Meu rosto (presença)' }).click();
   await expect(page.getByRole('heading', { name: 'Sem cadastro facial' })).toBeVisible();
@@ -82,7 +87,8 @@ test('o administrador lê o termo, autoriza, cadastra e apaga o próprio rosto',
   if (await adult.count()) await adult.check();
   await page.getByLabel('Li e autorizo o cadastro do meu rosto para a presença nos cultos.').check();
   await page.getByRole('button', { name: 'Eu autorizo' }).click();
-  await expect(page.locator('#face-step')).toHaveText(/Olhe para a câmera|Vire o rosto|Agora|Levante|Salvando/);
+  await expect(page.locator('#face-step')).toHaveText(/Olhe para a câmera|gire a cabeça|Salvando/);
+  await expect(page.locator('#face-ring path')).toHaveCount(8);
   await expect(page.getByText('Pronto: seu rosto foi cadastrado.')).toBeVisible({ timeout: 20000 });
   await expect(page.getByRole('heading', { name: '✓ Rosto cadastrado' })).toBeVisible();
 
@@ -93,7 +99,7 @@ test('o administrador lê o termo, autoriza, cadastra e apaga o próprio rosto',
 });
 
 test('a secretaria cadastra o rosto de quem não usa o app, com a pessoa autorizando', async ({ page }) => {
-  await fakeFace(page, 2);
+  await fakeFace(page, 2, { turn: true });
   await openLoggedIn(page, as['adm-a'].session, `/i/teste-a/#/membros/${ids.pessoa}`);
   await page.getByRole('link', { name: 'Rosto para a presença' }).click();
   await page.getByRole('link', { name: 'Cadastrar o rosto' }).click();
