@@ -2,7 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, darkPalette, contrastRatio, normalizeHex, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE, cardTokenFrom } from '../js/util.js';
 import { pixPayload, normalizePixKey, guessPixType, crc16, parseAmount } from '../js/pix.js';
-import { blinked, eyesOpen, faceDistance, meanDescriptor } from '../js/rosto.js';
+import { blinked, eyesOpen, faceDistance, meanDescriptor, stableFaces } from '../js/rosto.js';
 
 test('endereço da igreja a partir do nome', () => {
   expect(slugify('Igreja Batista Central')).toBe('igreja-batista-central');
@@ -417,4 +417,14 @@ test('rosto: fechar os olhos e abrir de novo (proteção contra foto); distânci
   expect(eyesOpen(pts)).toBeCloseTo(0.25);
   expect(faceDistance([0, 0, 0], [3, 4, 0])).toBe(5);
   expect(meanDescriptor([[0, 2], [2, 4]])).toEqual([1, 3]);
+});
+
+test('totem em grupo: só vai para o banco o rosto que apareceu em duas leituras seguidas', () => {
+  const f = (d) => ({ descriptor: d });
+  const ana = [0, 0, 0];
+  const bia = [1, 1, 1];
+  const prev = [f(ana), f(bia)];
+  const now = [f([0.1, 0, 0]), f([5, 5, 5])]; // Ana de novo (quase igual) e alguém que acabou de chegar
+  expect(stableFaces(prev, now)).toEqual([now[0]]);
+  expect(stableFaces([], now)).toEqual([]);
 });

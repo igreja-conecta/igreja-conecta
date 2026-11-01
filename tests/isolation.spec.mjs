@@ -2345,3 +2345,57 @@ test.describe('Quem está faltando (036)', () => {
     expect((await rpc('adm-a', 'deliver_absence_alerts', { p_secret: 'errada' })).ok()).toBe(false);
   });
 });
+
+test.describe('Totem em grupo (037)', () => {
+  const tag = `Grupo ${Date.now().toString(36)}`;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const vec = (k) => Array.from({ length: 128 }, (_, i) => Math.round(Math.sin(i * k) * 1000) / 10000);
+  const plus = (v, x) => v.map((n) => Math.round((n + x) * 10000) / 10000);
+  const ids = {};
+  const many = (who, list, model = 'teste-grupo') => rpc(who, 'face_match_many', { p_session: ids.session, p_embeddings: list, p_model: model });
+
+  test.beforeAll(async () => {
+    // Duas pessoas temporárias com rostos bem diferentes (modelo próprio: não cruza com os outros testes).
+    for (const [key, k] of [['ana', 2], ['bia', 5]]) {
+      const made = await api.post(rest('members'), {
+        headers: returning(as['adm-a'].headers),
+        data: { church_id: church.a, name: `${tag} ${key}`, birth_date: '1990-01-01' },
+      });
+      [{ id: ids[key] }] = await made.json();
+      const saved = await rpc('adm-a', 'face_save', {
+        p_member: ids[key], p_embedding: vec(k), p_samples: 5, p_model: 'teste-grupo', p_term_version: '2026-11-01', p_adult_confirmed: false,
+      });
+      expect(saved.ok(), await saved.text()).toBe(true);
+    }
+    ids.session = await (await rpc('lider-a', 'attendance_open', { p_church: church.a, p_title: tag, p_date: today, p_event: null })).json();
+  });
+
+  test.afterAll(async () => {
+    if (!api) return;
+    await api.delete(rest(`attendance_sessions?title=eq.${encodeURIComponent(tag)}`), { headers: as['lider-a'].headers });
+    await api.delete(rest(`members?name=like.${encodeURIComponent(tag)}*`), { headers: as['adm-a'].headers });
+  });
+
+  test('marca várias pessoas de uma vez; desconhecido e repetido não entram; só a equipe usa', async () => {
+    for (const who of ['membro-a', 'adm-b']) expect((await many(who, [vec(2)])).ok(), who).toBe(false);
+    const res = await many('lider-a', [plus(vec(2), 0.005), vec(9), plus(vec(5), -0.005), vec(2)]);
+    expect(res.ok(), await res.text()).toBe(true);
+    const rows = await res.json();
+    expect(rows.map((r) => [r.idx, r.member_id, r.already])).toEqual([
+      [0, ids.ana, false],
+      [2, ids.bia, false],
+    ]);
+    const roster = await (await rpc('lider-a', 'attendance_roster', { p_session: ids.session })).json();
+    for (const id of [ids.ana, ids.bia]) expect(roster.find((r) => r.member_id === id).method).toBe('camera');
+    // De novo: já marcadas.
+    expect((await (await many('lider-a', [vec(2), vec(5)])).json()).map((r) => r.already)).toEqual([true, true]);
+  });
+
+  test('recusa listas grandes demais ou mal formadas', async () => {
+    expect((await many('lider-a', Array.from({ length: 11 }, () => vec(9)))).ok()).toBe(false);
+    expect((await many('lider-a', [vec(2).slice(1)])).ok()).toBe(false);
+    expect((await many('lider-a', { a: 1 })).ok()).toBe(false);
+    expect((await many('lider-a', [['x']])).ok()).toBe(false);
+    expect(await (await many('lider-a', [])).json()).toEqual([]);
+  });
+});

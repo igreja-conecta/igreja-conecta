@@ -45,6 +45,8 @@ export function loadFaceEngine(onProgress = () => {}) {
     const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
     // Acompanhar (totem) com imagem menor: mais leituras por segundo no celular.
     const fast = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
+    // Grupo: imagem maior, para achar rostos menores (gente mais longe).
+    const wide = new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.5 });
     const boxOf = (d, w, h) => ({ x: d.box.x / w, y: d.box.y / h, width: d.box.width / w, height: d.box.height / h });
     return {
       backend: faceapi.tf.getBackend(),
@@ -61,11 +63,11 @@ export function loadFaceEngine(onProgress = () => {}) {
         }));
       },
       // Rostos no quadro: a assinatura, a confiança e a caixa (em fração do quadro).
-      async detect(video) {
+      async detect(video, { group = false } = {}) {
         const w = video.videoWidth;
         const h = video.videoHeight;
         if (!w || !h) return [];
-        const found = await faceapi.detectAllFaces(video, opts).withFaceLandmarks(true).withFaceDescriptors();
+        const found = await faceapi.detectAllFaces(video, group ? wide : opts).withFaceLandmarks(true).withFaceDescriptors();
         return found.map((f) => ({
           descriptor: Array.from(f.descriptor),
           score: f.detection.score,
@@ -95,11 +97,11 @@ export function frameBrightness(video) {
 }
 
 // Lê o quadro; se o reconhecimento falhar seguidamente neste aparelho, avisa em vez de tentar para sempre.
-function reader(face, kind) {
+function reader(face, kind, options) {
   let fails = 0;
   return async (video) => {
     try {
-      const out = await face[kind](video);
+      const out = await face[kind](video, options);
       fails = 0;
       return out;
     } catch (err) {
@@ -137,11 +139,12 @@ export function meanDescriptor(list) {
 }
 
 // Abre a câmera no <video>. Devolve a função que fecha.
-export async function openCamera(video, facing = 'user') {
+// hd: imagem maior (modo grupo), para os rostos de quem está mais longe.
+export async function openCamera(video, facing = 'user', { hd = false } = {}) {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error('Este navegador não abre a câmera.');
   const stream = await within(
     navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: facing }, width: { ideal: 640 }, height: { ideal: 480 } },
+      video: { facingMode: { ideal: facing }, width: { ideal: hd ? 1280 : 640 }, height: { ideal: hd ? 720 : 480 } },
       audio: false,
     }),
     60000,
@@ -249,5 +252,44 @@ export async function watchFaces(video, { requireBlink = () => true, onState, on
       }
     }
     await new Promise((r) => setTimeout(r, 80));
+  }
+}
+
+
+// Grupo: rostos da leitura atual que também estavam na anterior (mesma pessoa, assinatura bem
+// parecida). Só esses vão para o banco: evita mandar um rosto cortado ou borrado de passagem.
+export function stableFaces(previous, current, max = 0.35) {
+  return current.filter((f) => previous.some((p) => faceDistance(p.descriptor, f.descriptor) < max));
+}
+
+// Totem em modo grupo: cada leitura acha todos os rostos perto o bastante; os que aparecem em duas
+// leituras seguidas (e não foram enviados nos últimos 20 s) vão juntos para onFaces(assinaturas).
+// onState: 'vazio', 'longe', 'preta' ou 'grupo' (com o número de rostos).
+export async function watchGroup(video, { onState, onFaces, onProgress = () => {}, onInfo = () => {}, alive = () => true }) {
+  const face = await loadFaceEngine(onProgress);
+  const detect = reader(face, 'detect', { group: true });
+  let previous = [];
+  const recent = [];
+  let last = '';
+  const state = (s, n = 0) => s + n !== last && onState(s, n, (last = s + n));
+  while (alive() && video.isConnected) {
+    const t0 = performance.now();
+    const found = await detect(video);
+    const now = Date.now();
+    // Rosto de pelo menos 6% da largura da imagem (cerca de 75 px em 1280): menor que isso, erra muito.
+    const near = found.filter((f) => f.box.width >= 0.06 && f.score >= 0.6);
+    onInfo(`${face.backend || '?'} · ${Math.round(performance.now() - t0)} ms · ${near.length} ${near.length === 1 ? 'rosto' : 'rostos'} · ${video.videoWidth}×${video.videoHeight}`);
+    if (!near.length) state(found.length ? 'longe' : frameBrightness(video) < 10 ? 'preta' : 'vazio');
+    else state('grupo', near.length);
+    while (recent.length && now - recent[0].at > 20000) recent.shift();
+    const fresh = stableFaces(previous, near).filter((f) => !recent.some((r) => faceDistance(r.d, f.descriptor) < 0.45));
+    previous = near;
+    if (fresh.length) {
+      const batch = fresh.sort((a, b) => b.box.width - a.box.width).slice(0, 10);
+      for (const f of batch) recent.push({ d: f.descriptor, at: now });
+      await onFaces(batch.map((f) => f.descriptor));
+      last = '';
+    }
+    await new Promise((r) => setTimeout(r, 120));
   }
 }

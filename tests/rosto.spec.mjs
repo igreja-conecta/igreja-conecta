@@ -145,6 +145,47 @@ test('o membro marcado pela câmera recebe o aviso e toca em "Não fui eu"', asy
   await expect(page.getByText('Você não está marcado nesta lista de presença.')).toBeVisible();
 });
 
+test('no modo grupo o totem marca duas pessoas de uma vez e cada uma pode ser desfeita', async ({ page }) => {
+  const saved = await rpc('adm-a', 'face_save', {
+    p_member: ids.adm, p_embedding: descriptor(3), p_samples: 5, p_model: FACE_MODEL, p_term_version: '2026-11-01', p_adult_confirmed: true,
+  });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const session = await (await rpc('adm-a', 'attendance_open', { p_church: ids.church, p_title: `Culto ${tag} grupo`, p_date: today, p_event: null })).json();
+
+  // Dois rostos na mesma imagem: o Admin (assinatura 3) e a Pessoa (assinatura 2, cadastrada no teste da secretaria).
+  await page.addInitScript(([a, b]) => {
+    localStorage.setItem('totem-modo', 'grupo');
+    navigator.mediaDevices.getUserMedia = async () => {
+      const canvas = Object.assign(document.createElement('canvas'), { width: 1280, height: 720 });
+      const g = canvas.getContext('2d');
+      setInterval(() => {
+        g.fillStyle = '#888';
+        g.fillRect(0, 0, 1280, 720);
+      }, 100);
+      return canvas.captureStream(10);
+    };
+    const box = (x) => ({ x, y: 0.2, width: 0.15, height: 0.3 });
+    window.__rostoFalso = {
+      detect: async () => [{ descriptor: a, score: 0.9, box: box(0.2) }, { descriptor: b, score: 0.9, box: box(0.6) }],
+      track: async () => [],
+    };
+  }, [descriptor(3), descriptor(2)]);
+  await openLoggedIn(page, as['adm-a'].session, `/i/teste-a/#/presenca/${session}`);
+  await page.getByRole('link', { name: 'Totem (reconhecimento facial)' }).click();
+  await expect(page.locator('#totem-msg')).toHaveText('✓ Bom culto, Admin e Pessoa!', { timeout: 20000 });
+  const camera = page.locator('.stat-tile', { hasText: 'Pela câmera' }).locator('.stat-value');
+  await expect(camera).toHaveText('2');
+  await page.getByRole('button', { name: 'Não é Pessoa' }).click();
+  await expect(page.getByText('Desfeito: Pessoa.')).toBeVisible();
+  await expect(camera).toHaveText('1');
+  await expect(page.getByRole('button', { name: 'Não é Admin' })).toBeVisible();
+  // O ajuste "Em grupo" ficou marcado e o de fechar os olhos some nesse modo.
+  await page.getByText('Ajustes do totem').click();
+  await expect(page.getByLabel(/Em grupo/)).toBeChecked();
+  await expect(page.locator('#totem-blink-box')).toBeHidden();
+});
+
 // Câmera que só entrega preto, ou reconhecimento que falha neste aparelho: a tela avisa (antes ficava muda).
 async function brokenFace(page, { black = false, failing = false }) {
   await page.addInitScript(([black, failing]) => {
