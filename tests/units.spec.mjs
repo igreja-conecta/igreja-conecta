@@ -2,7 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, darkPalette, contrastRatio, normalizeHex, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE, cardTokenFrom } from '../js/util.js';
 import { pixPayload, normalizePixKey, guessPixType, crc16, parseAmount } from '../js/pix.js';
-import { blinked, eyesOpen, faceDistance, meanDescriptor, stableFaces } from '../js/rosto.js';
+import { blinked, eyesOpen, faceDistance, meanDescriptor, stableFaces, turnPick } from '../js/rosto.js';
 
 test('endereço da igreja a partir do nome', () => {
   expect(slugify('Igreja Batista Central')).toBe('igreja-batista-central');
@@ -427,4 +427,13 @@ test('totem em grupo: só vai para o banco o rosto que apareceu em duas leituras
   const now = [f([0.1, 0, 0]), f([5, 5, 5])]; // Ana de novo (quase igual) e alguém que acabou de chegar
   expect(stableFaces(prev, now)).toEqual([now[0]]);
   expect(stableFaces([], now)).toEqual([]);
+});
+
+test('cadastro girando a cabeça: guarda só ângulo novo e deixa de fora o que virou demais', () => {
+  const frente = [0, 0, 0];
+  expect(turnPick([], frente)).toBe('novo');
+  expect(turnPick([frente], [0.05, 0, 0])).toBe('igual'); // quase o mesmo ângulo
+  expect(turnPick([frente], [0.3, 0, 0])).toBe('novo'); // outro ângulo
+  expect(turnPick([frente, [0.3, 0, 0]], [0.32, 0.05, 0])).toBe('igual'); // perto de um que já tem
+  expect(turnPick([frente], [0.7, 0, 0])).toBe('longe'); // virou demais (ou outra pessoa)
 });

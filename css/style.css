@@ -930,11 +930,11 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 .face-term ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 6px; }
 .face-video { aspect-ratio: 3 / 4; max-width: 360px; }
 .face-video video.mirror { transform: scaleX(-1); }
+.face-ring { position: absolute; inset: 4%; width: 92%; height: 92%; pointer-events: none; }
+.face-ring path { fill: none; stroke: rgb(255 255 255 / .45); stroke-width: 3.5; stroke-linecap: round; transition: stroke .3s; }
+.face-ring path.done { stroke: #3ddc84; }
 .face-oval { position: absolute; inset: 12% 18%; border: 3px dashed rgba(255, 255, 255, .9); border-radius: 50%; pointer-events: none; }
 .face-step { text-align: center; font-weight: 700; font-size: 1.2rem; margin: 8px 0 4px; }
-.face-dots { display: flex; justify-content: center; gap: 8px; margin: 6px 0; }
-.face-dots span { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--brand); }
-.face-dots span.done { background: var(--brand); }
 
 /* Totem da entrada */
 .totem-title { text-align: center; font-weight: 700; margin: 4px 0; }
