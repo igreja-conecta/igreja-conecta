@@ -184,6 +184,22 @@ test('no modo grupo o totem marca duas pessoas de uma vez e cada uma pode ser de
   await page.getByText('Ajustes do totem').click();
   await expect(page.getByLabel(/Em grupo/)).toBeChecked();
   await expect(page.locator('#totem-blink-box')).toBeHidden();
+
+  // Tela cheia: a câmera ocupa a tela toda e os avisos ficam embaixo, por cima da imagem.
+  await page.getByRole('button', { name: 'Tela cheia' }).click();
+  await expect(page.locator('#totem')).toHaveClass(/\bfull\b/);
+  const view = page.viewportSize();
+  const cam = await page.locator('#totem-box').boundingBox();
+  expect(Math.round(cam.width)).toBe(view.width);
+  expect(Math.round(cam.height)).toBe(view.height);
+  const msg = await page.locator('#totem-msg').boundingBox();
+  expect(msg.y).toBeGreaterThan(view.height * 0.5);
+  await expect(page.getByRole('button', { name: 'Não é Admin' })).toBeVisible();
+  await expect(page.getByText('Ajustes do totem')).toBeHidden();
+  await expect(page.locator('#tabbar')).toBeHidden();
+  await page.getByRole('button', { name: 'Sair da tela cheia' }).click();
+  await expect(page.locator('#totem')).not.toHaveClass(/\bfull\b/);
+  await expect(page.getByText('Ajustes do totem')).toBeVisible();
 });
 
 // Câmera que só entrega preto, ou reconhecimento que falha neste aparelho: a tela avisa (antes ficava muda).

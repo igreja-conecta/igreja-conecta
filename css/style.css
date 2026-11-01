@@ -948,6 +948,20 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 .face-diag { font-size: .75rem; opacity: .7; }
 .totem-video.group { aspect-ratio: 16 / 9; max-width: 720px; }
 .totem-video.group .face-oval { display: none; }
+/* Tela cheia do totem: câmera na tela inteira, avisos embaixo, por cima da imagem. */
+.totem-exit { display: none; }
+.totem.full { position: fixed; inset: 0; z-index: 25; margin: 0; padding: 0; max-width: none; background: #000; color: #fff; overflow: hidden; }
+.totem.full > :not(.totem-video, .totem-bottom, .totem-exit) { display: none; }
+.totem.full .totem-video, .totem.full .totem-video.group { position: absolute; inset: 0; width: 100%; max-width: none; height: 100%; margin: 0; aspect-ratio: auto; border-radius: 0; }
+.totem.full .face-oval { inset: 10% 30% 34%; }
+.totem.full .totem-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, rgb(0 0 0 / .75) 30%); text-align: center; }
+.totem.full .totem-msg { margin: 0 auto 8px; max-width: 900px; color: #fff; border-color: rgb(255 255 255 / .35); background: rgb(0 0 0 / .45); }
+.totem.full .totem-msg.ok { background: color-mix(in srgb, var(--brand) 70%, #000); border-color: var(--brand); }
+.totem.full .totem-msg.error { color: #fff; background: color-mix(in srgb, var(--danger) 70%, #000); }
+.totem.full .face-diag { color: #fff; }
+.totem.full .totem-exit { display: block; position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; z-index: 1; opacity: .75; }
+.totem.full .totem-exit[hidden] { display: none; }
+body.totem-full #tabbar, body.totem-full .topbar { visibility: hidden; }
 .totem-undo { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 6px 0; }
 .totem-mode { border: 0; padding: 0; margin: 0 0 8px; }
 .totem-mode legend { font-weight: 700; margin-bottom: 4px; }

@@ -6974,14 +6974,17 @@ async function viewAttendanceTotem(ctx, id) {
   let blink = pref(TOTEM_BLINK_KEY, '0') === '1';
   let mode = pref(TOTEM_MODE_KEY, 'um') === 'grupo' ? 'grupo' : 'um';
   $view.innerHTML = `
-    <div class="page totem">
+    <div class="page totem" id="totem">
       <a href="#/presenca/${id}" class="back">← Lista de presença</a>
+      <button type="button" class="btn small totem-exit" id="totem-exit" hidden>Sair da tela cheia</button>
       ${session ? `<p class="totem-title">${esc(session.title)}</p>` : ''}
       <div class="qr-video totem-video ${mode === 'grupo' ? 'group' : ''}" id="totem-box"><video id="totem-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div>
-      <div id="totem-msg" class="totem-msg" role="status" aria-live="polite">Abrindo a câmera…</div>
-      <p class="hint center face-diag" id="totem-diag"></p>
-      <button type="button" class="btn danger-outline big" id="totem-notme" hidden>Não sou eu</button>
-      <div class="totem-undo" id="totem-undo"></div>
+      <div class="totem-bottom">
+        <div id="totem-msg" class="totem-msg" role="status" aria-live="polite">Abrindo a câmera…</div>
+        <button type="button" class="btn danger-outline big" id="totem-notme" hidden>Não sou eu</button>
+        <div class="totem-undo" id="totem-undo"></div>
+        <p class="hint center face-diag" id="totem-diag"></p>
+      </div>
       <div id="totem-count">${data ? attendanceTiles(attendanceCounts(data.roster)) : ''}</div>
       <p class="totem-sign">Câmera de presença: reconhece só quem cadastrou o rosto no app. Nenhuma imagem é gravada.</p>
       <details class="card">
@@ -7026,10 +7029,33 @@ async function viewAttendanceTotem(ctx, id) {
     attendanceChanged(id, saved);
     refreshCount();
   };
+  // Tela cheia: a câmera ocupa a tela toda e os avisos ficam embaixo. A classe faz o layout (vale até
+  // no iPhone, que não tem tela cheia de verdade); a tela cheia do navegador, quando existe, some com as barras.
+  const page = document.getElementById('totem');
+  const exitBtn = document.getElementById('totem-exit');
+  const fsElement = () => document.fullscreenElement ?? document.webkitFullscreenElement;
+  const setFull = (on) => {
+    page.classList.toggle('full', on);
+    document.body.classList.toggle('totem-full', on);
+    exitBtn.hidden = !on;
+    if (on) {
+      const req = page.requestFullscreen ?? page.webkitRequestFullscreen;
+      Promise.resolve(req?.call(page)).catch(() => {});
+    } else if (fsElement()) {
+      Promise.resolve((document.exitFullscreen ?? document.webkitExitFullscreen)?.call(document)).catch(() => {});
+    }
+  };
+  // Saiu pela tecla Esc ou pelo gesto do aparelho: volta ao layout normal também.
+  const onFsChange = () => !fsElement() && page.classList.contains('full') && setFull(false);
+  document.addEventListener('fullscreenchange', onFsChange);
+  document.addEventListener('webkitfullscreenchange', onFsChange);
   const stopAll = () => {
     run++;
     close?.();
     wake?.release?.().catch(() => {});
+    document.removeEventListener('fullscreenchange', onFsChange);
+    document.removeEventListener('webkitfullscreenchange', onFsChange);
+    if (page.classList.contains('full')) setFull(false);
   };
   window.addEventListener('hashchange', stopAll, { once: true });
 
@@ -7151,7 +7177,11 @@ async function viewAttendanceTotem(ctx, id) {
     save(TOTEM_CAMERA_KEY, facing);
     start();
   };
-  document.getElementById('totem-full').onclick = () => document.documentElement.requestFullscreen?.().catch(() => {});
+  document.getElementById('totem-full').onclick = () => {
+    page.querySelector('details').open = false;
+    setFull(true);
+  };
+  exitBtn.onclick = () => setFull(false);
   start();
 }
 
