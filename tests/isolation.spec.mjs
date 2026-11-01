@@ -2270,15 +2270,17 @@ test.describe('Totem com reconhecimento facial (035)', () => {
   });
 
   test('"Não sou eu" (equipe) e "Não fui eu" (membro) desfazem só a marcação da câmera e ficam anotados', async () => {
-    const reject = (who, member) => rpc(who, 'attendance_reject', { p_session: ids.session, p_member: member });
-    expect((await reject('adm-b', ids.membro)).ok()).toBe(false);
-    expect((await reject('membro-a', ids.fulano)).ok()).toBe(false); // não desfaz a dos outros
-    expect((await reject('membro-a', ids.membro)).ok()).toBe(true);
+    const reject = (who, member, source) => rpc(who, 'attendance_reject', { p_session: ids.session, p_member: member, p_source: source });
+    for (const source of ['membro', 'totem']) expect((await reject('adm-b', ids.membro, source)).ok(), source).toBe(false);
+    expect((await reject('membro-a', ids.fulano, 'membro')).ok()).toBe(false); // não desfaz a dos outros
+    expect((await reject('membro-a', ids.fulano, 'totem')).ok()).toBe(false); // não é da equipe
+    expect((await reject('membro-a', ids.membro, 'outra')).ok()).toBe(false);
+    expect((await reject('membro-a', ids.membro, 'membro')).ok()).toBe(true);
     expect(await get('membro-a', `attendance?select=member_id&session_id=eq.${ids.session}`)).toEqual([]);
 
     // A da lista não é desfeita por aqui.
     expect((await rpc('lider-a', 'attendance_mark', { p_session: ids.session, p_member: ids.fulano })).ok()).toBe(true);
-    expect((await reject('lider-a', ids.fulano)).ok()).toBe(true);
+    expect((await reject('lider-a', ids.fulano, 'totem')).ok()).toBe(true);
     const rows = await (await rpc('lider-a', 'attendance_roster', { p_session: ids.session })).json();
     expect(rows.find((r) => r.member_id === ids.fulano).method).toBe('lista');
 

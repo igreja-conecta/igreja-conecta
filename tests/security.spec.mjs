@@ -379,6 +379,6 @@ test.describe('Banco: visitante sem login (totem)', () => {
     const res = await request.get(rest('attendance_flags?select=*'), { headers });
     if (res.ok()) expect(await res.json()).toEqual([]);
     expect((await rpc(request, 'face_match', { p_session: UUID, p_embedding: Array(128).fill(0), p_model: 'x' })).ok()).toBe(false);
-    expect((await rpc(request, 'attendance_reject', { p_session: UUID, p_member: UUID })).ok()).toBe(false);
+    expect((await rpc(request, 'attendance_reject', { p_session: UUID, p_member: UUID, p_source: 'totem' })).ok()).toBe(false);
   });
 });

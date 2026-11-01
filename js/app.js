@@ -7014,7 +7014,7 @@ async function viewAttendanceTotem(ctx, id) {
     notMe.textContent = `Não sou ${firstName(r.name)}`;
     notMe.onclick = async () => {
       notMe.hidden = true;
-      const { error: err } = await sb.rpc('attendance_reject', { p_session: id, p_member: r.member_id });
+      const { error: err } = await sb.rpc('attendance_reject', { p_session: id, p_member: r.member_id, p_source: 'totem' });
       if (err) return toast(errorText(err), 'error');
       setCached(r.member_id, false);
       holdUntil = Date.now() + 3500;
@@ -7103,7 +7103,7 @@ function drawMyAttendance(ctx, sessionId, a) {
     </div>`;
   document.getElementById('not-me')?.addEventListener('click', async () => {
     if (!await ask('Desfazer esta presença marcada pela câmera?', { ok: 'Não fui eu' })) return;
-    const { error } = await sb.rpc('attendance_reject', { p_session: sessionId, p_member: myMember().id });
+    const { error } = await sb.rpc('attendance_reject', { p_session: sessionId, p_member: myMember().id, p_source: 'membro' });
     if (error) return toast(errorText(error), 'error');
     screenUpdate(`minha-presenca:${sessionId}`, { method: null });
     toast('Pronto: a presença foi desfeita e a equipe vai conferir.');

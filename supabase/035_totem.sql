@@ -110,32 +110,30 @@ begin
   return query select v_best, v_name, v_rows = 0;
 end $$;
 
--- Desfaz uma marcação da câmera: a equipe (pelo "Não sou eu" do totem) ou o próprio membro
--- ("Não fui eu"). Só a da câmera: a da lista ou do QR Code, a equipe desmarca na lista.
-create or replace function public.attendance_reject(p_session uuid, p_member uuid)
+-- Desfaz uma marcação da câmera: a equipe ("Não sou eu" no totem, p_source = totem) ou o próprio
+-- membro ("Não fui eu" na notificação, p_source = membro). Só a da câmera: a da lista ou do
+-- QR Code, a equipe desmarca na lista. (A versão sem p_source, da primeira rodada, sai.)
+drop function if exists public.attendance_reject(uuid, uuid);
+create or replace function public.attendance_reject(p_session uuid, p_member uuid, p_source text)
 returns void language plpgsql security definer set search_path = '' as $$
 declare
   v_church uuid;
-  v_source text;
 begin
   select s.church_id into v_church from public.attendance_sessions s where s.id = p_session;
   if v_church is null then
     raise exception 'Lista não encontrada.' using errcode = '42501';
   end if;
-  if p_member = public.my_member_id(v_church) then
-    v_source := 'membro';
-  elsif public.can_attendance(v_church) then
-    v_source := 'totem';
-  else
+  if not ((p_source = 'membro' and p_member = public.my_member_id(v_church))
+          or (p_source = 'totem' and public.can_attendance(v_church))) then
     raise exception 'Só a própria pessoa ou a equipe da presença desfaz.' using errcode = '42501';
   end if;
   delete from public.attendance where session_id = p_session and member_id = p_member and method = 'camera';
   if found then
-    insert into public.attendance_flags (session_id, member_id, church_id, source) values (p_session, p_member, v_church, v_source);
+    insert into public.attendance_flags (session_id, member_id, church_id, source) values (p_session, p_member, v_church, p_source);
   end if;
 end $$;
 
 revoke execute on function public.face_match(uuid, real[], text) from public, anon;
-revoke execute on function public.attendance_reject(uuid, uuid) from public, anon;
+revoke execute on function public.attendance_reject(uuid, uuid, text) from public, anon;
 grant execute on function public.face_match(uuid, real[], text) to authenticated;
-grant execute on function public.attendance_reject(uuid, uuid) to authenticated;
+grant execute on function public.attendance_reject(uuid, uuid, text) to authenticated;
