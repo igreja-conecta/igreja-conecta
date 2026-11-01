@@ -21,6 +21,25 @@ export const faceError = (text) => Object.assign(new Error(text), { friendly: tr
 const within = (promise, ms, text) =>
   Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(faceError(text)), ms))]);
 
+// Arquivos do modo wasm (mesma versão do TensorFlow que vem dentro da face-api 1.7.15).
+const WASM_BASE = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/';
+const NO_ENGINE = 'O reconhecimento facial não conseguiu rodar neste aparelho. Atualize o navegador ou use outro aparelho.';
+// iPhone, iPad (que se apresenta como Mac com tela de toque) e o Safari do Mac.
+const appleWebKit = () => {
+  const ua = navigator.userAgent;
+  return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) || (/Safari\//.test(ua) && !/Chrome|Chromium|Edg|Android/.test(ua));
+};
+// Passa uma imagem lisa pelos três modelos (detector, pontos do rosto e assinatura).
+async function warmUp(faceapi) {
+  const canvas = Object.assign(document.createElement('canvas'), { width: 160, height: 160 });
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#888';
+  g.fillRect(0, 0, 160, 160);
+  await faceapi.detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 160 }));
+  await faceapi.nets.faceLandmark68TinyNet.detectLandmarks(canvas);
+  await faceapi.computeFaceDescriptor(canvas);
+}
+
 let engine;
 // Os testes trocam o leitor de rosto por um de mentira (window.__rostoFalso): só no navegador do teste.
 // onProgress(texto): o que está acontecendo (baixar ~8 MB na primeira vez pode demorar no 4G).
@@ -30,16 +49,28 @@ export function loadFaceEngine(onProgress = () => {}) {
     (async () => {
       onProgress('Baixando o reconhecimento facial (cerca de 8 MB, só na primeira vez)…');
       const faceapi = await import(`${BASE}/dist/face-api.esm.js`);
-      await faceapi.tf.ready();
+      const { tf } = faceapi;
+      tf.setWasmPaths(WASM_BASE);
+      // iPhone/iPad (Safari): o modo de vídeo (webgl) trava ou erra as contas; lá vai direto no wasm,
+      // que dá a mesma assinatura (os rostos cadastrados em outro aparelho continuam valendo).
+      if (appleWebKit() && !(await tf.setBackend('wasm').catch(() => false))) await tf.setBackend('webgl').catch(() => false);
+      await tf.ready();
       await Promise.all([
         faceapi.nets.tinyFaceDetector.loadFromUri(`${BASE}/model`),
         faceapi.nets.faceLandmark68TinyNet.loadFromUri(`${BASE}/model`),
         faceapi.nets.faceRecognitionNet.loadFromUri(`${BASE}/model`),
       ]);
       onProgress('Preparando o reconhecimento…');
+      // Uma leitura de ensaio: se o modo atual falhar ou travar, troca para o wasm e tenta de novo.
+      try {
+        await within(warmUp(faceapi), 30000, 'ensaio demorou');
+      } catch {
+        if (tf.getBackend() === 'wasm' || !(await tf.setBackend('wasm').catch(() => false))) throw faceError(NO_ENGINE);
+        await within(warmUp(faceapi), 30000, NO_ENGINE);
+      }
       return faceapi;
     })(),
-    120000,
+    150000,
     'O reconhecimento facial não terminou de baixar em 2 minutos. Confira a internet (de preferência Wi-Fi) e tente de novo.',
   ).then((faceapi) => {
     const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
