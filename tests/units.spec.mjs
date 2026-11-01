@@ -399,11 +399,14 @@ test('presença: o QR Code da carteirinha dá o código secreto; outros QR Codes
     expect(cardTokenFrom(other), String(other)).toBeNull();
 });
 
-test('rosto: piscar é fechar bem os olhos e abrir de novo; distância e média das assinaturas', () => {
+test('rosto: fechar os olhos e abrir de novo (proteção contra foto); distância e média das assinaturas', () => {
   expect(blinked([0.3, 0.31, 0.29, 0.3, 0.3, 0.3])).toBe(false); // olhos abertos
   expect(blinked([0.3, 0.31, 0.3, 0.12, 0.3, 0.3])).toBe(true); // piscou
   expect(blinked([0.3, 0.31, 0.3, 0.3, 0.3, 0.12])).toBe(false); // fechou e ainda não abriu
-  expect(blinked([0.3, 0.12, 0.3])).toBe(false); // poucas leituras
+  expect(blinked([0.3, 0.12])).toBe(false); // poucas leituras
+  // No celular as leituras são lentas: três já bastam, e um fechar parcial (o modelo leve é impreciso) conta.
+  expect(blinked([0.3, 0.23, 0.3])).toBe(true);
+  expect(blinked([0.3, 0.27, 0.3, 0.29, 0.31])).toBe(false); // só variação normal
   // Olho com altura 1 e largura 4 nos dois lados (pontos 36–47 dos 68): 0,25.
   const pts = Array.from({ length: 68 }, () => [0, 0]);
   for (const s of [36, 42]) {
