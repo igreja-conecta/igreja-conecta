@@ -13,6 +13,13 @@ import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pi
 import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
 import { startQrReader, beep } from './leitor-qr.js';
 import { ENROLL_STEPS, FACE_MODEL, openCamera, enrollFace, watchFaces } from './rosto.js';
+// Erros do rosto com texto para a pessoa (faceError em js/rosto.js) aparecem como estão.
+const faceErrorText = (err, fallback) =>
+  /NotAllowed|Permission/i.test(err?.name || err?.message || '')
+    ? 'O app não tem permissão para usar a câmera. Permita a câmera nas configurações do navegador e toque em "Trocar câmera".'
+    : err?.friendly || err?.code
+      ? errorText(err)
+      : `${fallback} (${err?.name || 'erro'}: ${err?.message || err})`;
 import { BOOKS, BIBLE_VERSIONS, bibleUrl, bookName, bookChapters, verseRef, READING_PLANS, planReading, passageLabel, readingLabel } from './biblia.js';
 
 const $view = document.getElementById('view');
@@ -6855,6 +6862,7 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
         <p class="face-step" id="face-step" role="status" aria-live="polite">Abrindo a câmera…</p>
         <div class="face-dots" id="face-dots">${ENROLL_STEPS.map(() => '<span></span>').join('')}</div>
         <p class="hint center" id="face-hint" aria-live="polite"></p>
+        <p class="hint center face-diag" id="face-diag"></p>
         <div class="actions-row">
           <button class="btn" type="button" id="face-flip">Trocar câmera</button>
           <a class="btn" href="#${back}">Cancelar</a>
@@ -6889,6 +6897,8 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
           [...document.getElementById('face-dots').children].forEach((d, j) => d.classList.toggle('done', j < i));
         },
         onHint: (text) => (hintEl.textContent = text),
+        onInfo: (text) => (document.getElementById('face-diag').textContent = text),
+        onProgress: (text) => (stepEl.textContent = text),
       });
       close();
       if (!alive()) return;
@@ -6908,12 +6918,8 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
     } catch (err) {
       close?.();
       if (!ctx.alive() || mine !== run || err?.message === 'cancelado') return;
-      const denied = /NotAllowed|Permission/i.test(err?.name || err?.message || '');
-      stepEl.textContent = denied
-        ? 'O app não tem permissão para usar a câmera. Permita a câmera nas configurações do navegador e toque em "Trocar câmera".'
-        : errorText(err).startsWith('Não') || err?.code
-          ? errorText(err)
-          : 'Não foi possível usar a câmera agora. Confira a internet e tente de novo.';
+      stepEl.textContent = faceErrorText(err, 'Não foi possível usar a câmera agora');
+      hintEl.textContent = 'Toque em "Trocar câmera" para tentar de novo.';
     }
   };
 
@@ -6941,6 +6947,7 @@ const TOTEM_STATES = {
   varios: 'Uma pessoa por vez',
   piscar: 'Pisque os olhos',
   lendo: 'Reconhecendo…',
+  preta: 'A imagem da câmera está preta: toque em "Trocar câmera"',
 };
 
 async function viewAttendanceTotem(ctx, id) {
@@ -7053,18 +7060,13 @@ async function viewAttendanceTotem(ctx, id) {
         alive: () => ctx.alive() && mine === run,
         requireBlink: () => blink,
         onState: (s) => Date.now() > holdUntil && show(TOTEM_STATES[s]),
+        onProgress: (text) => show(text),
         onFace,
       });
     } catch (err) {
       close?.();
       if (!ctx.alive() || mine !== run) return;
-      const denied = /NotAllowed|Permission/i.test(err?.name || err?.message || '');
-      show(
-        denied
-          ? 'O app não tem permissão para usar a câmera. Permita a câmera nas configurações do navegador e toque em "Trocar câmera".'
-          : 'Não foi possível abrir a câmera ou o reconhecimento. Confira a internet e tente de novo.',
-        'error',
-      );
+      show(faceErrorText(err, 'Não foi possível abrir a câmera ou o reconhecimento'), 'error');
     }
   };
   document.getElementById('totem-blink').onchange = (e) => {

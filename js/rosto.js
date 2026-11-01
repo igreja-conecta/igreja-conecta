@@ -16,21 +16,36 @@ export const ENROLL_STEPS = [
 // Capturas da mesma pessoa ficam bem perto (no teste: até 0,16); pessoas diferentes, a partir de 0,5.
 const SAME_PERSON = 0.4;
 
+// Erro com texto para a pessoa: a tela mostra como está.
+export const faceError = (text) => Object.assign(new Error(text), { friendly: true });
+const within = (promise, ms, text) =>
+  Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(faceError(text)), ms))]);
+
 let engine;
 // Os testes trocam o leitor de rosto por um de mentira (window.__rostoFalso): só no navegador do teste.
-export function loadFaceEngine() {
+// onProgress(texto): o que está acontecendo (baixar ~8 MB na primeira vez pode demorar no 4G).
+export function loadFaceEngine(onProgress = () => {}) {
   if (window.__rostoFalso) return Promise.resolve(window.__rostoFalso);
-  engine ??= (async () => {
-    const faceapi = await import(`${BASE}/dist/face-api.esm.js`);
-    await faceapi.tf.ready();
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(`${BASE}/model`),
-      faceapi.nets.faceLandmark68TinyNet.loadFromUri(`${BASE}/model`),
-      faceapi.nets.faceRecognitionNet.loadFromUri(`${BASE}/model`),
-    ]);
+  engine ??= within(
+    (async () => {
+      onProgress('Baixando o reconhecimento facial (cerca de 8 MB, só na primeira vez)…');
+      const faceapi = await import(`${BASE}/dist/face-api.esm.js`);
+      await faceapi.tf.ready();
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri(`${BASE}/model`),
+        faceapi.nets.faceLandmark68TinyNet.loadFromUri(`${BASE}/model`),
+        faceapi.nets.faceRecognitionNet.loadFromUri(`${BASE}/model`),
+      ]);
+      onProgress('Preparando o reconhecimento…');
+      return faceapi;
+    })(),
+    120000,
+    'O reconhecimento facial não terminou de baixar em 2 minutos. Confira a internet (de preferência Wi-Fi) e tente de novo.',
+  ).then((faceapi) => {
     const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
     const boxOf = (d, w, h) => ({ x: d.box.x / w, y: d.box.y / h, width: d.box.width / w, height: d.box.height / h });
     return {
+      backend: faceapi.tf.getBackend(),
       // Rápido (sem a assinatura): onde está o rosto e quanto os olhos estão abertos (para o piscar).
       async track(video) {
         const w = video.videoWidth;
@@ -56,9 +71,40 @@ export function loadFaceEngine() {
         }));
       },
     };
-  })();
+  });
   engine.catch(() => (engine = null));
   return engine;
+}
+
+// Brilho médio do quadro (0 a 255): a câmera às vezes abre mas entrega imagem preta.
+let probe;
+export function frameBrightness(video) {
+  try {
+    probe ??= Object.assign(document.createElement('canvas'), { width: 24, height: 24 });
+    const g = probe.getContext('2d', { willReadFrequently: true });
+    g.drawImage(video, 0, 0, 24, 24);
+    const px = g.getImageData(0, 0, 24, 24).data;
+    let sum = 0;
+    for (let i = 0; i < px.length; i += 4) sum += (px[i] + px[i + 1] + px[i + 2]) / 3;
+    return sum / (px.length / 4);
+  } catch {
+    return 255;
+  }
+}
+
+// Lê o quadro; se o reconhecimento falhar seguidamente neste aparelho, avisa em vez de tentar para sempre.
+function reader(face, kind) {
+  let fails = 0;
+  return async (video) => {
+    try {
+      const out = await face[kind](video);
+      fails = 0;
+      return out;
+    } catch (err) {
+      if (++fails >= 5) throw faceError(`O reconhecimento facial não está funcionando neste aparelho (${err?.message || err}). Tente pelo Chrome atualizado ou em outro celular.`);
+      return [];
+    }
+  };
 }
 
 // Abertura dos olhos (média dos dois), pelos 68 pontos do rosto: altura ÷ largura do olho.
@@ -89,31 +135,47 @@ export function meanDescriptor(list) {
 // Abre a câmera no <video>. Devolve a função que fecha.
 export async function openCamera(video, facing = 'user') {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error('Este navegador não abre a câmera.');
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: facing }, width: { ideal: 640 }, height: { ideal: 480 } },
-    audio: false,
-  });
+  const stream = await within(
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: facing }, width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false,
+    }),
+    60000,
+    'A câmera não respondeu. Confira se o app tem permissão para a câmera e tente de novo.',
+  );
+  const close = () => stream.getTracks().forEach((t) => t.stop());
   video.muted = true;
   video.setAttribute('playsinline', '');
   video.srcObject = stream;
-  await video.play().catch(() => {});
-  return () => stream.getTracks().forEach((t) => t.stop());
+  video.play().catch(() => {});
+  // Espera a primeira imagem (até 10 s).
+  for (let i = 0; i < 50 && !video.videoWidth; i++) await new Promise((r) => setTimeout(r, 200));
+  if (!video.videoWidth) {
+    close();
+    throw faceError('A câmera abriu, mas não mandou imagem. Feche outros apps que usam a câmera e toque em "Trocar câmera".');
+  }
+  return close;
 }
 
 // Cadastro guiado: um quadro bom por passo (um rosto só, perto e nítido). onStep(i, texto) mostra
 // o passo; onHint(texto) avisa o que falta. Se aparecer outra pessoa no meio, recomeça.
 // Devolve { descriptor (média), samples }.
-export async function enrollFace(video, { onStep, onHint, alive = () => true }) {
-  const face = await loadFaceEngine();
+export async function enrollFace(video, { onStep, onHint, onInfo = () => {}, onProgress = () => {}, alive = () => true }) {
+  const face = await loadFaceEngine(onProgress);
+  const detect = reader(face, 'detect');
   const shots = [];
   let step = 0;
   let since = 0;
   onStep(0, ENROLL_STEPS[0]);
   while (shots.length < ENROLL_STEPS.length) {
     if (!alive() || !video.isConnected) throw new Error('cancelado');
-    const found = await face.detect(video).catch(() => []);
+    const t0 = performance.now();
+    const found = await detect(video);
     const now = Date.now();
+    onInfo(`${face.backend || '?'} · ${Math.round(performance.now() - t0)} ms · ${video.videoWidth}×${video.videoHeight}`);
     if (found.length > 1) onHint('Só uma pessoa na frente da câmera.');
+    else if (!found.length && frameBrightness(video) < 10)
+      onHint('A imagem da câmera está preta. Toque em "Trocar câmera" ou feche outros apps que usam a câmera.');
     else if (!found.length) onHint('Não estou vendo o rosto. Chegue mais perto e deixe o rosto iluminado.');
     else if (found[0].box.width < 0.18) onHint('Chegue um pouco mais perto.');
     else if (found[0].score < 0.6) onHint('Fique parado um instante, com o rosto iluminado.');
@@ -141,20 +203,22 @@ export async function enrollFace(video, { onStep, onHint, alive = () => true }) 
 // está perto (e piscou, se pedido), calcula a assinatura e chama onFace(assinatura). A mesma
 // pessoa não é enviada de novo por 20 segundos. onState(estado) mostra o que falta:
 // 'vazio', 'longe', 'varios', 'piscar' ou 'lendo'.
-export async function watchFaces(video, { requireBlink = () => true, onState, onFace, alive = () => true }) {
-  const face = await loadFaceEngine();
+export async function watchFaces(video, { requireBlink = () => true, onState, onFace, onProgress = () => {}, alive = () => true }) {
+  const face = await loadFaceEngine(onProgress);
+  const track = reader(face, 'track');
+  const detect = reader(face, 'detect');
   let eyes = [];
   let seenAt = 0;
   const recent = [];
   let last = '';
   const state = (s) => s !== last && onState((last = s));
   while (alive() && video.isConnected) {
-    const found = await face.track(video).catch(() => []);
+    const found = await track(video);
     const now = Date.now();
     const near = found.filter((f) => f.box.width >= 0.15 && f.score >= 0.6).sort((a, b) => b.box.width - a.box.width);
     if (!near.length) {
       if (now - seenAt > 1500) eyes = [];
-      state(found.length ? 'longe' : 'vazio');
+      state(found.length ? 'longe' : frameBrightness(video) < 10 ? 'preta' : 'vazio');
     } else if (near.length > 1 && near[1].box.width > near[0].box.width * 0.8) {
       state('varios');
     } else {
@@ -165,7 +229,7 @@ export async function watchFaces(video, { requireBlink = () => true, onState, on
         state('piscar');
       } else {
         state('lendo');
-        const full = (await face.detect(video).catch(() => [])).sort((a, b) => b.box.width - a.box.width)[0];
+        const full = (await detect(video)).sort((a, b) => b.box.width - a.box.width)[0];
         eyes = [];
         if (full) {
           while (recent.length && now - recent[0].at > 20000) recent.shift();

@@ -145,6 +145,46 @@ test('o membro marcado pela câmera recebe o aviso e toca em "Não fui eu"', asy
   await expect(page.getByText('Você não está marcado nesta lista de presença.')).toBeVisible();
 });
 
+// Câmera que só entrega preto, ou reconhecimento que falha neste aparelho: a tela avisa (antes ficava muda).
+async function brokenFace(page, { black = false, failing = false }) {
+  await page.addInitScript(([black, failing]) => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const canvas = Object.assign(document.createElement('canvas'), { width: 480, height: 640 });
+      const g = canvas.getContext('2d');
+      setInterval(() => {
+        g.fillStyle = black ? '#000' : '#888';
+        g.fillRect(0, 0, 480, 640);
+      }, 100);
+      return canvas.captureStream(10);
+    };
+    const fail = async () => {
+      throw new Error('WebGL indisponível');
+    };
+    window.__rostoFalso = { detect: failing ? fail : async () => [], track: failing ? fail : async () => [] };
+  }, [black, failing]);
+}
+
+test('a câmera preta e o reconhecimento que falha no aparelho aparecem na tela', async ({ page }) => {
+  await brokenFace(page, { black: true });
+  await openLoggedIn(page, as['adm-a'].session, '/i/teste-a/#/menu');
+  await page.getByRole('link', { name: 'Meu rosto (presença)' }).click();
+  await page.getByRole('link', { name: 'Cadastrar meu rosto' }).click();
+  if (await page.locator('[name=adult]').count()) await page.locator('[name=adult]').check();
+  await page.locator('[name=agree]').check();
+  await page.getByRole('button', { name: 'Eu autorizo' }).click();
+  await expect(page.locator('#face-hint')).toContainText('A imagem da câmera está preta');
+
+  const other = await page.context().newPage();
+  await brokenFace(other, { failing: true });
+  await openLoggedIn(other, as['adm-a'].session, '/i/teste-a/#/menu');
+  await other.getByRole('link', { name: 'Meu rosto (presença)' }).click();
+  await other.getByRole('link', { name: 'Cadastrar meu rosto' }).click();
+  if (await other.locator('[name=adult]').count()) await other.locator('[name=adult]').check();
+  await other.locator('[name=agree]').check();
+  await other.getByRole('button', { name: 'Eu autorizo' }).click();
+  await expect(other.locator('#face-step')).toContainText('não está funcionando neste aparelho (WebGL indisponível)');
+});
+
 test('o face-api de verdade carrega com a regra de segurança do app e não acha rosto num quadro vazio', async ({ page }) => {
   test.setTimeout(120000);
   await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/');
