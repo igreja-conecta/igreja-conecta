@@ -132,3 +132,32 @@ test('as listas abrem na hora, mesmo com o banco demorando; o relatório mostra 
   await expect(section).toContainText('Como a presença foi marcada');
   await expect(section).toContainText('Pelo QR Code da carteirinha');
 });
+
+test('a pastoral vê quem está faltando e marca "Vou procurar"', async ({ page }) => {
+  const adm = await loginAs(api, 'adm-a');
+  const rpc = (fn, data) => api.post(rest(`rpc/${fn}`), { headers: as['lider-a'].headers, data });
+  const day = (n) => new Date(Date.now() + n * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const [{ id: church }] = await (await api.get(rest('churches?select=id&slug=eq.teste-a'), { headers: adm.headers })).json();
+  const name = `Ausente ${tag}`;
+  const made = await api.post(rest('members'), { headers: { ...adm.headers, Prefer: 'return=representation' }, data: { church_id: church, name } });
+  const [{ id: member }] = await made.json();
+  try {
+    for (const [n, present] of [[-60, true], [-50, true], [-14, false], [-7, false], [0, false]]) {
+      const session = await (await rpc('attendance_open', { p_church: church, p_title: `${title} ${n}`, p_date: day(n), p_event: null })).json();
+      if (present) await rpc('attendance_mark', { p_session: session, p_member: member });
+    }
+    await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/presenca');
+    await page.getByRole('link', { name: 'Quem está faltando' }).click();
+    const row = page.locator('[data-absent]', { hasText: name });
+    await expect(row).toContainText('há 7 semanas');
+    await row.getByRole('button', { name: `Vou procurar ${name}` }).click();
+    await expect(page.getByText('Anotado: você vai procurar.')).toBeVisible();
+    await expect(page.locator('[data-absent]', { hasText: name })).toContainText('Acompanhando: Líder da A');
+    // Membro comum não abre a lista.
+    const other = await page.context().newPage();
+    await openLoggedIn(other, as['membro-a'].session, '/i/teste-a/#/presenca/faltas');
+    await expect(other.getByRole('heading', { name: 'Quem está faltando' })).toHaveCount(0);
+  } finally {
+    await api.delete(rest(`members?id=eq.${member}`), { headers: adm.headers });
+  }
+});

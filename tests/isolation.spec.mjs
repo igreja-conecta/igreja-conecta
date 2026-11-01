@@ -2289,3 +2289,59 @@ test.describe('Totem com reconhecimento facial (035)', () => {
     for (const who of ['membro-a', 'adm-b']) expect(await get(who, `attendance_flags?select=id&session_id=eq.${ids.session}`), who).toEqual([]);
   });
 });
+
+test.describe('Quem está faltando (036)', () => {
+  const tag = `Faltas ${Date.now().toString(36)}`;
+  const day = (n) => new Date(Date.now() + n * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const ids = {};
+  const list = async (who) => (await rpc(who, 'absence_list', { p_church: church.a })).json();
+
+  test.beforeAll(async () => {
+    const made = await api.post(rest('members'), { headers: returning(as['adm-a'].headers), data: { church_id: church.a, name: `${tag} Ausente` } });
+    [{ id: ids.ausente }] = await made.json();
+    // Veio em dois cultos há uns 2 meses e faltou nos três últimos.
+    for (const [n, present] of [[-60, true], [-50, true], [-14, false], [-7, false], [0, false]]) {
+      const res = await rpc('lider-a', 'attendance_open', { p_church: church.a, p_title: `${tag} ${n}`, p_date: day(n), p_event: null });
+      const session = await res.json();
+      if (present) expect((await rpc('lider-a', 'attendance_mark', { p_session: session, p_member: ids.ausente })).ok()).toBe(true);
+    }
+  });
+
+  test.afterAll(async () => {
+    if (!api) return;
+    await api.delete(rest(`attendance_sessions?title=like.${encodeURIComponent(tag)}*`), { headers: as['lider-a'].headers });
+    await api.delete(rest(`members?id=eq.${ids.ausente}`), { headers: as['adm-a'].headers });
+  });
+
+  test('a pastoral vê quem vinha e sumiu; os outros e a outra igreja, não', async () => {
+    const res = await rpc('lider-a', 'absence_list', { p_church: church.a });
+    expect(res.ok(), await res.text()).toBe(true);
+    const me = (await res.json()).find((r) => r.member_id === ids.ausente);
+    expect(me).toMatchObject({ name: `${tag} Ausente`, last_present: day(-50), presences: 2, followed_until: null });
+    expect(me.missed).toBeGreaterThanOrEqual(3);
+    expect((await list('adm-a')).some((r) => r.member_id === ids.ausente)).toBe(true);
+    for (const who of ['membro-a', 'adm-b', 'sem-igreja']) expect((await rpc(who, 'absence_list', { p_church: church.a })).ok(), who).toBe(false);
+  });
+
+  test('"Vou procurar" tira da lista por algumas semanas e mostra quem está acompanhando', async () => {
+    const follow = (who, weeks) => rpc(who, 'absence_follow', { p_member: ids.ausente, p_weeks: weeks });
+    for (const who of ['membro-a', 'adm-b']) expect((await follow(who, 4)).ok(), who).toBe(false);
+    expect((await follow('lider-a', 13)).ok()).toBe(false);
+    expect((await follow('lider-a', 4)).ok()).toBe(true);
+    const me = (await list('adm-a')).find((r) => r.member_id === ids.ausente);
+    expect(me).toMatchObject({ followed_until: day(28), followed_by: 'Líder da A' });
+    for (const who of ['lider-a', 'adm-a', 'membro-a']) {
+      const res = await api.get(rest('absence_followups?select=*'), { headers: as[who].headers });
+      if (res.ok()) expect(await res.json(), who).toEqual([]);
+    }
+    expect((await follow('lider-a', 0)).ok()).toBe(true);
+    expect((await list('lider-a')).find((r) => r.member_id === ids.ausente).followed_until).toBeNull();
+  });
+
+  test('quem voltou sai da lista; o aviso semanal pede a senha', async () => {
+    const session = await (await rpc('lider-a', 'attendance_open', { p_church: church.a, p_title: `${tag} 0`, p_date: day(0), p_event: null })).json();
+    expect((await rpc('lider-a', 'attendance_mark', { p_session: session, p_member: ids.ausente })).ok()).toBe(true);
+    expect((await list('lider-a')).some((r) => r.member_id === ids.ausente)).toBe(false);
+    expect((await rpc('adm-a', 'deliver_absence_alerts', { p_secret: 'errada' })).ok()).toBe(false);
+  });
+});
