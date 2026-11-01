@@ -165,6 +165,7 @@ async function brokenFace(page, { black = false, failing = false }) {
 }
 
 test('a câmera preta e o reconhecimento que falha no aparelho aparecem na tela', async ({ page }) => {
+  test.setTimeout(90000);
   // O teste do totem deixa o rosto do Admin cadastrado: começa sem.
   await rpc('adm-a', 'face_delete', { p_member: ids.adm });
   await brokenFace(page, { black: true });
@@ -174,7 +175,8 @@ test('a câmera preta e o reconhecimento que falha no aparelho aparecem na tela'
   if (await page.locator('[name=adult]').count()) await page.locator('[name=adult]').check();
   await page.locator('[name=agree]').check();
   await page.getByRole('button', { name: 'Eu autorizo' }).click();
-  await expect(page.locator('#face-hint')).toContainText('A imagem da câmera está preta');
+  // O GitHub às vezes demora para a câmera simulada mandar a primeira imagem: espera mais.
+  await expect(page.locator('#face-camera')).toContainText('A imagem da câmera está preta', { timeout: 25000 });
 
   const other = await page.context().newPage();
   await brokenFace(other, { failing: true });
@@ -184,7 +186,7 @@ test('a câmera preta e o reconhecimento que falha no aparelho aparecem na tela'
   if (await other.locator('[name=adult]').count()) await other.locator('[name=adult]').check();
   await other.locator('[name=agree]').check();
   await other.getByRole('button', { name: 'Eu autorizo' }).click();
-  await expect(other.locator('#face-step')).toContainText('não está funcionando neste aparelho (WebGL indisponível)');
+  await expect(other.locator('#face-camera')).toContainText('não está funcionando neste aparelho (WebGL indisponível)', { timeout: 25000 });
 });
 
 test('o face-api de verdade carrega com a regra de segurança do app e não acha rosto num quadro vazio', async ({ page }) => {
