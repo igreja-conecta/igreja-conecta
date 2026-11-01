@@ -12,7 +12,7 @@ import { pushSupport, pushActive, enablePush, disablePush, syncPush, movePushToP
 import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg, qrImage } from './pix.js';
 import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
 import { startQrReader, beep } from './leitor-qr.js';
-import { ENROLL_STEPS, FACE_MODEL, openCamera, enrollFace } from './rosto.js';
+import { ENROLL_STEPS, FACE_MODEL, openCamera, enrollFace, watchFaces } from './rosto.js';
 import { BOOKS, BIBLE_VERSIONS, bibleUrl, bookName, bookChapters, verseRef, READING_PLANS, planReading, passageLabel, readingLabel } from './biblia.js';
 
 const $view = document.getElementById('view');
@@ -731,6 +731,8 @@ const churchRoutes = [
   [/^\/presenca\/nova$/, viewAttendanceNew],
   [/^\/presenca\/([0-9a-f-]{36})$/, viewAttendanceSession],
   [/^\/presenca\/([0-9a-f-]{36})\/qr$/, viewAttendanceQr],
+  [/^\/presenca\/([0-9a-f-]{36})\/totem$/, viewAttendanceTotem],
+  [/^\/minha-presenca\/([0-9a-f-]{36})$/, viewMyAttendance],
   [/^\/rosto$/, viewMyFace],
   [/^\/rosto\/cadastrar$/, viewMyFaceEnroll],
   [/^\/chat$/, viewChats],
@@ -1478,6 +1480,10 @@ function helpTopics() {
           `<p>É opcional. Em <a href="#/rosto">Menu &gt; Meu rosto (presença)</a>, leia o termo, toque em <em>Eu autorizo</em> e siga os passos na câmera (olhar para a frente e virar um pouco o rosto). O app guarda só uma assinatura numérica do rosto, calculada no seu celular: nenhuma foto é guardada nem enviada, e ninguém lê esses números, nem a liderança. Só para maiores de 18 anos. Para apagar, toque em <em>Apagar meu cadastro facial</em> na mesma tela.</p>${
             canEnrollFaces()
               ? `<p><strong>Secretaria:</strong> para quem não usa o app, abra o cadastro em <a href="#/membros">Membros</a> e toque em <em>Rosto para a presença</em>. Entregue o aparelho à pessoa: ela mesma lê o termo e toca em <em>Eu autorizo</em>. Quem usa o app recebe um aviso. Desligar o reconhecimento facial em Configurar apaga todos os rostos da igreja.</p>`
+              : ''
+          }${
+            attendanceTeam()
+              ? `<p><strong>Totem na entrada:</strong> na lista do culto, toque em <em>Totem (reconhecimento facial)</em> num tablet ou num computador com webcam, de frente para quem chega, na altura do rosto e sem a porta clara atrás. Quem cadastrou o rosto olha para a câmera (e pisca, se o ajuste estiver ligado) e a presença é marcada sozinha, com um bip. Se o totem errar, a pessoa toca em <em>Não sou eu</em>; quem usa o app também recebe o aviso "Presença marcada" com o botão <em>Não fui eu</em>. Na dúvida, o totem não marca ninguém: aí vale a carteirinha ou a lista. Coloque perto uma placa avisando que há câmera de presença.</p>`
               : ''
           }`,
         ]]
@@ -6352,13 +6358,16 @@ async function loadAttendanceSessions() {
 }
 
 async function loadAttendanceSession(id) {
-  const [s, r] = await Promise.all([
+  const [s, r, f] = await Promise.all([
     sb.from('attendance_sessions').select('id, title, session_date, event_id, created_by').eq('id', id).maybeSingle(),
     sb.rpc('attendance_roster', { p_session: id }),
+    // "Não sou eu" (totem) e "Não fui eu" (membro): para a equipe conferir o reconhecimento.
+    faceOn() ? sb.from('attendance_flags').select('member_id, source, created_at').eq('session_id', id).order('created_at') : null,
   ]);
   if (s.error) throw s.error;
   if (r.error) throw r.error;
-  return { session: s.data, roster: r.data };
+  if (f?.error) throw f.error;
+  return { session: s.data, roster: r.data, flags: f?.data || [] };
 }
 
 // Contador: total e por forma de marcar (lista, QR, câmera).
@@ -6493,7 +6502,7 @@ async function viewAttendanceSession(ctx, id) {
 }
 
 function drawAttendanceSession(ctx, id, data) {
-  const { session, roster } = data;
+  const { session, roster, flags = [] } = data;
   if (!session) {
     $view.innerHTML = '<div class="empty"><h2>Lista não encontrada</h2><a class="btn" href="#/presenca">Voltar</a></div>';
     return;
@@ -6513,8 +6522,18 @@ function drawAttendanceSession(ctx, id, data) {
       <p class="hint">${esc(fmtLongDay(session.session_date))}</p>
       ${attendanceTiles(c)}
       ${
-        featureOn('carteirinha')
-          ? `<div class="actions-row"><a class="btn primary" href="#/presenca/${id}/qr">${icon.qr} Ler QR Code da carteirinha</a></div>`
+        featureOn('carteirinha') || faceOn()
+          ? `<div class="actions-row">
+              ${faceOn() ? `<a class="btn primary" href="#/presenca/${id}/totem">${icon.user} Totem (reconhecimento facial)</a>` : ''}
+              ${featureOn('carteirinha') ? `<a class="btn ${faceOn() ? '' : 'primary'}" href="#/presenca/${id}/qr">${icon.qr} Ler QR Code da carteirinha</a>` : ''}
+            </div>`
+          : ''
+      }
+      ${
+        flags.length
+          ? `<div class="notice"><strong>Conferir o reconhecimento:</strong> ${flags
+              .map((f) => `${esc(roster.find((p) => p.member_id === f.member_id)?.name || 'Membro')} (${f.source === 'totem' ? '"Não sou eu" no totem' : '"Não fui eu" no app'})`)
+              .join(', ')}. Se repetir, peça para a pessoa cadastrar o rosto de novo.</div>`
           : ''
       }
       <form id="att-search" class="form"><label>Buscar<input name="q" type="search" value="${esc(ctx.params.get('busca') || '')}" placeholder="Nome do membro" autocomplete="off"></label></form>
@@ -6891,6 +6910,205 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
     facing = facing === 'user' ? 'environment' : 'user';
     start();
   };
+}
+
+// ---------------------------------------------------------------------
+// Totem: o tablet (ou a webcam) da entrada reconhece quem cadastrou o rosto e marca sozinho.
+// "Não sou eu" no totem e "Não fui eu" na notificação desfazem (ficam anotados para a equipe).
+// ---------------------------------------------------------------------
+const TOTEM_BLINK_KEY = 'totem-piscar';
+const TOTEM_CAMERA_KEY = 'totem-camera';
+const TOTEM_STATES = {
+  vazio: 'Olhe para a câmera',
+  longe: 'Chegue mais perto',
+  varios: 'Uma pessoa por vez',
+  piscar: 'Pisque os olhos',
+  lendo: 'Reconhecendo…',
+};
+
+async function viewAttendanceTotem(ctx, id) {
+  if (!requireAttendanceTeam(`/presenca/${id}/totem`)) return;
+  if (!faceOn()) return navigate(`/presenca/${id}`);
+  const data = screenCached(`presenca:${id}`);
+  const session = data?.session;
+  const pref = (key, fallback) => {
+    try {
+      return localStorage.getItem(key) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  const save = (key, v) => {
+    try {
+      localStorage.setItem(key, v);
+    } catch {}
+  };
+  let facing = pref(TOTEM_CAMERA_KEY, 'user');
+  let blink = pref(TOTEM_BLINK_KEY, '1') === '1';
+  $view.innerHTML = `
+    <div class="page totem">
+      <a href="#/presenca/${id}" class="back">← Lista de presença</a>
+      ${session ? `<p class="totem-title">${esc(session.title)}</p>` : ''}
+      <div class="qr-video totem-video"><video id="totem-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div>
+      <div id="totem-msg" class="totem-msg" role="status" aria-live="polite">Abrindo a câmera…</div>
+      <button type="button" class="btn danger-outline big" id="totem-notme" hidden>Não sou eu</button>
+      <div id="totem-count">${data ? attendanceTiles(attendanceCounts(data.roster)) : ''}</div>
+      <p class="totem-sign">Câmera de presença: reconhece só quem cadastrou o rosto no app. Nenhuma imagem é gravada.</p>
+      <details class="card">
+        <summary>Ajustes do totem</summary>
+        <label class="check"><input type="checkbox" id="totem-blink" ${blink ? 'checked' : ''}> Pedir para piscar
+          <small class="hint">Dificulta marcar a presença de alguém mostrando uma foto. Desligue se as pessoas demorarem muito para ser reconhecidas.</small></label>
+        <div class="actions-row">
+          <button class="btn" type="button" id="totem-flip">Trocar câmera</button>
+          <button class="btn" type="button" id="totem-full">Tela cheia</button>
+        </div>
+      </details>
+    </div>`;
+  const video = document.getElementById('totem-video');
+  const msg = document.getElementById('totem-msg');
+  const notMe = document.getElementById('totem-notme');
+  let close = null;
+  let run = 0;
+  let holdUntil = 0;
+  let notMeTimer;
+  let wake = null;
+  const show = (text, kind = '') => {
+    msg.textContent = text;
+    msg.className = `totem-msg ${kind}`;
+  };
+  const refreshCount = () => {
+    const saved = screenCached(`presenca:${id}`);
+    const box = document.getElementById('totem-count');
+    if (box && saved) box.innerHTML = attendanceTiles(attendanceCounts(saved.roster));
+  };
+  const setCached = (memberId, mark) => {
+    const saved = screenCached(`presenca:${id}`);
+    const p = saved?.roster.find((x) => x.member_id === memberId);
+    if (!p) return screenForget(`presenca:${id}`);
+    Object.assign(p, mark ? { method: 'camera', marked_at: new Date().toISOString() } : { method: null, marked_at: null });
+    attendanceChanged(id, saved);
+    refreshCount();
+  };
+  const stopAll = () => {
+    run++;
+    close?.();
+    wake?.release?.().catch(() => {});
+  };
+  window.addEventListener('hashchange', stopAll, { once: true });
+
+  const onFace = async (descriptor) => {
+    const { data: rows, error } = await sb.rpc('face_match', { p_session: id, p_embedding: descriptor, p_model: FACE_MODEL });
+    if (!ctx.alive()) return;
+    holdUntil = Date.now() + 3500;
+    if (error) {
+      beep(false);
+      return show(errorText(error), 'error');
+    }
+    const r = rows?.[0];
+    if (!r) return show('Não reconheci. Use a carteirinha ou procure a recepção.', 'error');
+    beep(true);
+    show(r.already ? `${firstName(r.name)}, sua presença já estava marcada.` : `✓ Bom culto, ${firstName(r.name)}!`, 'ok');
+    if (!r.already) setCached(r.member_id, true);
+    clearTimeout(notMeTimer);
+    notMe.hidden = false;
+    notMe.textContent = `Não sou ${firstName(r.name)}`;
+    notMe.onclick = async () => {
+      notMe.hidden = true;
+      const { error: err } = await sb.rpc('attendance_reject', { p_session: id, p_member: r.member_id });
+      if (err) return toast(errorText(err), 'error');
+      setCached(r.member_id, false);
+      holdUntil = Date.now() + 3500;
+      show('Desfeito. Use a carteirinha ou procure a recepção.', 'error');
+    };
+    notMeTimer = setTimeout(() => (notMe.hidden = true), 8000);
+  };
+
+  const start = async () => {
+    const mine = ++run;
+    close?.();
+    show('Abrindo a câmera…');
+    try {
+      close = await openCamera(video, facing);
+      video.classList.toggle('mirror', facing === 'user');
+      wake ??= await navigator.wakeLock?.request('screen').catch(() => null);
+      show('Preparando o reconhecimento…');
+      await watchFaces(video, {
+        alive: () => ctx.alive() && mine === run,
+        requireBlink: () => blink,
+        onState: (s) => Date.now() > holdUntil && show(TOTEM_STATES[s]),
+        onFace,
+      });
+    } catch (err) {
+      close?.();
+      if (!ctx.alive() || mine !== run) return;
+      const denied = /NotAllowed|Permission/i.test(err?.name || err?.message || '');
+      show(
+        denied
+          ? 'O app não tem permissão para usar a câmera. Permita a câmera nas configurações do navegador e toque em "Trocar câmera".'
+          : 'Não foi possível abrir a câmera ou o reconhecimento. Confira a internet e tente de novo.',
+        'error',
+      );
+    }
+  };
+  document.getElementById('totem-blink').onchange = (e) => {
+    blink = e.target.checked;
+    save(TOTEM_BLINK_KEY, blink ? '1' : '0');
+  };
+  document.getElementById('totem-flip').onclick = () => {
+    facing = facing === 'user' ? 'environment' : 'user';
+    save(TOTEM_CAMERA_KEY, facing);
+    start();
+  };
+  document.getElementById('totem-full').onclick = () => document.documentElement.requestFullscreen?.().catch(() => {});
+  start();
+}
+
+// "Não fui eu": a tela que a notificação "Presença marcada" abre.
+async function loadMyAttendance(sessionId) {
+  const { data, error } = await sb
+    .from('attendance')
+    .select('method, marked_at, attendance_sessions(title, session_date)')
+    .eq('session_id', sessionId)
+    .eq('member_id', myMember().id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? { method: null };
+}
+
+async function viewMyAttendance(ctx, sessionId) {
+  if (!requireMemberFeature(`/minha-presenca/${sessionId}`, 'presenca')) return;
+  await screenShow(ctx, `minha-presenca:${sessionId}`, () => loadMyAttendance(sessionId), (a) => drawMyAttendance(ctx, sessionId, a));
+}
+
+function drawMyAttendance(ctx, sessionId, a) {
+  const s = a.attendance_sessions;
+  $view.innerHTML = `
+    <div class="page">
+      <h1>Minha presença</h1>
+      ${
+        a.method
+          ? `<section class="card">
+              <h2>${esc(s.title)}</h2>
+              <p>${esc(fmtLongDay(s.session_date))}: presença marcada ${a.method === 'camera' ? 'pela câmera da entrada' : a.method === 'qr' ? 'pelo QR Code da carteirinha' : 'pela lista'} às ${esc(kidTime(a.marked_at))}.</p>
+            </section>
+            ${
+              a.method === 'camera'
+                ? `<p>Não foi você? Toque abaixo: a presença é desfeita e a equipe fica sabendo, para conferir o reconhecimento.</p>
+                   <button class="btn danger-outline big" id="not-me">Não fui eu</button>`
+                : ''
+            }`
+          : '<div class="empty"><p>Você não está marcado nesta lista de presença.</p></div>'
+      }
+      ${faceOn() ? '<p class="hint"><a href="#/rosto">Ver ou apagar o meu cadastro facial</a></p>' : ''}
+    </div>`;
+  document.getElementById('not-me')?.addEventListener('click', async () => {
+    if (!await ask('Desfazer esta presença marcada pela câmera?', { ok: 'Não fui eu' })) return;
+    const { error } = await sb.rpc('attendance_reject', { p_session: sessionId, p_member: myMember().id });
+    if (error) return toast(errorText(error), 'error');
+    screenUpdate(`minha-presenca:${sessionId}`, { method: null });
+    toast('Pronto: a presença foi desfeita e a equipe vai conferir.');
+    if (ctx.alive()) drawMyAttendance(ctx, sessionId, { method: null });
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -9270,6 +9488,7 @@ const NOTIF_GROUPS = {
   oracao: { label: 'Oração', icon: 'heart', kinds: ['oracao'], on: () => featureOn('oracao') },
   escalas: { label: 'Escalas', icon: 'clipboard', kinds: ['escala'], on: () => featureOn('escalas') },
   infantil: { label: 'Infantil', icon: 'child', kinds: ['infantil'], on: () => featureOn('infantil') },
+  presenca: { label: 'Presença', icon: 'presenca', kinds: ['presenca'], on: () => faceOn() },
   galeria: { label: 'Galeria', icon: 'image', kinds: ['galeria'], on: () => galleryTeam() },
   devocional: { label: 'Devocional', icon: 'book', kinds: ['devocional', 'leitura'], on: () => featureOn('devocional') },
   datas: { label: 'Datas', icon: 'cake', kinds: ['aniversario', 'casamento', 'batismo', 'resumo_lideres'], on: () => datesOn() },

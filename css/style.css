@@ -935,3 +935,13 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 .face-dots { display: flex; justify-content: center; gap: 8px; margin: 6px 0; }
 .face-dots span { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--brand); }
 .face-dots span.done { background: var(--brand); }
+
+/* Totem da entrada */
+.totem-title { text-align: center; font-weight: 700; margin: 4px 0; }
+.totem-video { max-width: 520px; aspect-ratio: 4 / 3; }
+.totem-msg { text-align: center; font-weight: 800; font-size: 1.6rem; padding: 14px 12px; margin: 10px 0; border-radius: var(--radius); border: 1px solid var(--line); }
+.totem-msg.ok { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 14%, transparent); font-size: 2rem; }
+.totem-msg.error { border-color: var(--danger); color: var(--danger); font-size: 1.2rem; }
+.totem-sign { text-align: center; color: var(--muted); font-size: .85rem; }
+.totem video.mirror, .face-video video.mirror { transform: scaleX(-1); }
+.notif-icon.k-presenca { background: color-mix(in srgb, #2f9e44 16%, var(--surface)); color: color-mix(in srgb, #2b8a3e 85%, var(--ink)); }

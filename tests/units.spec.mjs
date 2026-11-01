@@ -2,6 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, darkPalette, contrastRatio, normalizeHex, normalizePhone, fmtPhone, esc, fmtMoney, parseFinanceCsv, parseDay, FINANCE_CSV_TEMPLATE, cardTokenFrom } from '../js/util.js';
 import { pixPayload, normalizePixKey, guessPixType, crc16, parseAmount } from '../js/pix.js';
+import { blinked, eyesOpen, faceDistance, meanDescriptor } from '../js/rosto.js';
 
 test('endereço da igreja a partir do nome', () => {
   expect(slugify('Igreja Batista Central')).toBe('igreja-batista-central');
@@ -396,4 +397,21 @@ test('presença: o QR Code da carteirinha dá o código secreto; outros QR Codes
   expect(cardTokenFrom(`  ${token.toUpperCase()}  `)).toBe(token);
   for (const other of ['', null, 'https://exemplo.com', `https://x/#/agenda/${token}`, `${token}x`, '00020126580014BR.GOV.BCB.PIX'])
     expect(cardTokenFrom(other), String(other)).toBeNull();
+});
+
+test('rosto: piscar é fechar bem os olhos e abrir de novo; distância e média das assinaturas', () => {
+  expect(blinked([0.3, 0.31, 0.29, 0.3, 0.3, 0.3])).toBe(false); // olhos abertos
+  expect(blinked([0.3, 0.31, 0.3, 0.12, 0.3, 0.3])).toBe(true); // piscou
+  expect(blinked([0.3, 0.31, 0.3, 0.3, 0.3, 0.12])).toBe(false); // fechou e ainda não abriu
+  expect(blinked([0.3, 0.12, 0.3])).toBe(false); // poucas leituras
+  // Olho com altura 1 e largura 4 nos dois lados (pontos 36–47 dos 68): 0,25.
+  const pts = Array.from({ length: 68 }, () => [0, 0]);
+  for (const s of [36, 42]) {
+    pts[s] = [0, 0]; pts[s + 3] = [4, 0];
+    pts[s + 1] = [1, -0.5]; pts[s + 5] = [1, 0.5];
+    pts[s + 2] = [3, -0.5]; pts[s + 4] = [3, 0.5];
+  }
+  expect(eyesOpen(pts)).toBeCloseTo(0.25);
+  expect(faceDistance([0, 0, 0], [3, 4, 0])).toBe(5);
+  expect(meanDescriptor([[0, 2], [2, 4]])).toEqual([1, 3]);
 });
