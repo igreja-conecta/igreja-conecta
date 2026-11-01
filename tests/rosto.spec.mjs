@@ -248,3 +248,29 @@ test('o face-api de verdade carrega com a regra de segurança do app e não acha
   });
   expect(found).toEqual([0, 0]);
 });
+
+// No iPad o modo webgl do Safari ficava parado em "Preparando o reconhecimento…": lá vai direto no wasm,
+// com a mesma regra de segurança do app, e precisa achar o rosto de uma foto de verdade.
+test.describe('no iPad', () => {
+  test.use({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.2 Safari/605.1.15', hasTouch: true });
+
+  test('o reconhecimento usa o modo wasm e acha o rosto numa foto', async ({ page }) => {
+    test.setTimeout(120000);
+    await openLoggedIn(page, as['membro-a'].session, '/i/teste-a/#/');
+    await expect(page.locator('#tabbar')).toBeVisible();
+    const result = await page.evaluate(async () => {
+      const { loadFaceEngine } = await import(new URL('js/rosto.js', document.baseURI).href);
+      const face = await loadFaceEngine();
+      const blob = await (await fetch('https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/demo/sample2.jpg')).blob();
+      const bitmap = await createImageBitmap(blob);
+      const canvas = Object.assign(document.createElement('canvas'), { width: bitmap.width, height: bitmap.height });
+      canvas.getContext('2d').drawImage(bitmap, 0, 0);
+      Object.assign(canvas, { videoWidth: bitmap.width, videoHeight: bitmap.height });
+      const found = await face.detect(canvas);
+      return { backend: face.backend, faces: found.length, size: found[0]?.descriptor.length };
+    });
+    expect(result.backend).toBe('wasm');
+    expect(result.faces).toBeGreaterThan(0);
+    expect(result.size).toBe(128);
+  });
+});
