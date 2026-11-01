@@ -7059,16 +7059,26 @@ async function viewAttendanceTotem(ctx, id) {
   };
   window.addEventListener('hashchange', stopAll, { once: true });
 
-  const onFace = async (descriptor) => {
+  const onFace = async (descriptor, { lastTry = true } = {}) => {
     const { data: rows, error } = await sb.rpc('face_match', { p_session: id, p_embedding: descriptor, p_model: FACE_MODEL });
-    if (!ctx.alive()) return;
+    if (!ctx.alive()) return true;
     holdUntil = Date.now() + 3500;
     if (error) {
       beep(false);
-      return show(errorText(error), 'error');
+      show(errorText(error), 'error');
+      return true;
     }
     const r = rows?.[0];
-    if (!r) return show('Não reconheci. Use a carteirinha ou procure a recepção.', 'error');
+    if (!r && !lastTry) {
+      // Ainda não: costuma ser o rosto um pouco para baixo ou de lado. Tenta de novo em seguida.
+      holdUntil = Date.now() + 1200;
+      show('Levante um pouco o rosto e olhe para a tela');
+      return false;
+    }
+    if (!r) {
+      show('Não reconheci. Use a carteirinha ou procure a recepção.', 'error');
+      return false;
+    }
     beep(true);
     show(r.already ? `${firstName(r.name)}, sua presença já estava marcada.` : `✓ Bom culto, ${firstName(r.name)}!`, 'ok');
     if (!r.already) setCached(r.member_id, true);
@@ -7084,18 +7094,20 @@ async function viewAttendanceTotem(ctx, id) {
       show('Desfeito. Use a carteirinha ou procure a recepção.', 'error');
     };
     notMeTimer = setTimeout(() => (notMe.hidden = true), 8000);
+    return true;
   };
 
   const undoBox = document.getElementById('totem-undo');
   const onFaces = async (descriptors) => {
     const { data: rows, error } = await sb.rpc('face_match_many', { p_session: id, p_embeddings: descriptors, p_model: FACE_MODEL });
-    if (!ctx.alive()) return;
+    if (!ctx.alive()) return null;
     if (error) {
       holdUntil = Date.now() + 3500;
       beep(false);
-      return show(errorText(error), 'error');
+      show(errorText(error), 'error');
+      return null;
     }
-    if (!rows.length) return; // ninguém reconhecido com segurança: segue olhando (a carteirinha resolve)
+    if (!rows.length) return []; // ninguém reconhecido com segurança: segue olhando (a carteirinha resolve)
     holdUntil = Date.now() + 4000;
     beep(true);
     const marked = rows.filter((r) => !r.already);
@@ -7119,6 +7131,7 @@ async function viewAttendanceTotem(ctx, id) {
       undoBox.prepend(b);
       setTimeout(() => b.remove(), 15000);
     }
+    return rows.map((r) => r.idx);
   };
 
   const start = async () => {
