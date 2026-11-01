@@ -4,7 +4,7 @@ import {
   esc, slugify, isValidSlug, churchSlugFromPath, churchRestUrl, inkOn, readableOnWhite, darkPalette, normalizeHex, normalizePhone, fmtPhone,
   ROLES, isLeaderRole, FEATURES, cardTokenFrom, fold, fmtDate, fmtMoney, EMAIL_RE, parseMembersCsv, MEMBERS_CSV_TEMPLATE,
   parseFinanceCsv, financeKey, FINANCE_CSV_TEMPLATE, FINANCE_CSV_HEADER, FIN_KIND_CSV,
-  renderMessage, firstName, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
+  renderMessage, firstName, joinNames, MESSAGE_FIELDS, SPECIAL_FIELDS, yearsText, MESSAGE_EMOJIS, icsForEvent, googleCalendarUrl, REMIND_OPTIONS,
 } from './util.js';
 import { resizeImage, resizeLogo, makeIconSet, resizeForGallery } from './images.js';
 import { maybeSuggestInstall, installState, installNow, iconReady, ICON_PREPARING } from './install.js';
@@ -12,7 +12,7 @@ import { pushSupport, pushActive, enablePush, disablePush, syncPush, movePushToP
 import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg, qrImage } from './pix.js';
 import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
 import { startQrReader, beep } from './leitor-qr.js';
-import { ENROLL_STEPS, FACE_MODEL, openCamera, enrollFace, watchFaces } from './rosto.js';
+import { ENROLL_STEPS, FACE_MODEL, openCamera, enrollFace, watchFaces, watchGroup } from './rosto.js';
 // Erros do rosto com texto para a pessoa (faceError em js/rosto.js) aparecem como estão.
 const faceErrorText = (err, fallback) =>
   /NotAllowed|Permission/i.test(err?.name || err?.message || '')
@@ -1495,7 +1495,7 @@ function helpTopics() {
               : ''
           }${
             attendanceTeam()
-              ? `<p><strong>Totem na entrada:</strong> na lista do culto, toque em <em>Totem (reconhecimento facial)</em> num tablet ou num computador com webcam, de frente para quem chega, na altura do rosto e sem a porta clara atrás. Quem cadastrou o rosto olha para a câmera e a presença é marcada sozinha, com um bip. Para dificultar o uso de foto, ligue em <em>Ajustes do totem</em> o pedido para fechar os olhos por um segundo. Se o totem errar, a pessoa toca em <em>Não sou eu</em>; quem usa o app também recebe o aviso "Presença marcada" com o botão <em>Não fui eu</em>. Na dúvida, o totem não marca ninguém: aí vale a carteirinha ou a lista. Coloque perto uma placa avisando que há câmera de presença.</p>`
+              ? `<p><strong>Totem na entrada:</strong> na lista do culto, toque em <em>Totem (reconhecimento facial)</em> num tablet ou num computador com webcam, de frente para quem chega, na altura do rosto e sem a porta clara atrás. Quem cadastrou o rosto olha para a câmera e a presença é marcada sozinha, com um bip. Para dificultar o uso de foto, ligue em <em>Ajustes do totem</em> o pedido para fechar os olhos por um segundo. Se o totem errar, a pessoa toca em <em>Não sou eu</em>; quem usa o app também recebe o aviso "Presença marcada" com o botão <em>Não fui eu</em>. Na dúvida, o totem não marca ninguém: aí vale a carteirinha ou a lista. Em <em>Ajustes do totem</em>, o modo <em>Em grupo</em> marca várias pessoas de uma vez (melhor com tablet ou webcam, a até uns 2 metros); cada pessoa marcada ganha um botão <em>Não é Fulano</em> por alguns segundos. Coloque perto uma placa avisando que há câmera de presença.</p>`
               : ''
           }`,
         ]]
@@ -6942,6 +6942,8 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
 // Nome novo: a proteção contra foto passou a vir desligada (o antigo guardava "ligada").
 const TOTEM_BLINK_KEY = 'totem-olhos';
 const TOTEM_CAMERA_KEY = 'totem-camera';
+// 'um' (uma pessoa por vez, perto da câmera) ou 'grupo' (várias de uma vez, um pouco mais longe).
+const TOTEM_MODE_KEY = 'totem-modo';
 const TOTEM_STATES = {
   vazio: 'Olhe para a câmera',
   longe: 'Chegue mais perto',
@@ -6970,19 +6972,28 @@ async function viewAttendanceTotem(ctx, id) {
   };
   let facing = pref(TOTEM_CAMERA_KEY, 'user');
   let blink = pref(TOTEM_BLINK_KEY, '0') === '1';
+  let mode = pref(TOTEM_MODE_KEY, 'um') === 'grupo' ? 'grupo' : 'um';
   $view.innerHTML = `
     <div class="page totem">
       <a href="#/presenca/${id}" class="back">← Lista de presença</a>
       ${session ? `<p class="totem-title">${esc(session.title)}</p>` : ''}
-      <div class="qr-video totem-video"><video id="totem-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div>
+      <div class="qr-video totem-video ${mode === 'grupo' ? 'group' : ''}" id="totem-box"><video id="totem-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div>
       <div id="totem-msg" class="totem-msg" role="status" aria-live="polite">Abrindo a câmera…</div>
       <p class="hint center face-diag" id="totem-diag"></p>
       <button type="button" class="btn danger-outline big" id="totem-notme" hidden>Não sou eu</button>
+      <div class="totem-undo" id="totem-undo"></div>
       <div id="totem-count">${data ? attendanceTiles(attendanceCounts(data.roster)) : ''}</div>
       <p class="totem-sign">Câmera de presença: reconhece só quem cadastrou o rosto no app. Nenhuma imagem é gravada.</p>
       <details class="card">
         <summary>Ajustes do totem</summary>
-        <label class="check"><input type="checkbox" id="totem-blink" ${blink ? 'checked' : ''}> Pedir para fechar os olhos (proteção contra foto)
+        <fieldset class="totem-mode">
+          <legend>Como as pessoas passam</legend>
+          <label class="check"><input type="radio" name="totem-mode" value="um" ${mode === 'um' ? 'checked' : ''}> Uma por vez
+            <small class="hint">A pessoa olha para a câmera de perto (40 cm a 1 m). Mais preciso.</small></label>
+          <label class="check"><input type="radio" name="totem-mode" value="grupo" ${mode === 'grupo' ? 'checked' : ''}> Em grupo
+            <small class="hint">Marca várias pessoas de uma vez, a até uns 2 metros. Funciona melhor com tablet (câmera de trás) ou webcam no computador. Quem estiver de lado ou meio escondido pode não ser reconhecido.</small></label>
+        </fieldset>
+        <label class="check" id="totem-blink-box" ${mode === 'grupo' ? 'hidden' : ''}><input type="checkbox" id="totem-blink" ${blink ? 'checked' : ''}> Pedir para fechar os olhos (proteção contra foto)
           <small class="hint">Antes de marcar, a pessoa fecha os olhos por um segundo e abre: dificulta marcar a presença de alguém mostrando uma foto. Deixa a entrada um pouco mais lenta.</small></label>
         <div class="actions-row">
           <button class="btn" type="button" id="totem-flip">Trocar câmera</button>
@@ -7049,32 +7060,88 @@ async function viewAttendanceTotem(ctx, id) {
     notMeTimer = setTimeout(() => (notMe.hidden = true), 8000);
   };
 
+  const undoBox = document.getElementById('totem-undo');
+  const onFaces = async (descriptors) => {
+    const { data: rows, error } = await sb.rpc('face_match_many', { p_session: id, p_embeddings: descriptors, p_model: FACE_MODEL });
+    if (!ctx.alive()) return;
+    if (error) {
+      holdUntil = Date.now() + 3500;
+      beep(false);
+      return show(errorText(error), 'error');
+    }
+    if (!rows.length) return; // ninguém reconhecido com segurança: segue olhando (a carteirinha resolve)
+    holdUntil = Date.now() + 4000;
+    beep(true);
+    const marked = rows.filter((r) => !r.already);
+    const before = rows.filter((r) => r.already);
+    show(
+      [marked.length ? `✓ Bom culto, ${joinNames(marked.map((r) => r.name))}!` : '', before.length ? `${joinNames(before.map((r) => r.name))}: já ${before.length === 1 ? 'estava marcado' : 'estavam marcados'}.` : '']
+        .filter(Boolean)
+        .join(' '),
+      'ok',
+    );
+    for (const r of marked) {
+      setCached(r.member_id, true);
+      const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn small danger-outline', textContent: `Não é ${firstName(r.name)}` });
+      b.onclick = async () => {
+        b.remove();
+        const { error: err } = await sb.rpc('attendance_reject', { p_session: id, p_member: r.member_id, p_source: 'totem' });
+        if (err) return toast(errorText(err), 'error');
+        setCached(r.member_id, false);
+        toast(`Desfeito: ${firstName(r.name)}.`);
+      };
+      undoBox.prepend(b);
+      setTimeout(() => b.remove(), 15000);
+    }
+  };
+
   const start = async () => {
     const mine = ++run;
     close?.();
     show('Abrindo a câmera…');
+    const group = mode === 'grupo';
+    document.getElementById('totem-box').classList.toggle('group', group);
+    document.getElementById('totem-blink-box').hidden = group;
     try {
-      close = await openCamera(video, facing);
+      close = await openCamera(video, facing, { hd: group });
       video.classList.toggle('mirror', facing === 'user');
       wake ??= await navigator.wakeLock?.request('screen').catch(() => null);
       show('Preparando o reconhecimento…');
-      await watchFaces(video, {
+      const common = {
         alive: () => ctx.alive() && mine === run,
-        requireBlink: () => blink,
-        onState: (s) => Date.now() > holdUntil && show(TOTEM_STATES[s]),
         onProgress: (text) => show(text),
         onInfo: (text) => {
           const el = document.getElementById('totem-diag');
           if (el) el.textContent = text;
         },
-        onFace,
-      });
+      };
+      if (group) {
+        await watchGroup(video, {
+          ...common,
+          onState: (s, n) => Date.now() > holdUntil && show(s === 'grupo' ? `Reconhecendo ${n} ${n === 1 ? 'pessoa' : 'pessoas'}…` : TOTEM_STATES[s]),
+          onFaces,
+        });
+      } else {
+        await watchFaces(video, {
+          ...common,
+          requireBlink: () => blink,
+          onState: (s) => Date.now() > holdUntil && show(TOTEM_STATES[s]),
+          onFace,
+        });
+      }
     } catch (err) {
       close?.();
       if (!ctx.alive() || mine !== run) return;
       show(faceErrorText(err, 'Não foi possível abrir a câmera ou o reconhecimento'), 'error');
     }
   };
+  $view.querySelectorAll('[name=totem-mode]').forEach((r) => {
+    r.onchange = () => {
+      mode = r.value;
+      save(TOTEM_MODE_KEY, mode);
+      start();
+    };
+  });
   document.getElementById('totem-blink').onchange = (e) => {
     blink = e.target.checked;
     save(TOTEM_BLINK_KEY, blink ? '1' : '0');

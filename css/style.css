@@ -946,3 +946,8 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 .totem video.mirror, .face-video video.mirror { transform: scaleX(-1); }
 .notif-icon.k-presenca { background: color-mix(in srgb, #2f9e44 16%, var(--surface)); color: color-mix(in srgb, #2b8a3e 85%, var(--ink)); }
 .face-diag { font-size: .75rem; opacity: .7; }
+.totem-video.group { aspect-ratio: 16 / 9; max-width: 720px; }
+.totem-video.group .face-oval { display: none; }
+.totem-undo { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 6px 0; }
+.totem-mode { border: 0; padding: 0; margin: 0 0 8px; }
+.totem-mode legend { font-weight: 700; margin-bottom: 4px; }
