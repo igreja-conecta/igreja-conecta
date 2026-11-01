@@ -2195,7 +2195,8 @@ test.describe('Cadastro do rosto (034)', () => {
     const data = await (await rpc('membro-a', 'export_my_data')).json();
     const face = data.igrejas.find((c) => c.endereco_no_app === '/i/teste-a/').cadastro_facial;
     expect(face.cadastrado).toBe(true);
-    expect(face.autorizacoes.map((a) => a.cadastrado_por)).toEqual(['secretaria', 'você']);
+    // O histórico guarda as autorizações anteriores também (comprovam o consentimento).
+    expect(face.autorizacoes.map((a) => a.cadastrado_por)).toEqual(expect.arrayContaining(['secretaria', 'você']));
     expect(JSON.stringify(face)).not.toMatch(/embedding|0\.0841/);
   });
 
