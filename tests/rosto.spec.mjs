@@ -172,6 +172,8 @@ test('a câmera preta e o reconhecimento que falha no aparelho aparecem na tela'
   await openLoggedIn(page, as['adm-a'].session, '/i/teste-a/#/menu');
   await page.getByRole('link', { name: 'Meu rosto (presença)' }).click();
   await page.getByRole('link', { name: 'Cadastrar meu rosto' }).click();
+  // Espera a tela aparecer antes de ver se a caixa dos 18 anos existe (no GitHub ela demora mais).
+  await page.locator('[name=agree]').waitFor();
   if (await page.locator('[name=adult]').count()) await page.locator('[name=adult]').check();
   await page.locator('[name=agree]').check();
   await page.getByRole('button', { name: 'Eu autorizo' }).click();
@@ -183,6 +185,8 @@ test('a câmera preta e o reconhecimento que falha no aparelho aparecem na tela'
   await openLoggedIn(other, as['adm-a'].session, '/i/teste-a/#/menu');
   await other.getByRole('link', { name: 'Meu rosto (presença)' }).click();
   await other.getByRole('link', { name: 'Cadastrar meu rosto' }).click();
+  // Espera a tela aparecer antes de ver se a caixa dos 18 anos existe (no GitHub ela demora mais).
+  await other.locator('[name=agree]').waitFor();
   if (await other.locator('[name=adult]').count()) await other.locator('[name=adult]').check();
   await other.locator('[name=agree]').check();
   await other.getByRole('button', { name: 'Eu autorizo' }).click();
