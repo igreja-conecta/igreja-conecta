@@ -382,3 +382,18 @@ test.describe('Banco: visitante sem login (totem)', () => {
     expect((await rpc(request, 'attendance_reject', { p_session: UUID, p_member: UUID, p_source: 'totem' })).ok()).toBe(false);
   });
 });
+
+test.describe('Banco: visitante sem login (quem está faltando)', () => {
+  test('não vê a lista, não marca acompanhamento e o aviso pede a senha', async ({ request }) => {
+    const res = await request.get(rest('absence_followups?select=*'), { headers });
+    if (res.ok()) expect(await res.json()).toEqual([]);
+    const calls = {
+      absence_rows: { p_church: UUID },
+      absence_list: { p_church: UUID },
+      can_see_absences: { p_church: UUID },
+      absence_follow: { p_member: UUID, p_weeks: 4 },
+    };
+    for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
+    expect((await rpc(request, 'deliver_absence_alerts', { p_secret: 'errada' })).ok()).toBe(false);
+  });
+});

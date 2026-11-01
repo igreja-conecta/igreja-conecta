@@ -99,6 +99,8 @@ await Promise.all(
 const daily = await rpc('deliver_devotional_notifications');
 // Na véspera: o lembrete de quem está escalado (também vai pela fila da central).
 const escalas = await rpc('deliver_schedule_reminders');
+// Segunda-feira de manhã: quem está faltando aos cultos, para a pastoral (também pela fila da central).
+const faltas = await rpc('deliver_absence_alerts');
 
 // Avisos da central que também vão por push (ex.: pedido de oração novo para a liderança)
 const central = await rpc('claim_notification_push');
@@ -159,7 +161,7 @@ if (emailOn) {
 const count = (rows, key) => new Set(rows.map((r) => r[key])).size;
 console.log(
   `Lembretes: ${count(reminders, 'event_id')} evento(s); avisos: ${count(notices, 'announcement_id')}; ` +
-    `central: ${count(central, 'notification_id')} (devocional e leitura: ${daily}; escalas: ${escalas}); ` +
+    `central: ${count(central, 'notification_id')} (devocional e leitura: ${daily}; escalas: ${escalas}; faltas: ${faltas}); ` +
     `${stats.push} push, ${stats.gone} aparelho(s) removido(s), ${emails} e-mail(s) de inscrição, ${stats.failed} falha(s).`,
 );
 if (stats.failed && !stats.push) process.exit(1);

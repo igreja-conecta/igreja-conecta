@@ -75,7 +75,7 @@ const SCREEN_PREFIX = 'tela:';
 const screenMem = new Map();
 const screenLoading = new Map();
 // Telas com dados sensíveis de outras pessoas: guardadas só na memória, nunca gravadas no aparelho.
-const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:|infantil$|chat$|conversa:|financeiro|presenca|rosto:)/;
+const PRIVATE_SCREENS = /^(moderar:|visitantes$|inscritos:|infantil$|chat$|conversa:|financeiro|presenca|rosto:|faltas$)/;
 const screenKey = (name) => `${SCREEN_PREFIX}${state.user?.id}:${state.church?.id}:${name}`;
 
 function screenCached(name) {
@@ -729,6 +729,7 @@ const churchRoutes = [
   [/^\/infantil\/salas$/, viewKidRooms],
   [/^\/presenca$/, viewAttendance],
   [/^\/presenca\/nova$/, viewAttendanceNew],
+  [/^\/presenca\/faltas$/, viewAbsences],
   [/^\/presenca\/([0-9a-f-]{36})$/, viewAttendanceSession],
   [/^\/presenca\/([0-9a-f-]{36})\/qr$/, viewAttendanceQr],
   [/^\/presenca\/([0-9a-f-]{36})\/totem$/, viewAttendanceTotem],
@@ -1469,7 +1470,11 @@ function helpTopics() {
           'Presença nos cultos',
           `<p>A equipe da recepção marca quem veio a cada culto. A sua presença fica guardada para a liderança acompanhar a igreja, e você a encontra em <a href="#/meus-dados">Menu &gt; Meus dados</a>.${features('carteirinha') ? ' Na entrada, mostre o QR Code da <a href="#/carteirinha">sua carteirinha</a> para marcar mais rápido.' : ''}</p>${
             attendanceTeam()
-              ? `<p><strong>Se você marca a presença:</strong> em <a href="#/presenca">Menu &gt; Presença nos cultos</a>, toque no botão <strong>+</strong>, embaixo à direita, e abra a lista do culto (os cultos de hoje da Agenda aparecem para escolher). Se outra pessoa já abriu a lista com o mesmo nome no mesmo dia, vocês marcam juntos na mesma lista. Busque o nome e toque em <em>Marcar</em>, ou toque em <em>Ler QR Code da carteirinha</em> e aponte a câmera para a carteirinha no celular da pessoa: cada uma lida faz um bip e entra na lista. No alto da lista, o contador mostra quantos foram marcados pela câmera, pelo QR Code e pela lista.</p>`
+              ? `<p><strong>Se você marca a presença:</strong> em <a href="#/presenca">Menu &gt; Presença nos cultos</a>, toque no botão <strong>+</strong>, embaixo à direita, e abra a lista do culto (os cultos de hoje da Agenda aparecem para escolher). Se outra pessoa já abriu a lista com o mesmo nome no mesmo dia, vocês marcam juntos na mesma lista. Busque o nome e toque em <em>Marcar</em>, ou toque em <em>Ler QR Code da carteirinha</em> e aponte a câmera para a carteirinha no celular da pessoa: cada uma lida faz um bip e entra na lista. No alto da lista, o contador mostra quantos foram marcados pela câmera, pelo QR Code e pela lista.</p>${
+                  absenceOn()
+                    ? '<p><strong>Quem está faltando (pastoral):</strong> em Presença &gt; <a href="#/presenca/faltas">Quem está faltando</a> aparece quem vinha aos cultos e sumiu há algumas semanas (o administrador escolhe quantas em Configurar a igreja). Toda segunda-feira o administrador e os líderes recebem um aviso. Toque em <em>Vou procurar</em> para os outros líderes saberem que alguém já está cuidando, ou chame no WhatsApp.</p>'
+                    : ''
+                }`
               : ''
           }`,
         ]]
@@ -2586,6 +2591,16 @@ async function viewSettings(ctx) {
       </fieldset>
 
       <fieldset class="card">
+        <legend>${icon.presenca} Presença nos cultos</legend>
+        <label>Avisar a pastoral de quem está faltando
+          <select name="absence_alert_weeks">
+            ${ABSENCE_WEEKS.map((w) => `<option value="${w}" ${w === (c.absence_alert_weeks ?? 3) ? 'selected' : ''}>${w ? `Depois de ${w} semanas sem vir` : 'Não avisar'}</option>`).join('')}
+          </select>
+        </label>
+        <p class="hint">Vale com a Presença nos cultos ligada. O administrador e os líderes recebem o aviso na segunda-feira e veem a lista em Presença &gt; Quem está faltando.</p>
+      </fieldset>
+
+      <fieldset class="card">
         <legend>${icon.book} Bíblia</legend>
         <label>Tradução usada nos links "Ler na Bíblia"
           <select name="bible_version">
@@ -2674,6 +2689,7 @@ async function viewSettings(ctx) {
         pix_name: pix_key ? form.pix_name.value.trim() || null : null,
         features,
         bible_version: form.bible_version.value,
+        absence_alert_weeks: Number(form.absence_alert_weeks.value),
         privacy_email: form.privacy_email.value.trim() || null,
         privacy_text: form.privacy_text.value.trim() || null,
       };
@@ -6412,6 +6428,7 @@ function drawAttendance(rows) {
     <div class="page">
       <h1>Presença nos cultos</h1>
       <p class="hint">Abra a lista do culto e marque quem veio: tocando no nome${featureOn('carteirinha') ? ' ou lendo o QR Code da carteirinha' : ''}.</p>
+      ${absenceOn() ? `<div class="actions-row"><a class="btn" href="#/presenca/faltas">${icon.users} Quem está faltando</a></div>` : ''}
       ${
         rows.length
           ? `<div class="list">${rows
@@ -7109,6 +7126,75 @@ function drawMyAttendance(ctx, sessionId, a) {
     toast('Pronto: a presença foi desfeita e a equipe vai conferir.');
     if (ctx.alive()) drawMyAttendance(ctx, sessionId, { method: null });
   });
+}
+
+// ---------------------------------------------------------------------
+// Quem está faltando aos cultos: para a pastoral (administrador e líderes) procurar.
+// ---------------------------------------------------------------------
+const absenceOn = () => featureOn('presenca') && isPastoral();
+const ABSENCE_WEEKS = [0, 2, 3, 4, 5, 6, 8];
+
+async function loadAbsences() {
+  const { data, error } = await sb.rpc('absence_list', { p_church: state.church.id });
+  if (error) throw error;
+  return data;
+}
+
+async function viewAbsences(ctx) {
+  if (!requireMemberFeature('/presenca/faltas', 'presenca')) return;
+  if (!isPastoral()) return navigate('/');
+  await screenShow(ctx, 'faltas', loadAbsences, (rows) => drawAbsences(ctx, rows));
+}
+
+const weeksAgo = (iso) => {
+  const w = Math.floor((parseIso(isoLocal(new Date())) - parseIso(iso)) / (7 * 864e5));
+  return w === 1 ? 'há 1 semana' : `há ${w} semanas`;
+};
+
+function drawAbsences(ctx, rows) {
+  const weeks = state.church.absence_alert_weeks ?? 3;
+  const open = rows.filter((r) => !r.followed_until);
+  const followed = rows.filter((r) => r.followed_until);
+  const row = (r) => `
+    <div class="member-row" data-absent="${r.member_id}">
+      ${avatar(r.name, null)}
+      <span><strong>${esc(r.name)}</strong>
+        <small>Última presença ${esc(fmtDate(r.last_present))} (${esc(weeksAgo(r.last_present))}) · ${r.missed} ${r.missed === 1 ? 'lista' : 'listas'} sem vir</small>
+        ${r.followed_until ? `<small>Acompanhando${r.followed_by ? `: ${esc(r.followed_by)}` : ''}, até ${esc(fmtDate(r.followed_until))}</small>` : ''}</span>
+      <span class="tags">
+        ${r.phone ? `<a class="btn small" href="${esc(whatsappLink(r.phone, `Olá, ${firstName(r.name)}! Sentimos a sua falta nos cultos. Está tudo bem?`))}" target="_blank" rel="noopener" aria-label="WhatsApp de ${esc(r.name)}">WhatsApp</a>` : ''}
+        ${
+          r.followed_until
+            ? `<button type="button" class="btn small" data-unfollow="${r.member_id}" aria-label="Tirar a marca de ${esc(r.name)}">Tirar marca</button>`
+            : `<button type="button" class="btn small primary" data-follow="${r.member_id}" aria-label="Vou procurar ${esc(r.name)}">Vou procurar</button>`
+        }
+      </span>
+    </div>`;
+  $view.innerHTML = `
+    <div class="page">
+      <a href="#/presenca" class="back">← Presença</a>
+      <h1>Quem está faltando</h1>
+      <p class="hint">${
+        weeks
+          ? `Quem vinha aos cultos (2 presenças ou mais nos últimos 4 meses) e não aparece há ${weeks} semanas ou mais. Só conta se a igreja fez a lista de presença nesse tempo. A pastoral recebe um aviso toda segunda-feira.`
+          : 'O aviso está desligado. O administrador liga em Configurar a igreja &gt; Presença nos cultos.'
+      }</p>
+      ${open.length ? `<div class="list">${open.map(row).join('')}</div>` : '<div class="empty"><p>Ninguém faltando agora. 🙏</p></div>'}
+      ${followed.length ? `<h2>Acompanhando (${followed.length})</h2><div class="list">${followed.map(row).join('')}</div>` : ''}
+      <p class="hint">"Vou procurar" tira a pessoa da lista por 4 semanas e mostra aos outros líderes quem está acompanhando.</p>
+    </div>`;
+  const follow = async (id, weeksOn) => {
+    const { error } = await sb.rpc('absence_follow', { p_member: id, p_weeks: weeksOn });
+    if (error) return toast(errorText(error), 'error');
+    const r = rows.find((x) => x.member_id === id);
+    const until = isoLocal(addDays(new Date(), 7 * weeksOn));
+    Object.assign(r, weeksOn ? { followed_until: until, followed_by: myMember().name } : { followed_until: null, followed_by: null });
+    screenUpdate('faltas', rows);
+    toast(weeksOn ? 'Anotado: você vai procurar.' : 'Marca tirada.');
+    if (ctx.alive()) drawAbsences(ctx, rows);
+  };
+  $view.querySelectorAll('[data-follow]').forEach((b) => (b.onclick = () => follow(b.dataset.follow, 4)));
+  $view.querySelectorAll('[data-unfollow]').forEach((b) => (b.onclick = () => follow(b.dataset.unfollow, 0)));
 }
 
 // ---------------------------------------------------------------------
