@@ -43,6 +43,8 @@ export function loadFaceEngine(onProgress = () => {}) {
     'O reconhecimento facial não terminou de baixar em 2 minutos. Confira a internet (de preferência Wi-Fi) e tente de novo.',
   ).then((faceapi) => {
     const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+    // Acompanhar (totem) com imagem menor: mais leituras por segundo no celular.
+    const fast = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
     const boxOf = (d, w, h) => ({ x: d.box.x / w, y: d.box.y / h, width: d.box.width / w, height: d.box.height / h });
     return {
       backend: faceapi.tf.getBackend(),
@@ -51,7 +53,7 @@ export function loadFaceEngine(onProgress = () => {}) {
         const w = video.videoWidth;
         const h = video.videoHeight;
         if (!w || !h) return [];
-        const found = await faceapi.detectAllFaces(video, opts).withFaceLandmarks(true);
+        const found = await faceapi.detectAllFaces(video, fast).withFaceLandmarks(true);
         return found.map((f) => ({
           score: f.detection.score,
           box: boxOf(f.detection, w, h),
@@ -115,13 +117,15 @@ export function eyesOpen(pts) {
   return (eye(36) + eye(42)) / 2;
 }
 
-// Piscou? Os olhos fecharam bem (abaixo de 75% do normal da pessoa) e abriram de novo.
+// Fechou e abriu os olhos? Uma leitura com os olhos bem mais fechados que o normal da pessoa
+// (abaixo de 82%) e depois uma com eles abertos de novo. No celular cada leitura demora: o totem
+// pede para fechar os olhos por um segundo (uma piscada rápida escapa entre duas leituras).
 export function blinked(history) {
-  if (history.length < 5) return false;
+  if (history.length < 3) return false;
   const sorted = [...history].sort((a, b) => a - b);
   const normal = sorted[Math.floor(sorted.length * 0.7)];
-  const low = history.findIndex((v) => v < normal * 0.75);
-  return low >= 0 && history.slice(low + 1).some((v) => v > normal * 0.9);
+  const low = history.findIndex((v) => v < normal * 0.82);
+  return low >= 0 && history.slice(low + 1).some((v) => v > normal * 0.92);
 }
 
 export const faceDistance =(a, b) => Math.sqrt(a.reduce((s, x, i) => s + (x - b[i]) ** 2, 0));
@@ -203,7 +207,7 @@ export async function enrollFace(video, { onStep, onHint, onInfo = () => {}, onP
 // está perto (e piscou, se pedido), calcula a assinatura e chama onFace(assinatura). A mesma
 // pessoa não é enviada de novo por 20 segundos. onState(estado) mostra o que falta:
 // 'vazio', 'longe', 'varios', 'piscar' ou 'lendo'.
-export async function watchFaces(video, { requireBlink = () => true, onState, onFace, onProgress = () => {}, alive = () => true }) {
+export async function watchFaces(video, { requireBlink = () => true, onState, onFace, onProgress = () => {}, onInfo = () => {}, alive = () => true }) {
   const face = await loadFaceEngine(onProgress);
   const track = reader(face, 'track');
   const detect = reader(face, 'detect');
@@ -213,8 +217,10 @@ export async function watchFaces(video, { requireBlink = () => true, onState, on
   let last = '';
   const state = (s) => s !== last && onState((last = s));
   while (alive() && video.isConnected) {
+    const t0 = performance.now();
     const found = await track(video);
     const now = Date.now();
+    onInfo(`${face.backend || '?'} · ${Math.round(performance.now() - t0)} ms${found[0]?.eyes ? ` · olhos ${found[0].eyes.toFixed(2)}` : ''}`);
     const near = found.filter((f) => f.box.width >= 0.15 && f.score >= 0.6).sort((a, b) => b.box.width - a.box.width);
     if (!near.length) {
       if (now - seenAt > 1500) eyes = [];

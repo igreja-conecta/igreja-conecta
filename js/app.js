@@ -1495,7 +1495,7 @@ function helpTopics() {
               : ''
           }${
             attendanceTeam()
-              ? `<p><strong>Totem na entrada:</strong> na lista do culto, toque em <em>Totem (reconhecimento facial)</em> num tablet ou num computador com webcam, de frente para quem chega, na altura do rosto e sem a porta clara atrás. Quem cadastrou o rosto olha para a câmera (e pisca, se o ajuste estiver ligado) e a presença é marcada sozinha, com um bip. Se o totem errar, a pessoa toca em <em>Não sou eu</em>; quem usa o app também recebe o aviso "Presença marcada" com o botão <em>Não fui eu</em>. Na dúvida, o totem não marca ninguém: aí vale a carteirinha ou a lista. Coloque perto uma placa avisando que há câmera de presença.</p>`
+              ? `<p><strong>Totem na entrada:</strong> na lista do culto, toque em <em>Totem (reconhecimento facial)</em> num tablet ou num computador com webcam, de frente para quem chega, na altura do rosto e sem a porta clara atrás. Quem cadastrou o rosto olha para a câmera e a presença é marcada sozinha, com um bip. Para dificultar o uso de foto, ligue em <em>Ajustes do totem</em> o pedido para fechar os olhos por um segundo. Se o totem errar, a pessoa toca em <em>Não sou eu</em>; quem usa o app também recebe o aviso "Presença marcada" com o botão <em>Não fui eu</em>. Na dúvida, o totem não marca ninguém: aí vale a carteirinha ou a lista. Coloque perto uma placa avisando que há câmera de presença.</p>`
               : ''
           }`,
         ]]
@@ -6939,13 +6939,14 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
 // Totem: o tablet (ou a webcam) da entrada reconhece quem cadastrou o rosto e marca sozinho.
 // "Não sou eu" no totem e "Não fui eu" na notificação desfazem (ficam anotados para a equipe).
 // ---------------------------------------------------------------------
-const TOTEM_BLINK_KEY = 'totem-piscar';
+// Nome novo: a proteção contra foto passou a vir desligada (o antigo guardava "ligada").
+const TOTEM_BLINK_KEY = 'totem-olhos';
 const TOTEM_CAMERA_KEY = 'totem-camera';
 const TOTEM_STATES = {
   vazio: 'Olhe para a câmera',
   longe: 'Chegue mais perto',
   varios: 'Uma pessoa por vez',
-  piscar: 'Pisque os olhos',
+  piscar: 'Feche os olhos por um segundo e abra',
   lendo: 'Reconhecendo…',
   preta: 'A imagem da câmera está preta: toque em "Trocar câmera"',
 };
@@ -6968,20 +6969,21 @@ async function viewAttendanceTotem(ctx, id) {
     } catch {}
   };
   let facing = pref(TOTEM_CAMERA_KEY, 'user');
-  let blink = pref(TOTEM_BLINK_KEY, '1') === '1';
+  let blink = pref(TOTEM_BLINK_KEY, '0') === '1';
   $view.innerHTML = `
     <div class="page totem">
       <a href="#/presenca/${id}" class="back">← Lista de presença</a>
       ${session ? `<p class="totem-title">${esc(session.title)}</p>` : ''}
       <div class="qr-video totem-video"><video id="totem-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div>
       <div id="totem-msg" class="totem-msg" role="status" aria-live="polite">Abrindo a câmera…</div>
+      <p class="hint center face-diag" id="totem-diag"></p>
       <button type="button" class="btn danger-outline big" id="totem-notme" hidden>Não sou eu</button>
       <div id="totem-count">${data ? attendanceTiles(attendanceCounts(data.roster)) : ''}</div>
       <p class="totem-sign">Câmera de presença: reconhece só quem cadastrou o rosto no app. Nenhuma imagem é gravada.</p>
       <details class="card">
         <summary>Ajustes do totem</summary>
-        <label class="check"><input type="checkbox" id="totem-blink" ${blink ? 'checked' : ''}> Pedir para piscar
-          <small class="hint">Dificulta marcar a presença de alguém mostrando uma foto. Desligue se as pessoas demorarem muito para ser reconhecidas.</small></label>
+        <label class="check"><input type="checkbox" id="totem-blink" ${blink ? 'checked' : ''}> Pedir para fechar os olhos (proteção contra foto)
+          <small class="hint">Antes de marcar, a pessoa fecha os olhos por um segundo e abre: dificulta marcar a presença de alguém mostrando uma foto. Deixa a entrada um pouco mais lenta.</small></label>
         <div class="actions-row">
           <button class="btn" type="button" id="totem-flip">Trocar câmera</button>
           <button class="btn" type="button" id="totem-full">Tela cheia</button>
@@ -7061,6 +7063,10 @@ async function viewAttendanceTotem(ctx, id) {
         requireBlink: () => blink,
         onState: (s) => Date.now() > holdUntil && show(TOTEM_STATES[s]),
         onProgress: (text) => show(text),
+        onInfo: (text) => {
+          const el = document.getElementById('totem-diag');
+          if (el) el.textContent = text;
+        },
         onFace,
       });
     } catch (err) {
