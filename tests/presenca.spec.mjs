@@ -74,7 +74,9 @@ test('a liderança abre a lista pelo +, marca pelo nome e o contador mostra a fo
   await expect(tile(page, 'Presentes')).toHaveText('0');
 
   await page.getByLabel('Buscar').fill('Fulano da A');
+  const saved = page.waitForResponse((r) => r.url().includes('rpc/attendance_mark') && r.ok());
   await page.getByRole('button', { name: 'Marcar Fulano da A' }).click();
+  await saved;
   await expect(tile(page, 'Pela lista')).toHaveText('1');
   await expect(tile(page, 'Presentes')).toHaveText('1');
   const row = page.locator('[data-person]', { hasText: 'Fulano da A' });

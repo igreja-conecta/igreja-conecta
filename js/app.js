@@ -5286,7 +5286,7 @@ async function viewMinistryForm(ctx, id) {
       ${
         featureOn('presenca')
           ? `<label class="check"><input type="checkbox" name="attendance_checkin" ${mi.attendance_checkin ? 'checked' : ''}> Marca a presença nos cultos
-              <small class="hint">A equipe deste ministério abre as listas de presença e marca quem veio. Ela vê só os nomes dos membros. Só um ministério por igreja. Sem ele, só a liderança marca.</small></label>`
+              <small class="hint">A equipe deste ministério abre as listas de presença e marca quem veio, sem ver telefone, e-mail ou aniversário de ninguém. Só um ministério por igreja. Sem ele, só a liderança marca.</small></label>`
           : ''
       }
       ${
@@ -5906,7 +5906,7 @@ function drawKids(ctx, { kids, rooms, day }) {
     timer = setTimeout(() => {
       if (!ctx.alive()) return; // já foi para outra tela (ex.: tocou em Entrada)
       const q = search.q.value.trim();
-      history.replaceState(null, '', `#/infantil${q ? `?busca=${encodeURIComponent(q)}` : ''}`);
+      history.replaceState(null, '', `${location.pathname}#/infantil${q ? `?busca=${encodeURIComponent(q)}` : ''}`);
       ctx.params.set('busca', q);
       const pos = search.q.selectionStart;
       drawKids(ctx, { kids, rooms, day });
@@ -6527,7 +6527,7 @@ function drawAttendanceSession(ctx, id, data) {
     timer = setTimeout(() => {
       if (!ctx.alive()) return;
       const q = search.q.value.trim();
-      history.replaceState(null, '', `#/presenca/${id}?ver=${show}${q ? `&busca=${encodeURIComponent(q)}` : ''}`);
+      history.replaceState(null, '', `${location.pathname}#/presenca/${id}?ver=${show}${q ? `&busca=${encodeURIComponent(q)}` : ''}`);
       ctx.params.set('busca', q);
       const pos = search.q.selectionStart;
       drawAttendanceSession(ctx, id, data);
