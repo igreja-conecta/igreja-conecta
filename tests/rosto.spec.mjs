@@ -165,6 +165,8 @@ async function brokenFace(page, { black = false, failing = false }) {
 }
 
 test('a câmera preta e o reconhecimento que falha no aparelho aparecem na tela', async ({ page }) => {
+  // O teste do totem deixa o rosto do Admin cadastrado: começa sem.
+  await rpc('adm-a', 'face_delete', { p_member: ids.adm });
   await brokenFace(page, { black: true });
   await openLoggedIn(page, as['adm-a'].session, '/i/teste-a/#/menu');
   await page.getByRole('link', { name: 'Meu rosto (presença)' }).click();
