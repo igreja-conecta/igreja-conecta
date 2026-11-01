@@ -6963,6 +6963,7 @@ const TOTEM_MODE_KEY = 'totem-modo';
 const TOTEM_STATES = {
   vazio: 'Olhe para a câmera',
   longe: 'Chegue mais perto',
+  levante: 'Levante um pouco o rosto e olhe para a tela',
   varios: 'Uma pessoa por vez',
   piscar: 'Feche os olhos por um segundo e abra',
   lendo: 'Reconhecendo…',

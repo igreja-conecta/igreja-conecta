@@ -26,6 +26,10 @@ export function turnPick(shots, d) {
 // Totem: quantas leituras seguidas da mesma pessoa antes de dizer "Não reconheci" (quem chega
 // com o rosto um pouco para baixo costuma ser reconhecido na segunda ou terceira).
 export const FACE_TRIES = 4;
+// Nota mínima do detector para ler o rosto no totem (antes 0,6: o rosto um pouco para baixo ficava de fora).
+const TRACK_SCORE = 0.4;
+// Em grupo, um pouco mais alta: o rosto aparece em duas leituras seguidas antes de ir ao banco.
+const GROUP_SCORE = 0.45;
 // Quem foi reconhecido não é lido de novo por 20 s; quem não foi, só espera um pouco.
 const SEEN_MS = 20000;
 const MISSED_MS = 2500;
@@ -89,11 +93,13 @@ export function loadFaceEngine(onProgress = () => {}) {
     150000,
     'O reconhecimento facial não terminou de baixar em 2 minutos. Confira a internet (de preferência Wi-Fi) e tente de novo.',
   ).then((faceapi) => {
-    const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+    // Nota mínima baixa (0,3): rosto inclinado para baixo ou de lado tira nota menor. Quem decide se é
+    // a pessoa é o banco, pela assinatura (a regra de segurança não muda).
+    const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
     // Acompanhar (totem) com imagem menor: mais leituras por segundo no celular.
-    const fast = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
+    const fast = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
     // Grupo: imagem maior, para achar rostos menores (gente mais longe).
-    const wide = new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.5 });
+    const wide = new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 });
     const boxOf = (d, w, h) => ({ x: d.box.x / w, y: d.box.y / h, width: d.box.width / w, height: d.box.height / h });
     return {
       backend: faceapi.tf.getBackend(),
@@ -228,7 +234,7 @@ export async function enrollFace(video, { onStep, onTurn = () => {}, onHint, onI
     onInfo(`${face.backend || '?'} · ${Math.round(performance.now() - t0)} ms · ${video.videoWidth}×${video.videoHeight}`);
     // De lado o rosto fica mais estreito e com menos certeza: depois do primeiro, aceita um pouco menos.
     const minWidth = shots.length ? 0.14 : 0.18;
-    const minScore = shots.length ? 0.5 : 0.6;
+    const minScore = shots.length ? 0.4 : 0.6;
     if (found.length > 1) onHint('Só uma pessoa na frente da câmera.');
     else if (!found.length && frameBrightness(video) < 10)
       onHint('A imagem da câmera está preta. Toque em "Trocar câmera" ou feche outros apps que usam a câmera.');
@@ -260,7 +266,7 @@ export async function enrollFace(video, { onStep, onTurn = () => {}, onHint, onI
 // Totem: acompanha quem chega na frente da câmera (um por vez, o rosto maior) e, quando a pessoa
 // está perto (e piscou, se pedido), calcula a assinatura e chama onFace(assinatura). A mesma
 // pessoa não é enviada de novo por 20 segundos. onState(estado) mostra o que falta:
-// 'vazio', 'longe', 'varios', 'piscar' ou 'lendo'.
+// 'vazio', 'longe', 'levante' (rosto perto, mas inclinado demais), 'varios', 'piscar' ou 'lendo'.
 export async function watchFaces(video, { requireBlink = () => true, onState, onFace, onProgress = () => {}, onInfo = () => {}, alive = () => true }) {
   const face = await loadFaceEngine(onProgress);
   const track = reader(face, 'track');
@@ -277,13 +283,15 @@ export async function watchFaces(video, { requireBlink = () => true, onState, on
     const found = await track(video);
     const now = Date.now();
     onInfo(`${face.backend || '?'} · ${Math.round(performance.now() - t0)} ms${found[0]?.eyes ? ` · olhos ${found[0].eyes.toFixed(2)}` : ''}`);
-    const near = found.filter((f) => f.box.width >= 0.15 && f.score >= 0.6).sort((a, b) => b.box.width - a.box.width);
+    // Nota a partir de 0,4: quem chega com o rosto um pouco para baixo também entra.
+    const near = found.filter((f) => f.box.width >= 0.12 && f.score >= TRACK_SCORE).sort((a, b) => b.box.width - a.box.width);
     if (!near.length) {
       if (now - seenAt > 1500) {
         eyes = [];
         tries = 0;
       }
-      state(found.length ? 'longe' : frameBrightness(video) < 10 ? 'preta' : 'vazio');
+      const close = found.some((f) => f.box.width >= 0.12);
+      state(close ? 'levante' : found.length ? 'longe' : frameBrightness(video) < 10 ? 'preta' : 'vazio');
     } else if (near.length > 1 && near[1].box.width > near[0].box.width * 0.8) {
       state('varios');
     } else {
@@ -341,7 +349,7 @@ export async function watchGroup(video, { onState, onFaces, onProgress = () => {
     const found = await detect(video);
     const now = Date.now();
     // Rosto de pelo menos 6% da largura da imagem (cerca de 75 px em 1280): menor que isso, erra muito.
-    const near = found.filter((f) => f.box.width >= 0.06 && f.score >= 0.6);
+    const near = found.filter((f) => f.box.width >= 0.06 && f.score >= GROUP_SCORE);
     onInfo(`${face.backend || '?'} · ${Math.round(performance.now() - t0)} ms · ${near.length} ${near.length === 1 ? 'rosto' : 'rostos'} · ${video.videoWidth}×${video.videoHeight}`);
     if (!near.length) state(found.length ? 'longe' : frameBrightness(video) < 10 ? 'preta' : 'vazio');
     else state('grupo', near.length);

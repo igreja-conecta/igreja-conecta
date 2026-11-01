@@ -179,6 +179,34 @@ test('quem chega com o rosto para baixo é reconhecido assim que levanta o rosto
   await expect(page.locator('#totem-msg')).toHaveText('✓ Bom culto, Admin!', { timeout: 15000 });
 });
 
+// Rosto inclinado: o detector dá nota menor. Com 0,45 (antes ficava de fora, o mínimo era 0,6) o totem
+// lê e reconhece; com 0,35 pede para levantar o rosto em vez de "Olhe para a câmera".
+test('o totem lê o rosto um pouco inclinado e pede para levantar quando está inclinado demais', async ({ page }) => {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const session = await (await rpc('adm-a', 'attendance_open', { p_church: ids.church, p_title: `Culto ${tag} inclinado`, p_date: today, p_event: null })).json();
+  await page.addInitScript((d) => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const canvas = Object.assign(document.createElement('canvas'), { width: 480, height: 640 });
+      const g = canvas.getContext('2d');
+      setInterval(() => {
+        g.fillStyle = '#888';
+        g.fillRect(0, 0, 480, 640);
+      }, 100);
+      return canvas.captureStream(10);
+    };
+    const box = { x: 0.3, y: 0.2, width: 0.4, height: 0.5 };
+    window.__nota = 0.35;
+    window.__rostoFalso = {
+      detect: async () => [{ descriptor: d, score: window.__nota, box }],
+      track: async () => [{ score: window.__nota, box, eyes: 0.3 }],
+    };
+  }, descriptor(3));
+  await openLoggedIn(page, as['adm-a'].session, `/i/teste-a/#/presenca/${session}/totem`);
+  await expect(page.locator('#totem-msg')).toHaveText('Levante um pouco o rosto e olhe para a tela', { timeout: 15000 });
+  await page.evaluate(() => (window.__nota = 0.45));
+  await expect(page.locator('#totem-msg')).toHaveText('✓ Bom culto, Admin!', { timeout: 15000 });
+});
+
 test('no modo grupo o totem marca duas pessoas de uma vez e cada uma pode ser desfeita', async ({ page }) => {
   const saved = await rpc('adm-a', 'face_save', {
     p_member: ids.adm, p_embedding: descriptor(3), p_samples: 5, p_model: FACE_MODEL, p_term_version: '2026-11-01', p_adult_confirmed: true,
