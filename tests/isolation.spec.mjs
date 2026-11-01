@@ -2218,3 +2218,74 @@ test.describe('Cadastro do rosto (034)', () => {
     expect((await status('adm-b', ids.b)).registered).toBe(false);
   });
 });
+
+test.describe('Totem com reconhecimento facial (035)', () => {
+  const tag = `Totem ${Date.now().toString(36)}`;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const base = Array.from({ length: 128 }, (_, i) => Math.round(Math.sin(i) * 1000) / 10000);
+  const far = Array.from({ length: 128 }, (_, i) => Math.round(Math.sin(i * 7) * 1000) / 10000);
+  const plus = (v, x) => v.map((n) => Math.round((n + x) * 10000) / 10000);
+  const ids = {};
+  const enroll = (member, embedding) =>
+    rpc('adm-a', 'face_save', { p_member: member, p_embedding: embedding, p_samples: 5, p_model: 'teste', p_term_version: '2026-11-01', p_adult_confirmed: true });
+  const match = (who, embedding, model = 'teste') => rpc(who, 'face_match', { p_session: ids.session, p_embedding: embedding, p_model: model });
+
+  test.beforeAll(async () => {
+    const people = await get('lider-a', 'members?select=id,name&name=in.("Membro da A","Fulano da A")');
+    ids.membro = people.find((p) => p.name === 'Membro da A').id;
+    ids.fulano = people.find((p) => p.name === 'Fulano da A').id;
+    expect((await enroll(ids.membro, base)).ok()).toBe(true);
+    expect((await enroll(ids.fulano, plus(base, 0.3))).ok()).toBe(true);
+    const res = await rpc('lider-a', 'attendance_open', { p_church: church.a, p_title: tag, p_date: today, p_event: null });
+    ids.session = await res.json();
+  });
+
+  test.afterAll(async () => {
+    if (!api) return;
+    for (const id of [ids.membro, ids.fulano]) await rpc('adm-a', 'face_delete', { p_member: id });
+    await api.delete(rest(`attendance_sessions?title=eq.${encodeURIComponent(tag)}`), { headers: as['lider-a'].headers });
+  });
+
+  test('só a equipe usa o totem; marca quem está bem perto de um cadastro e avisa o membro', async () => {
+    for (const who of ['membro-a', 'adm-b']) expect((await match(who, base)).ok(), who).toBe(false);
+    const res = await match('lider-a', plus(base, 0.005));
+    expect(res.ok(), await res.text()).toBe(true);
+    expect(await res.json()).toEqual([{ member_id: ids.membro, name: 'Membro da A', already: false }]);
+    expect((await (await match('lider-a', base)).json())[0].already).toBe(true);
+    const rows = await (await rpc('lider-a', 'attendance_roster', { p_session: ids.session })).json();
+    expect(rows.find((r) => r.member_id === ids.membro).method).toBe('camera');
+    const [n] = await get('membro-a', `notifications?select=kind,title,url&dedupe_key=eq.presenca:${ids.session}:${ids.membro}`);
+    expect(n).toEqual({ kind: 'presenca', title: `Presença marcada: ${tag}`, url: `#/minha-presenca/${ids.session}` });
+
+    // Rosto que não é de ninguém, ou de outro modelo: ninguém.
+    expect(await (await match('lider-a', far)).json()).toEqual([]);
+    expect(await (await match('lider-a', base, 'outro-modelo')).json()).toEqual([]);
+    expect((await match('lider-a', base.slice(1))).ok()).toBe(false);
+  });
+
+  test('na dúvida entre duas pessoas parecidas, não marca ninguém', async () => {
+    // Fulano agora bem parecido com o Membro: o rosto do meio fica a mesma distância dos dois.
+    expect((await enroll(ids.fulano, plus(base, 0.02))).ok()).toBe(true);
+    expect(await (await match('lider-a', plus(base, 0.01))).json()).toEqual([]);
+  });
+
+  test('"Não sou eu" (equipe) e "Não fui eu" (membro) desfazem só a marcação da câmera e ficam anotados', async () => {
+    const reject = (who, member, source) => rpc(who, 'attendance_reject', { p_session: ids.session, p_member: member, p_source: source });
+    for (const source of ['membro', 'totem']) expect((await reject('adm-b', ids.membro, source)).ok(), source).toBe(false);
+    expect((await reject('membro-a', ids.fulano, 'membro')).ok()).toBe(false); // não desfaz a dos outros
+    expect((await reject('membro-a', ids.fulano, 'totem')).ok()).toBe(false); // não é da equipe
+    expect((await reject('membro-a', ids.membro, 'outra')).ok()).toBe(false);
+    expect((await reject('membro-a', ids.membro, 'membro')).ok()).toBe(true);
+    expect(await get('membro-a', `attendance?select=member_id&session_id=eq.${ids.session}`)).toEqual([]);
+
+    // A da lista não é desfeita por aqui.
+    expect((await rpc('lider-a', 'attendance_mark', { p_session: ids.session, p_member: ids.fulano })).ok()).toBe(true);
+    expect((await reject('lider-a', ids.fulano, 'totem')).ok()).toBe(true);
+    const rows = await (await rpc('lider-a', 'attendance_roster', { p_session: ids.session })).json();
+    expect(rows.find((r) => r.member_id === ids.fulano).method).toBe('lista');
+
+    const flags = await get('lider-a', `attendance_flags?select=member_id,source&session_id=eq.${ids.session}`);
+    expect(flags).toEqual([{ member_id: ids.membro, source: 'membro' }]);
+    for (const who of ['membro-a', 'adm-b']) expect(await get(who, `attendance_flags?select=id&session_id=eq.${ids.session}`), who).toEqual([]);
+  });
+});

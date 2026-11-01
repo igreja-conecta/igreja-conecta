@@ -29,7 +29,20 @@ export function loadFaceEngine() {
       faceapi.nets.faceRecognitionNet.loadFromUri(`${BASE}/model`),
     ]);
     const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+    const boxOf = (d, w, h) => ({ x: d.box.x / w, y: d.box.y / h, width: d.box.width / w, height: d.box.height / h });
     return {
+      // Rápido (sem a assinatura): onde está o rosto e quanto os olhos estão abertos (para o piscar).
+      async track(video) {
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        if (!w || !h) return [];
+        const found = await faceapi.detectAllFaces(video, opts).withFaceLandmarks(true);
+        return found.map((f) => ({
+          score: f.detection.score,
+          box: boxOf(f.detection, w, h),
+          eyes: eyesOpen(f.landmarks.positions.map((p) => [p.x, p.y])),
+        }));
+      },
       // Rostos no quadro: a assinatura, a confiança e a caixa (em fração do quadro).
       async detect(video) {
         const w = video.videoWidth;
@@ -48,7 +61,24 @@ export function loadFaceEngine() {
   return engine;
 }
 
-export const faceDistance = (a, b) => Math.sqrt(a.reduce((s, x, i) => s + (x - b[i]) ** 2, 0));
+// Abertura dos olhos (média dos dois), pelos 68 pontos do rosto: altura ÷ largura do olho.
+// Olho aberto fica perto de 0,3; no piscar, cai bem.
+export function eyesOpen(pts) {
+  const d = (a, b) => Math.hypot(pts[a][0] - pts[b][0], pts[a][1] - pts[b][1]);
+  const eye = (s) => (d(s + 1, s + 5) + d(s + 2, s + 4)) / (2 * d(s, s + 3));
+  return (eye(36) + eye(42)) / 2;
+}
+
+// Piscou? Os olhos fecharam bem (abaixo de 75% do normal da pessoa) e abriram de novo.
+export function blinked(history) {
+  if (history.length < 5) return false;
+  const sorted = [...history].sort((a, b) => a - b);
+  const normal = sorted[Math.floor(sorted.length * 0.7)];
+  const low = history.findIndex((v) => v < normal * 0.75);
+  return low >= 0 && history.slice(low + 1).some((v) => v > normal * 0.9);
+}
+
+export const faceDistance =(a, b) => Math.sqrt(a.reduce((s, x, i) => s + (x - b[i]) ** 2, 0));
 
 export function meanDescriptor(list) {
   const out = new Array(list[0].length).fill(0);
@@ -105,4 +135,49 @@ export async function enrollFace(video, { onStep, onHint, alive = () => true }) 
     await new Promise((r) => setTimeout(r, 150));
   }
   return { descriptor: meanDescriptor(shots), samples: shots.length };
+}
+
+// Totem: acompanha quem chega na frente da câmera (um por vez, o rosto maior) e, quando a pessoa
+// está perto (e piscou, se pedido), calcula a assinatura e chama onFace(assinatura). A mesma
+// pessoa não é enviada de novo por 20 segundos. onState(estado) mostra o que falta:
+// 'vazio', 'longe', 'varios', 'piscar' ou 'lendo'.
+export async function watchFaces(video, { requireBlink = () => true, onState, onFace, alive = () => true }) {
+  const face = await loadFaceEngine();
+  let eyes = [];
+  let seenAt = 0;
+  const recent = [];
+  let last = '';
+  const state = (s) => s !== last && onState((last = s));
+  while (alive() && video.isConnected) {
+    const found = await face.track(video).catch(() => []);
+    const now = Date.now();
+    const near = found.filter((f) => f.box.width >= 0.15 && f.score >= 0.6).sort((a, b) => b.box.width - a.box.width);
+    if (!near.length) {
+      if (now - seenAt > 1500) eyes = [];
+      state(found.length ? 'longe' : 'vazio');
+    } else if (near.length > 1 && near[1].box.width > near[0].box.width * 0.8) {
+      state('varios');
+    } else {
+      seenAt = now;
+      eyes.push(near[0].eyes);
+      if (eyes.length > 30) eyes.shift();
+      if (requireBlink() && !blinked(eyes)) {
+        state('piscar');
+      } else {
+        state('lendo');
+        const full = (await face.detect(video).catch(() => [])).sort((a, b) => b.box.width - a.box.width)[0];
+        eyes = [];
+        if (full) {
+          while (recent.length && now - recent[0].at > 20000) recent.shift();
+          if (!recent.some((r) => faceDistance(r.d, full.descriptor) < 0.45)) {
+            recent.push({ d: full.descriptor, at: now });
+            await onFace(full.descriptor);
+            last = '';
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+        }
+      }
+    }
+    await new Promise((r) => setTimeout(r, 80));
+  }
 }
