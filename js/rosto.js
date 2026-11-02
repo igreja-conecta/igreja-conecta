@@ -100,6 +100,8 @@ export function loadFaceEngine(onProgress = () => {}) {
     const fast = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
     // Grupo: imagem maior, para achar rostos menores (gente mais longe).
     const wide = new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 });
+    // Sem parar: imagem média, para achar o rosto ainda a uns 2-3 metros sem ficar lento.
+    const mid = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 });
     const boxOf = (d, w, h) => ({ x: d.box.x / w, y: d.box.y / h, width: d.box.width / w, height: d.box.height / h });
     return {
       backend: faceapi.tf.getBackend(),
@@ -116,11 +118,11 @@ export function loadFaceEngine(onProgress = () => {}) {
         }));
       },
       // Rostos no quadro: a assinatura, a confiança e a caixa (em fração do quadro).
-      async detect(video, { group = false } = {}) {
+      async detect(video, { group = false, walk = false } = {}) {
         const w = video.videoWidth;
         const h = video.videoHeight;
         if (!w || !h) return [];
-        const found = await faceapi.detectAllFaces(video, group ? wide : opts).withFaceLandmarks(true).withFaceDescriptors();
+        const found = await faceapi.detectAllFaces(video, group ? wide : walk ? mid : opts).withFaceLandmarks(true).withFaceDescriptors();
         return found.map((f) => ({
           descriptor: Array.from(f.descriptor),
           score: f.detection.score,
@@ -332,6 +334,65 @@ export async function watchFaces(video, { requireBlink = () => true, onState, on
 // parecida). Só esses vão para o banco: evita mandar um rosto cortado ou borrado de passagem.
 export function stableFaces(previous, current, max = 0.35) {
   return current.filter((f) => previous.some((p) => faceDistance(p.descriptor, f.descriptor) < max));
+}
+
+// Totem "sem parar": para quem vem andando em direção ao tablet. Cada imagem já sai com a
+// assinatura (uma leitura só) e vai para o banco sem esperar a resposta da anterior (até
+// WALK_INFLIGHT ao mesmo tempo, uma a cada WALK_EVERY ms): várias leituras da mesma passagem,
+// a primeira que bater marca. onFace(assinatura) devolve true quando reconheceu (ou deu erro):
+// essa pessoa fica 20 s sem ser lida. Quem não é reconhecido em WALK_MUTE_AFTER leituras
+// seguidas (alguém sem cadastro parado perto do tablet) fica WALK_MUTE_MS sem ir ao banco.
+// onState: 'vazio', 'longe', 'preta' ou 'lendo'.
+const WALK_MIN = 0.08;
+const WALK_SCORE = 0.45;
+const WALK_EVERY = 250;
+const WALK_INFLIGHT = 2;
+const WALK_MUTE_AFTER = 6;
+const WALK_MUTE_MS = 10000;
+export async function watchWalk(video, { onState, onFace, onProgress = () => {}, onInfo = () => {}, alive = () => true }) {
+  const face = await loadFaceEngine(onProgress);
+  const detect = reader(face, 'detect', { walk: true });
+  let recent = [];
+  let misses = [];
+  let inflight = 0;
+  let lastSent = 0;
+  let last = '';
+  const state = (s) => s !== last && onState((last = s));
+  const settle = (d, done) => {
+    const at = Date.now();
+    if (done) return recent.push({ d, at, ms: SEEN_MS });
+    const m = misses.find((x) => faceDistance(x.d, d) < 0.45);
+    if (!m) return misses.push({ d, n: 1, at });
+    m.at = at;
+    if (++m.n >= WALK_MUTE_AFTER) {
+      recent.push({ d, at, ms: WALK_MUTE_MS });
+      misses = misses.filter((x) => x !== m);
+    }
+  };
+  while (alive() && video.isConnected) {
+    const t0 = performance.now();
+    const found = await detect(video);
+    const now = Date.now();
+    const near = found.filter((f) => f.box.width >= WALK_MIN && f.score >= WALK_SCORE).sort((a, b) => b.box.width - a.box.width);
+    onInfo(`${face.backend || '?'} · ${Math.round(performance.now() - t0)} ms · ${near.length} ${near.length === 1 ? 'rosto' : 'rostos'} · ${video.videoWidth}×${video.videoHeight}`);
+    if (!near.length) state(found.length ? 'longe' : frameBrightness(video) < 10 ? 'preta' : 'vazio');
+    else state('lendo');
+    recent = recent.filter((r) => now - r.at < r.ms);
+    misses = misses.filter((m) => now - m.at < 4000);
+    // Até dois rostos por imagem (o maior primeiro).
+    for (const f of near.slice(0, 2)) {
+      if (inflight >= WALK_INFLIGHT || now - lastSent < WALK_EVERY) break;
+      if (isRecent(recent, f.descriptor, now)) continue;
+      lastSent = now;
+      inflight++;
+      const d = f.descriptor;
+      Promise.resolve()
+        .then(() => onFace(d))
+        .then((done) => settle(d, done), () => settle(d, true))
+        .finally(() => inflight--);
+    }
+    await sleep(60);
+  }
 }
 
 // Totem em modo grupo: cada leitura acha todos os rostos perto o bastante; os que aparecem em duas

@@ -207,6 +207,58 @@ test('o totem lê o rosto um pouco inclinado e pede para levantar quando está i
   await expect(page.locator('#totem-msg')).toHaveText('✓ Bom culto, Admin!', { timeout: 15000 });
 });
 
+// Sem parar: rosto pequeno (pessoa ainda a uns metros) e nota média, como quem vem andando.
+// Reconhece sem pedir para parar; quem não tem cadastro não fica indo ao banco sem parar.
+async function walkingFace(page, d) {
+  await page.addInitScript((d) => {
+    localStorage.setItem('totem-modo', 'passagem');
+    navigator.mediaDevices.getUserMedia = async () => {
+      const canvas = Object.assign(document.createElement('canvas'), { width: 1280, height: 720 });
+      const g = canvas.getContext('2d');
+      setInterval(() => {
+        g.fillStyle = '#888';
+        g.fillRect(0, 0, 1280, 720);
+      }, 100);
+      return canvas.captureStream(10);
+    };
+    const box = { x: 0.45, y: 0.2, width: 0.09, height: 0.16 };
+    window.__rostoFalso = {
+      detect: async () => [{ descriptor: d, score: 0.5, box }],
+      track: async () => [],
+    };
+  }, d);
+}
+
+test('no modo sem parar o totem reconhece quem vem andando', async ({ page }) => {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const session = await (await rpc('adm-a', 'attendance_open', { p_church: ids.church, p_title: `Culto ${tag} sem parar`, p_date: today, p_event: null })).json();
+  await walkingFace(page, descriptor(3));
+  await openLoggedIn(page, as['adm-a'].session, `/i/teste-a/#/presenca/${session}/totem`);
+  await expect(page.locator('#totem-msg')).toHaveText('✓ Bom culto, Admin!', { timeout: 15000 });
+  // Lido de novo logo depois: não troca para "já estava marcada".
+  await page.waitForTimeout(4500);
+  await expect(page.locator('#totem-msg')).not.toContainText('já estava marcada');
+  await expect(page.getByRole('button', { name: 'Não sou Admin' })).toBeVisible();
+  await page.getByText('Ajustes do totem').click();
+  await expect(page.getByLabel(/Sem parar/)).toBeChecked();
+  await expect(page.locator('#totem-blink-box')).toBeHidden();
+});
+
+test('no modo sem parar quem não tem cadastro não fica indo ao banco sem parar', async ({ page }) => {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const session = await (await rpc('adm-a', 'attendance_open', { p_church: ids.church, p_title: `Culto ${tag} sem cadastro`, p_date: today, p_event: null })).json();
+  let calls = 0;
+  page.on('request', (r) => r.url().includes('/rpc/face_match') && calls++);
+  await walkingFace(page, descriptor(9));
+  await openLoggedIn(page, as['adm-a'].session, `/i/teste-a/#/presenca/${session}/totem`);
+  await expect(page.locator('#totem-msg')).toHaveText('Reconhecendo…', { timeout: 15000 });
+  await page.waitForTimeout(6000);
+  // Tenta algumas vezes (a pessoa pode estar só de passagem) e depois descansa 10 s.
+  expect(calls).toBeGreaterThanOrEqual(3);
+  expect(calls).toBeLessThanOrEqual(8);
+  await expect(page.locator('#totem-msg')).not.toContainText('Bom culto');
+});
+
 test('no modo grupo o totem marca duas pessoas de uma vez e cada uma pode ser desfeita', async ({ page }) => {
   const saved = await rpc('adm-a', 'face_save', {
     p_member: ids.adm, p_embedding: descriptor(3), p_samples: 5, p_model: FACE_MODEL, p_term_version: '2026-11-01', p_adult_confirmed: true,
@@ -345,10 +397,12 @@ test.describe('no iPad', () => {
       canvas.getContext('2d').drawImage(bitmap, 0, 0);
       Object.assign(canvas, { videoWidth: bitmap.width, videoHeight: bitmap.height });
       const found = await face.detect(canvas);
-      return { backend: face.backend, faces: found.length, size: found[0]?.descriptor.length };
+      const walking = await face.detect(canvas, { walk: true });
+      return { backend: face.backend, faces: found.length, size: found[0]?.descriptor.length, walking: walking.length };
     });
     expect(result.backend).toBe('wasm');
     expect(result.faces).toBeGreaterThan(0);
     expect(result.size).toBe(128);
+    expect(result.walking).toBeGreaterThan(0); // a leitura do modo sem parar também acha
   });
 });

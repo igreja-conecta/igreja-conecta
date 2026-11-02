@@ -12,7 +12,7 @@ import { pushSupport, pushActive, enablePush, disablePush, syncPush, movePushToP
 import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pixPayload, qrSvg, qrImage } from './pix.js';
 import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
 import { startQrReader, beep } from './leitor-qr.js';
-import { TURN_SHOTS, FACE_MODEL, openCamera, enrollFace, watchFaces, watchGroup } from './rosto.js';
+import { TURN_SHOTS, FACE_MODEL, openCamera, enrollFace, watchFaces, watchGroup, watchWalk } from './rosto.js';
 // Erros do rosto com texto para a pessoa (faceError em js/rosto.js) aparecem como estão.
 const faceErrorText = (err, fallback) =>
   /NotAllowed|Permission/i.test(err?.name || err?.message || '')
@@ -1495,7 +1495,7 @@ function helpTopics() {
               : ''
           }${
             attendanceTeam()
-              ? `<p><strong>Totem na entrada:</strong> na lista do culto, toque em <em>Totem (reconhecimento facial)</em> num tablet ou num computador com webcam, de frente para quem chega, na altura do rosto e sem a porta clara atrás. Quem cadastrou o rosto olha para a câmera e a presença é marcada sozinha, com um bip. Para dificultar o uso de foto, ligue em <em>Ajustes do totem</em> o pedido para fechar os olhos por um segundo. Se o totem errar, a pessoa toca em <em>Não sou eu</em>; quem usa o app também recebe o aviso "Presença marcada" com o botão <em>Não fui eu</em>. Na dúvida, o totem não marca ninguém: aí vale a carteirinha ou a lista. Em <em>Ajustes do totem</em>, o modo <em>Em grupo</em> marca várias pessoas de uma vez (melhor com tablet ou webcam, a até uns 2 metros); cada pessoa marcada ganha um botão <em>Não é Fulano</em> por alguns segundos. Coloque perto uma placa avisando que há câmera de presença.</p>`
+              ? `<p><strong>Totem na entrada:</strong> na lista do culto, toque em <em>Totem (reconhecimento facial)</em> num tablet ou num computador com webcam, de frente para quem chega, na altura do rosto e sem a porta clara atrás. Quem cadastrou o rosto olha para a câmera e a presença é marcada sozinha, com um bip. Para dificultar o uso de foto, ligue em <em>Ajustes do totem</em> o pedido para fechar os olhos por um segundo. Se o totem errar, a pessoa toca em <em>Não sou eu</em>; quem usa o app também recebe o aviso "Presença marcada" com o botão <em>Não fui eu</em>. Na dúvida, o totem não marca ninguém: aí vale a carteirinha ou a lista. Em <em>Ajustes do totem</em>, o modo <em>Sem parar</em> reconhece quem vem andando em direção ao tablet (deixe o tablet de frente para quem entra, na altura do rosto e com boa luz), e o modo <em>Em grupo</em> marca várias pessoas de uma vez (melhor com tablet ou webcam, a até uns 2 metros); cada pessoa marcada ganha um botão <em>Não é Fulano</em> por alguns segundos. Coloque perto uma placa avisando que há câmera de presença.</p>`
               : ''
           }`,
         ]]
@@ -6958,7 +6958,8 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
 // Nome novo: a proteção contra foto passou a vir desligada (o antigo guardava "ligada").
 const TOTEM_BLINK_KEY = 'totem-olhos';
 const TOTEM_CAMERA_KEY = 'totem-camera';
-// 'um' (uma pessoa por vez, perto da câmera) ou 'grupo' (várias de uma vez, um pouco mais longe).
+// 'um' (uma pessoa por vez, perto da câmera), 'passagem' (sem parar, vindo em direção ao tablet)
+// ou 'grupo' (várias de uma vez, um pouco mais longe).
 const TOTEM_MODE_KEY = 'totem-modo';
 const TOTEM_STATES = {
   vazio: 'Olhe para a câmera',
@@ -6989,13 +6990,13 @@ async function viewAttendanceTotem(ctx, id) {
   };
   let facing = pref(TOTEM_CAMERA_KEY, 'user');
   let blink = pref(TOTEM_BLINK_KEY, '0') === '1';
-  let mode = pref(TOTEM_MODE_KEY, 'um') === 'grupo' ? 'grupo' : 'um';
+  let mode = ['grupo', 'passagem'].includes(pref(TOTEM_MODE_KEY, 'um')) ? pref(TOTEM_MODE_KEY, 'um') : 'um';
   $view.innerHTML = `
     <div class="page totem" id="totem">
       <a href="#/presenca/${id}" class="back">← Lista de presença</a>
       <button type="button" class="btn small totem-exit" id="totem-exit" hidden>Sair da tela cheia</button>
       ${session ? `<p class="totem-title">${esc(session.title)}</p>` : ''}
-      <div class="qr-video totem-video ${mode === 'grupo' ? 'group' : ''}" id="totem-box"><video id="totem-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div>
+      <div class="qr-video totem-video ${mode !== 'um' ? 'group' : ''}" id="totem-box"><video id="totem-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div>
       <div class="totem-bottom">
         <div id="totem-msg" class="totem-msg" role="status" aria-live="polite">Abrindo a câmera…</div>
         <button type="button" class="btn danger-outline big" id="totem-notme" hidden>Não sou eu</button>
@@ -7010,10 +7011,12 @@ async function viewAttendanceTotem(ctx, id) {
           <legend>Como as pessoas passam</legend>
           <label class="check"><input type="radio" name="totem-mode" value="um" ${mode === 'um' ? 'checked' : ''}> Uma por vez
             <small class="hint">A pessoa olha para a câmera de perto (40 cm a 1 m). Mais preciso.</small></label>
+          <label class="check"><input type="radio" name="totem-mode" value="passagem" ${mode === 'passagem' ? 'checked' : ''}> Sem parar
+            <small class="hint">Reconhece quem vem andando em direção ao tablet, sem precisar parar. Deixe o tablet de frente para quem entra (não de lado para o corredor), na altura do rosto e com boa luz.</small></label>
           <label class="check"><input type="radio" name="totem-mode" value="grupo" ${mode === 'grupo' ? 'checked' : ''}> Em grupo
             <small class="hint">Marca várias pessoas de uma vez, a até uns 2 metros. Funciona melhor com tablet (câmera de trás) ou webcam no computador. Quem estiver de lado ou meio escondido pode não ser reconhecido.</small></label>
         </fieldset>
-        <label class="check" id="totem-blink-box" ${mode === 'grupo' ? 'hidden' : ''}><input type="checkbox" id="totem-blink" ${blink ? 'checked' : ''}> Pedir para fechar os olhos (proteção contra foto)
+        <label class="check" id="totem-blink-box" ${mode !== 'um' ? 'hidden' : ''}><input type="checkbox" id="totem-blink" ${blink ? 'checked' : ''}> Pedir para fechar os olhos (proteção contra foto)
           <small class="hint">Antes de marcar, a pessoa fecha os olhos por um segundo e abre: dificulta marcar a presença de alguém mostrando uma foto. Deixa a entrada um pouco mais lenta.</small></label>
         <div class="actions-row">
           <button class="btn" type="button" id="totem-flip">Trocar câmera</button>
@@ -7096,6 +7099,11 @@ async function viewAttendanceTotem(ctx, id) {
       show('Não reconheci. Use a carteirinha ou procure a recepção.', 'error');
       return false;
     }
+    showMatch(r);
+    return true;
+  };
+  const showMatch = (r) => {
+    holdUntil = Date.now() + 3500;
     beep(true);
     show(r.already ? `${firstName(r.name)}, sua presença já estava marcada.` : `✓ Bom culto, ${firstName(r.name)}!`, 'ok');
     if (!r.already) setCached(r.member_id, true);
@@ -7111,6 +7119,25 @@ async function viewAttendanceTotem(ctx, id) {
       show('Desfeito. Use a carteirinha ou procure a recepção.', 'error');
     };
     notMeTimer = setTimeout(() => (notMe.hidden = true), 8000);
+  };
+  // Sem parar: quem não foi reconhecido não aparece (a pessoa já passou); a mesma pessoa
+  // lida de novo logo depois de marcada não troca o "Bom culto" por "já estava marcada".
+  const shownAt = new Map();
+  const onWalk = async (descriptor) => {
+    const { data: rows, error } = await sb.rpc('face_match', { p_session: id, p_embedding: descriptor, p_model: FACE_MODEL });
+    if (!ctx.alive()) return true;
+    if (error) {
+      holdUntil = Date.now() + 3500;
+      beep(false);
+      show(errorText(error), 'error');
+      return true;
+    }
+    const r = rows?.[0];
+    if (!r) return false;
+    const seen = shownAt.get(r.member_id);
+    shownAt.set(r.member_id, Date.now());
+    if (r.already && seen && Date.now() - seen < 60000) return true;
+    showMatch(r);
     return true;
   };
 
@@ -7156,10 +7183,11 @@ async function viewAttendanceTotem(ctx, id) {
     close?.();
     show('Abrindo a câmera…');
     const group = mode === 'grupo';
-    document.getElementById('totem-box').classList.toggle('group', group);
-    document.getElementById('totem-blink-box').hidden = group;
+    const walk = mode === 'passagem';
+    document.getElementById('totem-box').classList.toggle('group', group || walk);
+    document.getElementById('totem-blink-box').hidden = group || walk;
     try {
-      close = await openCamera(video, facing, { hd: group });
+      close = await openCamera(video, facing, { hd: group || walk });
       video.classList.toggle('mirror', facing === 'user');
       wake ??= await navigator.wakeLock?.request('screen').catch(() => null);
       show('Preparando o reconhecimento…');
@@ -7176,6 +7204,12 @@ async function viewAttendanceTotem(ctx, id) {
           ...common,
           onState: (s, n) => Date.now() > holdUntil && show(s === 'grupo' ? `Reconhecendo ${n} ${n === 1 ? 'pessoa' : 'pessoas'}…` : TOTEM_STATES[s]),
           onFaces,
+        });
+      } else if (walk) {
+        await watchWalk(video, {
+          ...common,
+          onState: (s) => Date.now() > holdUntil && show(s === 'vazio' ? 'Pode entrar olhando para a tela' : TOTEM_STATES[s]),
+          onFace: onWalk,
         });
       } else {
         await watchFaces(video, {
