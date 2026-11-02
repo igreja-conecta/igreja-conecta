@@ -336,20 +336,22 @@ export function stableFaces(previous, current, max = 0.35) {
   return current.filter((f) => previous.some((p) => faceDistance(p.descriptor, f.descriptor) < max));
 }
 
-// Totem "sem parar": para quem vem andando em direção ao tablet. Cada imagem já sai com a
-// assinatura (uma leitura só) e vai para o banco sem esperar a resposta da anterior (até
-// WALK_INFLIGHT ao mesmo tempo, uma a cada WALK_EVERY ms): várias leituras da mesma passagem,
-// a primeira que bater marca. onFace(assinatura) devolve true quando reconheceu (ou deu erro):
-// essa pessoa fica 20 s sem ser lida. Quem não é reconhecido em WALK_MUTE_AFTER leituras
+// Totem "sem parar": para quem vem andando em direção ao tablet. Cada imagem já sai com as
+// assinaturas de todos os rostos (uma leitura só) e até WALK_BATCH deles vão juntos para o banco,
+// sem esperar a resposta da anterior (até WALK_INFLIGHT ao mesmo tempo, uma a cada WALK_EVERY ms):
+// várias leituras da mesma passagem, a primeira que bater marca; duas ou três pessoas entrando
+// juntas são lidas ao mesmo tempo. onFaces(assinaturas) devolve as posições reconhecidas (ou
+// null se deu erro): essas pessoas ficam 20 s sem ser lidas. Quem não é reconhecido em WALK_MUTE_AFTER leituras
 // seguidas (alguém sem cadastro parado perto do tablet) fica WALK_MUTE_MS sem ir ao banco.
 // onState: 'vazio', 'longe', 'preta' ou 'lendo'.
 const WALK_MIN = 0.08;
 const WALK_SCORE = 0.45;
 const WALK_EVERY = 250;
 const WALK_INFLIGHT = 2;
+const WALK_BATCH = 5;
 const WALK_MUTE_AFTER = 6;
 const WALK_MUTE_MS = 10000;
-export async function watchWalk(video, { onState, onFace, onProgress = () => {}, onInfo = () => {}, alive = () => true }) {
+export async function watchWalk(video, { onState, onFaces, onProgress = () => {}, onInfo = () => {}, alive = () => true }) {
   const face = await loadFaceEngine(onProgress);
   const detect = reader(face, 'detect', { walk: true });
   let recent = [];
@@ -379,16 +381,17 @@ export async function watchWalk(video, { onState, onFace, onProgress = () => {},
     else state('lendo');
     recent = recent.filter((r) => now - r.at < r.ms);
     misses = misses.filter((m) => now - m.at < 4000);
-    // Até dois rostos por imagem (o maior primeiro).
-    for (const f of near.slice(0, 2)) {
-      if (inflight >= WALK_INFLIGHT || now - lastSent < WALK_EVERY) break;
-      if (isRecent(recent, f.descriptor, now)) continue;
+    // Todos os rostos novos da imagem (os maiores primeiro) numa chamada só.
+    const batch = near.filter((f) => !isRecent(recent, f.descriptor, now)).slice(0, WALK_BATCH).map((f) => f.descriptor);
+    if (batch.length && inflight < WALK_INFLIGHT && now - lastSent >= WALK_EVERY) {
       lastSent = now;
       inflight++;
-      const d = f.descriptor;
       Promise.resolve()
-        .then(() => onFace(d))
-        .then((done) => settle(d, done), () => settle(d, true))
+        .then(() => onFaces(batch))
+        .then(
+          (hit) => batch.forEach((d, i) => settle(d, !hit || hit.includes(i))),
+          () => batch.forEach((d) => settle(d, true)),
+        )
         .finally(() => inflight--);
     }
     await sleep(60);
