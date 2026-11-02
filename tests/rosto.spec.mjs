@@ -209,8 +209,10 @@ test('o totem lê o rosto um pouco inclinado e pede para levantar quando está i
 
 // Sem parar: rosto pequeno (pessoa ainda a uns metros) e nota média, como quem vem andando.
 // Reconhece sem pedir para parar; quem não tem cadastro não fica indo ao banco sem parar.
+// d: uma assinatura, ou uma lista delas (pessoas entrando juntas, lado a lado).
 async function walkingFace(page, d) {
   await page.addInitScript((d) => {
+    const faces = Array.isArray(d[0]) ? d : [d];
     localStorage.setItem('totem-modo', 'passagem');
     navigator.mediaDevices.getUserMedia = async () => {
       const canvas = Object.assign(document.createElement('canvas'), { width: 1280, height: 720 });
@@ -221,9 +223,8 @@ async function walkingFace(page, d) {
       }, 100);
       return canvas.captureStream(10);
     };
-    const box = { x: 0.45, y: 0.2, width: 0.09, height: 0.16 };
     window.__rostoFalso = {
-      detect: async () => [{ descriptor: d, score: 0.5, box }],
+      detect: async () => faces.map((descriptor, i) => ({ descriptor, score: 0.5, box: { x: 0.2 + i * 0.25, y: 0.2, width: 0.09, height: 0.16 } })),
       track: async () => [],
     };
   }, d);
@@ -242,6 +243,21 @@ test('no modo sem parar o totem reconhece quem vem andando', async ({ page }) =>
   await page.getByText('Ajustes do totem').click();
   await expect(page.getByLabel(/Sem parar/)).toBeChecked();
   await expect(page.locator('#totem-blink-box')).toBeHidden();
+});
+
+test('no modo sem parar duas pessoas entrando juntas são lidas ao mesmo tempo', async ({ page }) => {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const session = await (await rpc('adm-a', 'attendance_open', { p_church: ids.church, p_title: `Culto ${tag} sem parar juntos`, p_date: today, p_event: null })).json();
+  const sizes = [];
+  page.on('request', (r) => r.url().includes('/rpc/face_match_many') && sizes.push(r.postDataJSON().p_embeddings.length));
+  await walkingFace(page, [descriptor(3), descriptor(2)]);
+  await openLoggedIn(page, as['adm-a'].session, `/i/teste-a/#/presenca/${session}/totem`);
+  await expect(page.locator('#totem-msg')).toHaveText('✓ Bom culto, Admin e Pessoa!', { timeout: 15000 });
+  await expect(page.getByRole('button', { name: 'Não é Admin' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Não é Pessoa' })).toBeVisible();
+  // As duas vão juntas em cada chamada ao banco.
+  expect(sizes.length).toBeGreaterThan(0);
+  expect(sizes[0]).toBe(2);
 });
 
 test('no modo sem parar quem não tem cadastro não fica indo ao banco sem parar', async ({ page }) => {

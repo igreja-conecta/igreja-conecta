@@ -7123,22 +7123,24 @@ async function viewAttendanceTotem(ctx, id) {
   // Sem parar: quem não foi reconhecido não aparece (a pessoa já passou); a mesma pessoa
   // lida de novo logo depois de marcada não troca o "Bom culto" por "já estava marcada".
   const shownAt = new Map();
-  const onWalk = async (descriptor) => {
-    const { data: rows, error } = await sb.rpc('face_match', { p_session: id, p_embedding: descriptor, p_model: FACE_MODEL });
-    if (!ctx.alive()) return true;
+  const onWalk = async (descriptors) => {
+    const { data: rows, error } = await sb.rpc('face_match_many', { p_session: id, p_embeddings: descriptors, p_model: FACE_MODEL });
+    if (!ctx.alive()) return null;
     if (error) {
       holdUntil = Date.now() + 3500;
       beep(false);
       show(errorText(error), 'error');
-      return true;
+      return null;
     }
-    const r = rows?.[0];
-    if (!r) return false;
-    const seen = shownAt.get(r.member_id);
-    shownAt.set(r.member_id, Date.now());
-    if (r.already && seen && Date.now() - seen < 60000) return true;
-    showMatch(r);
-    return true;
+    const now = Date.now();
+    const fresh = rows.filter((r) => {
+      const seen = shownAt.get(r.member_id);
+      shownAt.set(r.member_id, now);
+      return !(r.already && seen && now - seen < 60000);
+    });
+    if (fresh.length === 1) showMatch(fresh[0]);
+    else if (fresh.length > 1) showMany(fresh);
+    return rows.map((r) => r.idx);
   };
 
   const undoBox = document.getElementById('totem-undo');
@@ -7152,6 +7154,11 @@ async function viewAttendanceTotem(ctx, id) {
       return null;
     }
     if (!rows.length) return []; // ninguém reconhecido com segurança: segue olhando (a carteirinha resolve)
+    showMany(rows);
+    return rows.map((r) => r.idx);
+  };
+  // Várias pessoas reconhecidas: um "Bom culto" com os nomes e um "Não é Fulano" para cada uma.
+  const showMany = (rows) => {
     holdUntil = Date.now() + 4000;
     beep(true);
     const marked = rows.filter((r) => !r.already);
@@ -7175,7 +7182,6 @@ async function viewAttendanceTotem(ctx, id) {
       undoBox.prepend(b);
       setTimeout(() => b.remove(), 15000);
     }
-    return rows.map((r) => r.idx);
   };
 
   const start = async () => {
@@ -7209,7 +7215,7 @@ async function viewAttendanceTotem(ctx, id) {
         await watchWalk(video, {
           ...common,
           onState: (s) => Date.now() > holdUntil && show(s === 'vazio' ? 'Pode entrar olhando para a tela' : TOTEM_STATES[s]),
-          onFace: onWalk,
+          onFaces: onWalk,
         });
       } else {
         await watchFaces(video, {
