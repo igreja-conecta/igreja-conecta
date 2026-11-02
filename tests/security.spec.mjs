@@ -106,7 +106,7 @@ test.describe('Banco: visitante sem login (aniversários)', () => {
     });
     expect(privateSchema.ok()).toBe(false);
     expect((await rpc(request, 'leave_church', { p_church: UUID })).ok()).toBe(false);
-    for (const table of ['push_subscriptions', 'message_log', 'message_templates', 'events', 'announcements', 'notifications']) {
+    for (const table of ['push_subscriptions', 'message_log', 'message_templates', 'events', 'event_reminders_sent', 'announcements', 'notifications']) {
       const res = await request.get(rest(`${table}?select=*`), { headers });
       if (res.ok()) expect(await res.json(), table).toEqual([]);
     }
@@ -396,5 +396,32 @@ test.describe('Banco: visitante sem login (quem está faltando)', () => {
     };
     for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
     expect((await rpc(request, 'deliver_absence_alerts', { p_secret: 'errada' })).ok()).toBe(false);
+  });
+});
+
+// Teste de vulnerabilidade (039): funções de gatilho e de cálculo ficam fora do alcance de quem não
+// está logado. As das regras de leitura continuam (respondem "não" para quem não está logado).
+test.describe('Banco: visitante sem login (funções que ele não usa, 039)', () => {
+  test('não chama funções de gatilho nem de cálculo', async ({ request }) => {
+    const calls = {
+      announcements_guard: {},
+      churches_touch: {},
+      members_guard: {},
+      prayer_requests_guard: {},
+      email_daily_limit: {},
+      gallery_limit: {},
+      today_br: {},
+      is_birthday: { p_birth: '2000-01-01', p_day: '2026-01-01' },
+      years_text: { p_years: 3 },
+      render_template: { p_text: 'Olá', p_name: 'x', p_church: 'y', p_age: 1 },
+      unaccent_lower: { p: 'Á' },
+      reading_plan_days: { p_key: 'x' },
+      reading_plan_title: { p_key: 'x' },
+      social_links_ok: { p: {} },
+      push_endpoint_ok: { p: 'https://x' },
+    };
+    for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
+    // As usadas nas regras de leitura continuam, e respondem "não".
+    expect(await (await rpc(request, 'is_platform_admin')).json()).toBe(false);
   });
 });

@@ -910,6 +910,26 @@ test.describe('Visitantes (013)', () => {
     }
     expect((await rpc('adm-a', 'clean_visitors', { p_secret: 'errada' })).ok()).toBe(false);
   });
+
+  // Teste de vulnerabilidade (039): trocar o endereço no pedido (x-forwarded-for, x-real-ip) não burla
+  // o limite de 5 cadastros por hora do mesmo aparelho. Na Teste B, apagando tudo no fim.
+  test('trocar o endereço no pedido não burla o limite por aparelho', async () => {
+    const name = `${tag} Limite`;
+    try {
+      const results = [];
+      for (let i = 1; i <= 6; i++) {
+        const fake = `203.0.113.${i}`;
+        const res = await api.post(rest('rpc/register_visitor'), {
+          headers: { ...anon, 'X-Forwarded-For': fake, 'X-Real-IP': fake },
+          data: { p_church: church.b, p_name: `${name} ${i}`, p_phone: null, p_email: null, p_first_time: true, p_source: null, p_wants_contact: false, p_message: null, p_consent: true },
+        });
+        results.push(res.ok() ? 'ok' : (await res.text()).includes('Muitos cadastros enviados daqui') ? 'limite' : await res.text());
+      }
+      expect(results).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'limite']);
+    } finally {
+      await api.delete(rest(`visitors?name=like.${encodeURIComponent(name)}*`), { headers: as['adm-b'].headers });
+    }
+  });
 });
 
 test.describe('Devocional e plano de leitura (014)', () => {
