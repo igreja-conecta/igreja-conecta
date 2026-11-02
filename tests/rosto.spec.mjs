@@ -130,6 +130,12 @@ test('o totem reconhece, marca com o contador da câmera e "Não sou eu" desfaz'
   await page.getByRole('link', { name: 'Totem (reconhecimento facial)' }).click();
   await expect(page.locator('#totem-msg')).toHaveText('✓ Bom culto, Admin!', { timeout: 20000 });
   await expect(page.locator('.stat-tile', { hasText: 'Pela câmera' }).locator('.stat-value')).toHaveText('1');
+  // Trocar câmera e Tela cheia ficam à mão, logo abaixo das mensagens (fora dos ajustes).
+  for (const name of ['Trocar câmera', 'Tela cheia']) {
+    const button = page.getByRole('button', { name, exact: true });
+    await expect(button).toBeVisible();
+    expect((await button.boundingBox()).y).toBeGreaterThan((await page.locator('#totem-msg').boundingBox()).y);
+  }
   await page.getByRole('button', { name: 'Não sou Admin' }).click();
   await expect(page.locator('#totem-msg')).toContainText('Desfeito');
   await expect(page.locator('.stat-tile', { hasText: 'Pela câmera' }).locator('.stat-value')).toHaveText('0');
