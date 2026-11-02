@@ -962,6 +962,7 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 .totem.full .totem-exit { display: block; position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; z-index: 1; opacity: .75; }
 .totem.full .totem-exit[hidden] { display: none; }
 body.totem-full #tabbar, body.totem-full .topbar { visibility: hidden; }
+.totem-actions { justify-content: center; margin: 4px 0 10px; }
 .totem-undo { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 6px 0; }
 .totem-mode { border: 0; padding: 0; margin: 0 0 8px; }
 .totem-mode legend { font-weight: 700; margin-bottom: 4px; }

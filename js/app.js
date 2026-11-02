@@ -7003,6 +7003,10 @@ async function viewAttendanceTotem(ctx, id) {
         <div class="totem-undo" id="totem-undo"></div>
         <p class="hint center face-diag" id="totem-diag"></p>
       </div>
+      <div class="actions-row totem-actions">
+        <button class="btn" type="button" id="totem-flip">Trocar câmera</button>
+        <button class="btn" type="button" id="totem-full">Tela cheia</button>
+      </div>
       <div id="totem-count">${data ? attendanceTiles(attendanceCounts(data.roster)) : ''}</div>
       <p class="totem-sign">Câmera de presença: reconhece só quem cadastrou o rosto no app. Nenhuma imagem é gravada.</p>
       <details class="card">
@@ -7018,10 +7022,6 @@ async function viewAttendanceTotem(ctx, id) {
         </fieldset>
         <label class="check" id="totem-blink-box" ${mode !== 'um' ? 'hidden' : ''}><input type="checkbox" id="totem-blink" ${blink ? 'checked' : ''}> Pedir para fechar os olhos (proteção contra foto)
           <small class="hint">Antes de marcar, a pessoa fecha os olhos por um segundo e abre: dificulta marcar a presença de alguém mostrando uma foto. Deixa a entrada um pouco mais lenta.</small></label>
-        <div class="actions-row">
-          <button class="btn" type="button" id="totem-flip">Trocar câmera</button>
-          <button class="btn" type="button" id="totem-full">Tela cheia</button>
-        </div>
       </details>
     </div>`;
   const video = document.getElementById('totem-video');
