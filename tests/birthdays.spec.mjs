@@ -77,7 +77,12 @@ test('a imagem escolhida aparece na prévia, e some ao remover', async ({ page }
   await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config/aniversario');
   // PNG de 1x1 ponto; não salva: só olha a prévia.
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
-  await page.locator('input[name="image"]').setInputFiles({ name: 'parabens.png', mimeType: 'image/png', buffer: png });
+  // Sem botão "Escolher imagem": tocar no próprio quadro abre o seletor.
+  await expect(page.getByText('Escolher imagem', { exact: true })).toHaveCount(0);
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByText('Toque para escolher a imagem').click();
+  await (await chooser).setFiles({ name: 'parabens.png', mimeType: 'image/png', buffer: png });
+  await expect(page.locator('#image-box img')).toHaveAttribute('src', /^blob:/);
   const pv = page.locator('.push-preview #pv-image');
   await expect(pv).toBeVisible();
   await expect(pv).toHaveAttribute('src', /^blob:/);
@@ -90,7 +95,7 @@ test('com o cartão ligado, a prévia mostra a imagem com a mensagem escrita por
   await page.route('**/rest/v1/message_templates?*', async (route) => {
     const res = await route.fetch();
     const rows = await res.json();
-    const body = JSON.stringify(rows.map((r) => ({ card: false, card_position: 'meio', card_color: 'claro', card_x: 50, card_y: 50, card_width: 84, card_size: 100, ...r })));
+    const body = JSON.stringify(rows.map((r) => ({ card: false, card_position: 'meio', card_color: 'claro', card_x: 50, card_y: 50, card_width: 84, card_size: 100, card_font: 'padrao', card_text_color: '#ffffff', ...r })));
     await route.fulfill({ response: res, body });
   });
   await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config/aniversario');
@@ -162,8 +167,17 @@ test('com o cartão ligado, a prévia mostra a imagem com a mensagem escrita por
   await expect(page.locator('#card-size-out')).toHaveText('80%');
   await expect.poll(white).toBeGreaterThan(before * 1.5);
 
-  await page.getByLabel('Cor do texto').selectOption('escuro');
+  // Cor pronta (Preto): some o branco. E a cor digitada vale também.
+  await page.getByRole('button', { name: 'Preto' }).click();
+  await expect(page.locator('.color-code[data-for="card_text_color"]')).toHaveValue('#1b1e27');
   await expect.poll(white).toBeLessThan(50);
+  await page.locator('.color-code[data-for="card_text_color"]').fill('#ffffff');
+  await expect.poll(white).toBeGreaterThan(500);
+  // Letra: baixa o arquivo da letra escolhida e redesenha com ela.
+  await page.locator('select[name="card_font"]').selectOption('greatvibes');
+  await expect
+    .poll(() => page.evaluate(() => [...document.fonts].some((f) => f.family.includes('Cartao GreatVibes') && f.status === 'loaded')))
+    .toBe(true);
   // Desligado: volta a imagem sozinha.
   await cardBox.uncheck();
   await expect(card).toBeHidden();

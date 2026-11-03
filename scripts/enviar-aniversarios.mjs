@@ -7,7 +7,8 @@ import { readFileSync } from 'node:fs';
 import webpush from 'web-push';
 import { emailOn, gmailOn, gmailUser, deliverEmail, closeEmail } from './email.mjs';
 import { renderMessage, joinNames, firstName, yearsText, esc } from '../js/util.js';
-import { cardSize, drawCard } from '../js/cartao.js';
+import { fileURLToPath } from 'node:url';
+import { CARD_FONTS, CARD_FONT_DIR, cardSize, drawCard } from '../js/cartao.js';
 
 const config = readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
 const pick = (key) => config.match(new RegExp(`${key}:\\s*'([^']+)'`))?.[1];
@@ -93,8 +94,16 @@ const cardKey = (slug, kind, name, years) => `${slug}|${kind}|${name}|${years}`;
 const cardOf = (r) => cards.get(cardKey(r.church_slug, r.kind, r.name, r.age)) || r.image_url || undefined;
 const cardStats = { made: 0, reused: 0, failed: 0 };
 
+let fontsReady = false;
 async function makeCard(r) {
-  const { createCanvas, loadImage } = await import('@napi-rs/canvas');
+  const { createCanvas, loadImage, GlobalFonts } = await import('@napi-rs/canvas');
+  // As mesmas letras da prévia no app (fonts/cartao/), com o mesmo nome de família.
+  if (!fontsReady) {
+    for (const f of Object.values(CARD_FONTS)) {
+      for (const file of Object.values(f.files || {})) GlobalFonts.registerFromPath(fileURLToPath(new URL(`../${CARD_FONT_DIR}${file}`, import.meta.url)), f.family);
+    }
+    fontsReady = true;
+  }
   const res = await fetch(r.image_url);
   if (!res.ok) throw new Error(`imagem da igreja: ${res.status}`);
   const img = await loadImage(Buffer.from(await res.arrayBuffer()));
@@ -104,7 +113,7 @@ async function makeCard(r) {
   drawCard(
     canvas.getContext('2d'),
     img,
-    { title: renderMessage(r.title, data), body: renderMessage(r.body, data), color: r.card_color, x: r.card_x, y: r.card_y, width: r.card_width, size: r.card_size, position: r.card_position },
+    { title: renderMessage(r.title, data), body: renderMessage(r.body, data), color: r.card_text_color || r.card_color, font: r.card_font, x: r.card_x, y: r.card_y, width: r.card_width, size: r.card_size, position: r.card_position },
     width,
     height,
   );

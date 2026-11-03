@@ -20,7 +20,7 @@ const faceErrorText = (err, fallback) =>
     : err?.friendly || err?.code
       ? errorText(err)
       : `${fallback} (${err?.name || 'erro'}: ${err?.message || err})`;
-import { CARD_COLORS, CARD_DEFAULTS, CARD_LIMITS, cardOptions, cardSize, drawCard as drawGreetingCard } from './cartao.js';
+import { CARD_SWATCHES, CARD_FONTS, CARD_FONT_DIR, CARD_DEFAULTS, CARD_LIMITS, cardColor, cardOptions, cardSize, drawCard as drawGreetingCard } from './cartao.js';
 import { BOOKS, BIBLE_VERSIONS, bibleUrl, bookName, bookChapters, verseRef, READING_PLANS, planReading, passageLabel, readingLabel } from './biblia.js';
 
 const $view = document.getElementById('view');
@@ -1994,6 +1994,23 @@ const initials = (name) =>
 const avatar = (name, url, size = '') =>
   `<span class="avatar ${size}">${url ? `<img src="${esc(url)}" alt="">` : `<b class="initials">${initials(name)}</b>`}</span>`;
 
+// Letras do cartão de aniversário (js/cartao.js): cada uma baixada uma vez, quando escolhida.
+const cardFontLoads = new Map();
+function loadCardFont(key) {
+  const f = CARD_FONTS[key];
+  if (!f?.family || typeof FontFace === 'undefined') return Promise.resolve();
+  if (!cardFontLoads.has(key)) {
+    const load = Promise.all(
+      Object.entries(f.files).map(async ([weight, file]) => {
+        const face = new FontFace(f.family, `url(${new URL(CARD_FONT_DIR + file, ROOT_URL).href})`, { weight });
+        document.fonts.add(await face.load());
+      }),
+    ).catch(() => cardFontLoads.delete(key)); // sem internet: tenta de novo na próxima
+    cardFontLoads.set(key, load);
+  }
+  return cardFontLoads.get(key);
+}
+
 // Cor: o quadradinho que abre a paleta e, ao lado, o código (ex.: #2c3666) para digitar ou colar.
 const colorField = (label, name, value) => `
   <label>${label}
@@ -2025,14 +2042,20 @@ function bindColorFields(form) {
   }
 }
 
+// Quadro vazio de imagem: tocar nele abre o seletor (o <label> em volta tem o <input type="file">).
+const NO_IMAGE = `<span class="pick-empty">${icon.image}<span>Toque para escolher a imagem</span></span>`;
+
 function photoField(name, url) {
   return `
     <div class="photo-field">
-      <span id="photo-preview">${avatar(name, url, 'big')}</span>
+      <label class="pick-image" aria-label="Escolher a foto">
+        <span id="photo-preview">${avatar(name, url, 'big')}</span>
+        <span class="pick-badge" aria-hidden="true">${icon.image}</span>
+        <input type="file" name="photo" accept="image/*" hidden>
+      </label>
       <div>
-        <label class="btn small">${url ? 'Trocar a foto' : 'Escolher foto'}<input type="file" name="photo" accept="image/*" hidden></label>
+        <p class="hint">Toque na foto para escolher. Opcional: a foto é reduzida no celular antes do envio.</p>
         <button type="button" class="btn link small" id="photo-remove" ${url ? '' : 'hidden'}>Remover foto</button>
-        <p class="hint">Opcional. A foto é reduzida no celular antes do envio.</p>
       </div>
     </div>`;
 }
@@ -2533,14 +2556,17 @@ async function viewSettings(ctx) {
         <p class="hint">É o nome que aparece embaixo do ícone do app instalado. Deixe em branco para usar o começo do nome da igreja.</p>
         <div class="logo-picker">
           <div class="icon-with-name">
-            <div class="icon-preview" id="icon-preview" style="background:${esc(c.icon_background)}">
-              <img id="logo-preview" src="${esc(c.logo_url || 'icons/icon-192.png')}" alt="">
-            </div>
+            <label class="pick-image" aria-label="Trocar a logo">
+              <span class="icon-preview" id="icon-preview" style="background:${esc(c.icon_background)}">
+                <img id="logo-preview" src="${esc(c.logo_url || 'icons/icon-192.png')}" alt="">
+              </span>
+              <span class="pick-badge" aria-hidden="true">${icon.image}</span>
+              <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" hidden>
+            </label>
             <span id="icon-name" aria-label="Nome embaixo do ícone">${esc(c.short_name || c.name.slice(0, 20))}</span>
           </div>
           <div>
-            <label class="btn small">Trocar a logo<input type="file" name="logo" accept="image/png,image/jpeg,image/webp" hidden></label>
-            <p class="hint">PNG com fundo transparente fica melhor. É assim que o ícone aparece no celular.</p>
+            <p class="hint">Toque no ícone para trocar a logo. PNG com fundo transparente fica melhor. É assim que o ícone aparece no celular.</p>
           </div>
         </div>
         <div class="colors">
@@ -4284,9 +4310,12 @@ async function viewDevotionalForm(ctx, id) {
         <small class="hint" id="count">${d.body.length} de ${DEVOTIONAL_MAX} letras</small></label>
       <fieldset class="card">
         <legend>Imagem (opcional)</legend>
-        <div class="bday-image" id="image-box">${img ? `<img src="${esc(img)}" alt="">` : '<p class="hint">Sem imagem.</p>'}</div>
+        <label class="bday-image pick-image" aria-label="Escolher a imagem">
+          <span id="image-box">${img ? `<img src="${esc(img)}" alt="">` : NO_IMAGE}</span>
+          <span class="pick-badge" aria-hidden="true">${icon.image}</span>
+          <input type="file" name="image" accept="image/*" hidden>
+        </label>
         <div class="actions-row">
-          <label class="btn small">${img ? 'Trocar a imagem' : 'Escolher imagem'}<input type="file" name="image" accept="image/*" hidden></label>
           <button type="button" class="btn link small" id="image-remove" ${img ? '' : 'hidden'}>Remover imagem</button>
         </div>
       </fieldset>
@@ -4310,7 +4339,7 @@ async function viewDevotionalForm(ctx, id) {
     imageFile = null;
     removeImage = true;
     form.image.value = '';
-    document.getElementById('image-box').innerHTML = '<p class="hint">Sem imagem.</p>';
+    document.getElementById('image-box').innerHTML = NO_IMAGE;
     document.getElementById('image-remove').hidden = true;
   };
 
@@ -10123,9 +10152,12 @@ async function viewMessageSettings(ctx, kind) {
 
       <fieldset class="card">
         <legend>Imagem (opcional)</legend>
-        <div class="bday-image" id="image-box">${t.image_url ? `<img src="${esc(t.image_url)}" alt="">` : '<p class="hint">Sem imagem.</p>'}</div>
+        <label class="bday-image pick-image" aria-label="Escolher a imagem">
+          <span id="image-box">${t.image_url ? `<img src="${esc(t.image_url)}" alt="">` : NO_IMAGE}</span>
+          <span class="pick-badge" aria-hidden="true">${icon.image}</span>
+          <input type="file" name="image" accept="image/*" hidden>
+        </label>
         <div class="actions-row">
-          <label class="btn small">${t.image_url ? 'Trocar a imagem' : 'Escolher imagem'}<input type="file" name="image" accept="image/*" hidden></label>
           <button type="button" class="btn link small" id="image-remove" ${t.image_url ? '' : 'hidden'}>Remover imagem</button>
         </div>
         ${'card' in t
@@ -10138,12 +10170,16 @@ async function viewMessageSettings(ctx, kind) {
           </div>
           <label>Tamanho do texto <output id="card-size-out"></output><input type="range" name="card_size" min="${CARD_LIMITS.size[0]}" max="${CARD_LIMITS.size[1]}" step="5"></label>
           <label>Largura da área do texto <output id="card-width-out"></output><input type="range" name="card_width" min="${CARD_LIMITS.width[0]}" max="${CARD_LIMITS.width[1]}" step="1"></label>
+          <label>Letra<select name="card_font">${Object.entries(CARD_FONTS)
+            .map(([v, f]) => `<option value="${v}" ${(t.card_font || 'padrao') === v ? 'selected' : ''}>${esc(f.label)}</option>`)
+            .join('')}</select></label>
           <div class="card-row">
-            <label>Cor do texto<select name="card_color">${Object.entries(CARD_COLORS)
-              .map(([v, l]) => `<option value="${v}" ${t.card_color === v ? 'selected' : ''}>${l}</option>`)
-              .join('')}</select></label>
+            ${colorField('Cor da letra', 'card_text_color', cardColor(t.card_text_color || t.card_color))}
             <button type="button" class="btn small" id="card-center">Centralizar</button>
           </div>
+          <div class="swatches" role="group" aria-label="Cores prontas">${Object.entries(CARD_SWATCHES)
+            .map(([hex, name]) => `<button type="button" class="swatch" data-color="${hex}" style="background:${hex}" aria-label="${name}" title="${name}"></button>`)
+            .join('')}</div>
           <p class="hint">Cada pessoa recebe o cartão com o nome dela, no e-mail, na notificação do celular e no app. Use uma arte sem texto, com espaço livre onde vai a mensagem. Nomes longos ocupam mais espaço: deixe uma folga.</p>
         </div>`
           : ''}
@@ -10214,7 +10250,8 @@ async function viewMessageSettings(ctx, kind) {
     const text = {
       title: renderMessage(form.title.value, sample),
       body: renderMessage(form.body.value, sample),
-      color: form.card_color.value,
+      color: form.card_text_color.value,
+      font: form.card_font.value,
       ...place,
     };
     // Prévia (como chega) e editor (com o contorno da área do texto, para arrastar).
@@ -10248,7 +10285,24 @@ async function viewMessageSettings(ctx, kind) {
   showPreviewImage(pvSrc);
   form.title.addEventListener('input', preview);
   form.body.addEventListener('input', preview);
-  for (const name of ['card', 'card_color']) form[name]?.addEventListener('change', drawImagePreview);
+  form.card?.addEventListener('change', drawImagePreview);
+  if (form.card_font) {
+    // Letras do cartão: baixadas só quando escolhidas (fonts/cartao/); redesenha quando chegam.
+    const useFont = () => loadCardFont(form.card_font.value).then(() => ctx.alive() && drawImagePreview());
+    form.card_font.addEventListener('change', () => {
+      drawImagePreview();
+      useFont();
+    });
+    useFont();
+    bindColorFields(form);
+    form.card_text_color.addEventListener('input', drawImagePreview);
+    for (const b of form.querySelectorAll('.swatch')) {
+      b.onclick = () => {
+        form.card_text_color.value = b.dataset.color;
+        form.card_text_color.dispatchEvent(new Event('input'));
+      };
+    }
+  }
   if (form.card_size) {
     for (const name of ['card_size', 'card_width']) {
       form[name].addEventListener('input', () => {
@@ -10327,7 +10381,7 @@ async function viewMessageSettings(ctx, kind) {
     imageFile = null;
     removeImage = true;
     form.image.value = '';
-    document.getElementById('image-box').innerHTML = '<p class="hint">Sem imagem.</p>';
+    document.getElementById('image-box').innerHTML = NO_IMAGE;
     document.getElementById('image-remove').hidden = true;
     showPreviewImage(null);
   };
@@ -10347,7 +10401,9 @@ async function viewMessageSettings(ctx, kind) {
         updated_at: new Date().toISOString(),
       };
       // Só depois de rodar o supabase/040_cartao.sql (antes, a tela nem mostra a opção).
-      if (form.card) Object.assign(patch, { card: form.card.checked, card_color: form.card_color.value });
+      if (form.card) Object.assign(patch, { card: form.card.checked });
+      // Letra e cor livre: só depois de rodar o supabase/042_cartao_letra.sql.
+      if ('card_font' in t) Object.assign(patch, { card_font: form.card_font.value, card_text_color: cardColor(form.card_text_color.value) });
       // Posição livre: só depois de rodar o supabase/041_cartao_ajuste.sql.
       if ('card_x' in t) {
         Object.assign(patch, { card_x: Math.round(place.x), card_y: Math.round(place.y), card_width: place.width, card_size: place.size });
