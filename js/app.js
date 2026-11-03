@@ -2042,14 +2042,20 @@ function bindColorFields(form) {
   }
 }
 
+// Quadro vazio de imagem: tocar nele abre o seletor (o <label> em volta tem o <input type="file">).
+const NO_IMAGE = `<span class="pick-empty">${icon.image}<span>Toque para escolher a imagem</span></span>`;
+
 function photoField(name, url) {
   return `
     <div class="photo-field">
-      <span id="photo-preview">${avatar(name, url, 'big')}</span>
+      <label class="pick-image" aria-label="Escolher a foto">
+        <span id="photo-preview">${avatar(name, url, 'big')}</span>
+        <span class="pick-badge" aria-hidden="true">${icon.image}</span>
+        <input type="file" name="photo" accept="image/*" hidden>
+      </label>
       <div>
-        <label class="btn small">${url ? 'Trocar a foto' : 'Escolher foto'}<input type="file" name="photo" accept="image/*" hidden></label>
+        <p class="hint">Toque na foto para escolher. Opcional: a foto é reduzida no celular antes do envio.</p>
         <button type="button" class="btn link small" id="photo-remove" ${url ? '' : 'hidden'}>Remover foto</button>
-        <p class="hint">Opcional. A foto é reduzida no celular antes do envio.</p>
       </div>
     </div>`;
 }
@@ -2550,14 +2556,17 @@ async function viewSettings(ctx) {
         <p class="hint">É o nome que aparece embaixo do ícone do app instalado. Deixe em branco para usar o começo do nome da igreja.</p>
         <div class="logo-picker">
           <div class="icon-with-name">
-            <div class="icon-preview" id="icon-preview" style="background:${esc(c.icon_background)}">
-              <img id="logo-preview" src="${esc(c.logo_url || 'icons/icon-192.png')}" alt="">
-            </div>
+            <label class="pick-image" aria-label="Trocar a logo">
+              <span class="icon-preview" id="icon-preview" style="background:${esc(c.icon_background)}">
+                <img id="logo-preview" src="${esc(c.logo_url || 'icons/icon-192.png')}" alt="">
+              </span>
+              <span class="pick-badge" aria-hidden="true">${icon.image}</span>
+              <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" hidden>
+            </label>
             <span id="icon-name" aria-label="Nome embaixo do ícone">${esc(c.short_name || c.name.slice(0, 20))}</span>
           </div>
           <div>
-            <label class="btn small">Trocar a logo<input type="file" name="logo" accept="image/png,image/jpeg,image/webp" hidden></label>
-            <p class="hint">PNG com fundo transparente fica melhor. É assim que o ícone aparece no celular.</p>
+            <p class="hint">Toque no ícone para trocar a logo. PNG com fundo transparente fica melhor. É assim que o ícone aparece no celular.</p>
           </div>
         </div>
         <div class="colors">
@@ -4301,9 +4310,12 @@ async function viewDevotionalForm(ctx, id) {
         <small class="hint" id="count">${d.body.length} de ${DEVOTIONAL_MAX} letras</small></label>
       <fieldset class="card">
         <legend>Imagem (opcional)</legend>
-        <div class="bday-image" id="image-box">${img ? `<img src="${esc(img)}" alt="">` : '<p class="hint">Sem imagem.</p>'}</div>
+        <label class="bday-image pick-image" aria-label="Escolher a imagem">
+          <span id="image-box">${img ? `<img src="${esc(img)}" alt="">` : NO_IMAGE}</span>
+          <span class="pick-badge" aria-hidden="true">${icon.image}</span>
+          <input type="file" name="image" accept="image/*" hidden>
+        </label>
         <div class="actions-row">
-          <label class="btn small">${img ? 'Trocar a imagem' : 'Escolher imagem'}<input type="file" name="image" accept="image/*" hidden></label>
           <button type="button" class="btn link small" id="image-remove" ${img ? '' : 'hidden'}>Remover imagem</button>
         </div>
       </fieldset>
@@ -4327,7 +4339,7 @@ async function viewDevotionalForm(ctx, id) {
     imageFile = null;
     removeImage = true;
     form.image.value = '';
-    document.getElementById('image-box').innerHTML = '<p class="hint">Sem imagem.</p>';
+    document.getElementById('image-box').innerHTML = NO_IMAGE;
     document.getElementById('image-remove').hidden = true;
   };
 
@@ -10140,9 +10152,12 @@ async function viewMessageSettings(ctx, kind) {
 
       <fieldset class="card">
         <legend>Imagem (opcional)</legend>
-        <div class="bday-image" id="image-box">${t.image_url ? `<img src="${esc(t.image_url)}" alt="">` : '<p class="hint">Sem imagem.</p>'}</div>
+        <label class="bday-image pick-image" aria-label="Escolher a imagem">
+          <span id="image-box">${t.image_url ? `<img src="${esc(t.image_url)}" alt="">` : NO_IMAGE}</span>
+          <span class="pick-badge" aria-hidden="true">${icon.image}</span>
+          <input type="file" name="image" accept="image/*" hidden>
+        </label>
         <div class="actions-row">
-          <label class="btn small">${t.image_url ? 'Trocar a imagem' : 'Escolher imagem'}<input type="file" name="image" accept="image/*" hidden></label>
           <button type="button" class="btn link small" id="image-remove" ${t.image_url ? '' : 'hidden'}>Remover imagem</button>
         </div>
         ${'card' in t
@@ -10366,7 +10381,7 @@ async function viewMessageSettings(ctx, kind) {
     imageFile = null;
     removeImage = true;
     form.image.value = '';
-    document.getElementById('image-box').innerHTML = '<p class="hint">Sem imagem.</p>';
+    document.getElementById('image-box').innerHTML = NO_IMAGE;
     document.getElementById('image-remove').hidden = true;
     showPreviewImage(null);
   };

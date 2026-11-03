@@ -360,6 +360,21 @@ button.member-row { font: inherit; text-align: left; width: 100%; cursor: pointe
 .swatch { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--line); box-shadow: inset 0 0 0 2px var(--surface); cursor: pointer; padding: 0; }
 .notif-image { display: block; width: 100%; max-width: 360px; height: auto; margin-top: 8px; border-radius: 10px; }
 .bday-image img { display: block; max-width: 100%; max-height: 240px; border-radius: 10px; }
+/* Imagem que se escolhe tocando nela: o <label> tem o <input type="file"> escondido. */
+.pick-image { position: relative; display: inline-block; width: fit-content; cursor: pointer; font-weight: 400; }
+.pick-image:focus-within { outline: 2px solid var(--link); outline-offset: 3px; border-radius: 12px; }
+.pick-badge {
+  position: absolute; right: -6px; bottom: -6px; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--link); color: #fff; border: 2px solid var(--surface);
+}
+.pick-badge svg { width: 16px; height: 16px; }
+.pick-image:has(.pick-empty) .pick-badge { display: none; }
+.pick-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  width: min(260px, 100%); min-height: 140px; padding: 16px; text-align: center;
+  border: 2px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: .9rem;
+}
+.pick-empty svg { width: 40px; height: 40px; color: var(--link); }
 .chips button.chip { border: 0; cursor: pointer; font: inherit; font-size: .85rem; color: var(--link); }
 .chips.emojis button.chip { font-size: 1.3rem; padding: 4px 10px; line-height: 1.2; }
 .print-only { display: none; }
