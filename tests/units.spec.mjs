@@ -283,10 +283,48 @@ test('regras de segurança das páginas (CSP): os scripts do 404.html batem com 
   expect(index).toMatch(/http-equiv="Content-Security-Policy"[^>]*object-src 'none'/);
   expect(index).not.toMatch(/<script>(?!\s*<\/script>)/); // nenhum script escrito dentro da página
   // Nem comandos no HTML das telas (onclick="..."): a CSP bloquearia.
-  for (const file of ['app.js', 'map.js', 'install.js', 'push.js', 'pix.js', 'biblia.js']) {
+  for (const file of ['app.js', 'map.js', 'install.js', 'push.js', 'pix.js', 'biblia.js', 'cartao.js']) {
     const code = readFileSync(new URL(`../js/${file}`, import.meta.url), 'utf8');
     expect(code, file).not.toMatch(/\son[a-z]+="/);
   }
+});
+
+test('cartão de aniversário: tamanho e texto dentro do cartão, em cima, no meio e embaixo', async () => {
+  const { cardSize, drawCard } = await import('../js/cartao.js');
+  expect(cardSize(2000, 1000)).toEqual({ width: 1080, height: 540 });
+  expect(cardSize(1000, 5000)).toEqual({ width: 1080, height: 1620 }); // muito comprida: corta
+  expect(cardSize(1000, 100)).toEqual({ width: 1080, height: 540 }); // muito achatada: corta
+  // Canvas de mentira: cada letra mede metade do tamanho da fonte; guarda onde cada linha foi escrita.
+  const fake = () => {
+    const lines = [];
+    const ctx = {
+      font: '',
+      drawImage() {},
+      measureText: (t) => ({ width: t.length * Number(ctx.font.match(/(\d+)px/)[1]) * 0.5 }),
+      fillText: (t, x, y) => lines.push({ t, y, size: Number(ctx.font.match(/(\d+)px/)[1]) }),
+    };
+    return { ctx, lines };
+  };
+  const img = { width: 1080, height: 540 };
+  const text = { title: 'Parabéns, Maria!', body: 'A Igreja deseja feliz 30 anos! '.repeat(3) };
+  const ys = {};
+  for (const position of ['topo', 'meio', 'base']) {
+    const { ctx, lines } = fake();
+    drawCard(ctx, img, { ...text, position }, 1080, 540);
+    expect(lines[0].t).toBe('Parabéns, Maria!');
+    expect(lines.length).toBeGreaterThan(2); // a mensagem quebrou em linhas
+    for (const l of lines) expect(l.y).toBeGreaterThanOrEqual(0);
+    const last = lines.at(-1);
+    expect(last.y + last.size).toBeLessThanOrEqual(540);
+    ys[position] = lines[0].y;
+  }
+  expect(ys.topo).toBeLessThan(ys.meio);
+  expect(ys.meio).toBeLessThan(ys.base);
+  // Texto enorme: as letras diminuem até caber.
+  const { ctx, lines } = fake();
+  drawCard(ctx, img, { title: 'Parabéns!', body: 'palavra '.repeat(200) }, 1080, 540);
+  const last = lines.at(-1);
+  expect(last.y + last.size).toBeLessThanOrEqual(540);
 });
 
 test('planos de leitura: cada plano lê todos os capítulos uma vez só, no número de dias do banco', async () => {

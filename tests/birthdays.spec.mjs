@@ -73,6 +73,66 @@ test('o admin vê a prévia da mensagem com os campos trocados', async ({ page }
   await expect(page.locator('#pv-title')).toHaveText('Parabéns, Admin🎉');
 });
 
+test('a imagem escolhida aparece na prévia, e some ao remover', async ({ page }) => {
+  await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config/aniversario');
+  // PNG de 1x1 ponto; não salva: só olha a prévia.
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  await page.locator('input[name="image"]').setInputFiles({ name: 'parabens.png', mimeType: 'image/png', buffer: png });
+  const pv = page.locator('.push-preview #pv-image');
+  await expect(pv).toBeVisible();
+  await expect(pv).toHaveAttribute('src', /^blob:/);
+  await page.getByRole('button', { name: 'Remover imagem' }).click();
+  await expect(pv).toBeHidden();
+});
+
+test('com o cartão ligado, a prévia mostra a imagem com a mensagem escrita por cima', async ({ page }) => {
+  // Banco ainda sem o supabase/040_cartao.sql: completa os modelos com as opções do cartão (não salva nada).
+  await page.route('**/rest/v1/message_templates?*', async (route) => {
+    const res = await route.fetch();
+    const rows = await res.json();
+    const body = JSON.stringify(rows.map((r) => ({ card: false, card_position: 'meio', card_color: 'claro', ...r })));
+    await route.fulfill({ response: res, body });
+  });
+  await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config/aniversario');
+  await expect(page.getByRole('heading', { name: 'Mensagem de aniversário' })).toBeVisible();
+  const cardBox = page.getByLabel(/como um cartão/);
+  // Imagem de 400x200 pontos, só uma cor; não salva: só olha a prévia.
+  const jpg = await page.evaluate(async () => {
+    const c = document.createElement('canvas');
+    c.width = 400;
+    c.height = 200;
+    const g = c.getContext('2d');
+    g.fillStyle = '#123456';
+    g.fillRect(0, 0, 400, 200);
+    return c.toDataURL('image/png').split(',')[1];
+  });
+  await page.locator('input[name="image"]').setInputFiles({ name: 'arte.png', mimeType: 'image/png', buffer: Buffer.from(jpg, 'base64') });
+  await expect(page.locator('#pv-image')).toBeVisible();
+  await cardBox.check();
+  const card = page.locator('#pv-card');
+  await expect(card).toBeVisible();
+  await expect(page.locator('#pv-image')).toBeHidden();
+  // 1080 de largura; a imagem 2:1 fica com 540 de altura.
+  await expect(card).toHaveJSProperty('width', 1080);
+  await expect(card).toHaveJSProperty('height', 540);
+  // O texto foi escrito por cima: no meio do cartão há pontos brancos (texto claro).
+  const white = () =>
+    card.evaluate((c) => {
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240) n++;
+      return n;
+    });
+  expect(await white()).toBeGreaterThan(500);
+  await page.getByLabel('Cor do texto').selectOption('escuro');
+  await expect.poll(white).toBeLessThan(50);
+  await expect(page.getByLabel('Posição do texto')).toBeVisible();
+  // Desligado: volta a imagem sozinha.
+  await cardBox.uncheck();
+  await expect(card).toBeHidden();
+  await expect(page.getByLabel('Posição do texto')).toBeHidden();
+});
+
 // Datas especiais (008): na Teste A, "Casada da A" (12/06/2010, autorizou mostrar) e
 // "Batizado da A" (20/06/2020, não autorizou).
 test('a liderança vê casamento e batismo na lista do mês, com os anos', async ({ page }) => {

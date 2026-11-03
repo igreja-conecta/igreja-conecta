@@ -17,6 +17,7 @@ const SHELL = [
   'js/config.js',
   'js/util.js',
   'js/images.js',
+  'js/cartao.js',
   'js/install.js',
   'js/push.js',
   'js/pix.js',
