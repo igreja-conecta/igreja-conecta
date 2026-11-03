@@ -320,6 +320,22 @@ test('cartão de aniversário: tamanho e texto dentro do cartão, em cima, no me
   }
   expect(ys.topo).toBeLessThan(ys.meio);
   expect(ys.meio).toBeLessThan(ys.base);
+  // Posição livre: centro em (x, y) em % da imagem, sem sair dela; largura e tamanho em %.
+  {
+    const { ctx } = fake();
+    const box = drawCard(ctx, img, { ...text, x: 75, y: 50, width: 40 }, 1080, 540);
+    expect(box.width).toBe(432);
+    expect(box.left).toBeCloseTo(810 - 216, 0);
+    const edge = drawCard(fake().ctx, img, { ...text, x: 0, y: 100, width: 40 }, 1080, 540);
+    expect(edge.left).toBe(0); // encostado na borda, não para fora
+    expect(edge.top + edge.height).toBeCloseTo(540, 0);
+    const small = drawCard(fake().ctx, img, { title: 'Oi', body: 'Tudo bem?', size: 50 }, 1080, 540);
+    const big = drawCard(fake().ctx, img, { title: 'Oi', body: 'Tudo bem?', size: 200 }, 1080, 540);
+    expect(big.height).toBeGreaterThan(small.height * 3);
+  }
+  const { cardOptions } = await import('../js/cartao.js');
+  expect(cardOptions({ position: 'base' })).toEqual({ x: 50, y: 75, width: 84, size: 100 }); // cartão salvo antes
+  expect(cardOptions({ x: 10, y: 20, width: 5, size: 999, position: 'base' })).toEqual({ x: 10, y: 20, width: 30, size: 250 });
   // Texto enorme: as letras diminuem até caber.
   const { ctx, lines } = fake();
   drawCard(ctx, img, { title: 'Parabéns!', body: 'palavra '.repeat(200) }, 1080, 540);

@@ -20,7 +20,7 @@ const faceErrorText = (err, fallback) =>
     : err?.friendly || err?.code
       ? errorText(err)
       : `${fallback} (${err?.name || 'erro'}: ${err?.message || err})`;
-import { CARD_POSITIONS, CARD_COLORS, cardSize, drawCard as drawGreetingCard } from './cartao.js';
+import { CARD_COLORS, CARD_DEFAULTS, CARD_LIMITS, cardOptions, cardSize, drawCard as drawGreetingCard } from './cartao.js';
 import { BOOKS, BIBLE_VERSIONS, bibleUrl, bookName, bookChapters, verseRef, READING_PLANS, planReading, passageLabel, readingLabel } from './biblia.js';
 
 const $view = document.getElementById('view');
@@ -10131,13 +10131,20 @@ async function viewMessageSettings(ctx, kind) {
         ${'card' in t
           ? `<label class="check"><input type="checkbox" name="card" ${t.card ? 'checked' : ''}> Escrever o título e a mensagem dentro da imagem, como um cartão</label>
         <div class="card-options" id="card-options" ${t.card ? '' : 'hidden'}>
-          <label>Posição do texto<select name="card_position">${Object.entries(CARD_POSITIONS)
-            .map(([v, l]) => `<option value="${v}" ${t.card_position === v ? 'selected' : ''}>${l}</option>`)
-            .join('')}</select></label>
-          <label>Cor do texto<select name="card_color">${Object.entries(CARD_COLORS)
-            .map(([v, l]) => `<option value="${v}" ${t.card_color === v ? 'selected' : ''}>${l}</option>`)
-            .join('')}</select></label>
-          <p class="hint">Cada pessoa recebe o cartão com o nome dela, no e-mail, na notificação do celular e no app. Use uma arte sem texto, com espaço livre onde vai a mensagem.</p>
+          <p class="hint" id="card-no-image" hidden>Escolha uma imagem para montar o cartão.</p>
+          <div class="card-editor" id="card-editor" hidden>
+            <canvas id="card-edit" role="img" aria-label="Cartão: arraste o texto para posicionar"></canvas>
+            <p class="hint">Arraste o texto com o dedo (ou o mouse) para o lugar certo da imagem.</p>
+          </div>
+          <label>Tamanho do texto <output id="card-size-out"></output><input type="range" name="card_size" min="${CARD_LIMITS.size[0]}" max="${CARD_LIMITS.size[1]}" step="5"></label>
+          <label>Largura da área do texto <output id="card-width-out"></output><input type="range" name="card_width" min="${CARD_LIMITS.width[0]}" max="${CARD_LIMITS.width[1]}" step="1"></label>
+          <div class="card-row">
+            <label>Cor do texto<select name="card_color">${Object.entries(CARD_COLORS)
+              .map(([v, l]) => `<option value="${v}" ${t.card_color === v ? 'selected' : ''}>${l}</option>`)
+              .join('')}</select></label>
+            <button type="button" class="btn small" id="card-center">Centralizar</button>
+          </div>
+          <p class="hint">Cada pessoa recebe o cartão com o nome dela, no e-mail, na notificação do celular e no app. Use uma arte sem texto, com espaço livre onde vai a mensagem. Nomes longos ocupam mais espaço: deixe uma folga.</p>
         </div>`
           : ''}
       </fieldset>
@@ -10177,6 +10184,17 @@ async function viewMessageSettings(ctx, kind) {
   // o cartão já com o texto escrito, desenhado como no envio das 7h (js/cartao.js).
   let pvSrc = t.image_url || null;
   let pvImg = null;
+  // Onde está o texto no cartão (em % da imagem). Cartão antigo, só com "em cima/no meio/embaixo", vira posição livre.
+  const place = cardOptions({ x: t.card_x, y: t.card_y, width: t.card_width, size: t.card_size, position: t.card_position });
+  let textBox = null; // área do texto no editor, para saber onde o dedo tocou
+  const syncCardInputs = () => {
+    if (!form.card_size) return;
+    form.card_size.value = place.size;
+    form.card_width.value = place.width;
+    document.getElementById('card-size-out').textContent = `${place.size}%`;
+    document.getElementById('card-width-out').textContent = `${place.width}%`;
+  };
+  syncCardInputs();
   const drawImagePreview = () => {
     const card = !!form.card?.checked;
     const options = document.getElementById('card-options');
@@ -10186,23 +10204,26 @@ async function viewMessageSettings(ctx, kind) {
     const showCard = card && !!pvSrc && !!pvImg?.naturalWidth;
     img.hidden = !pvSrc || (card && !!pvSrc);
     canvas.hidden = !showCard;
+    if (options) {
+      document.getElementById('card-editor').hidden = !showCard;
+      document.getElementById('card-no-image').hidden = !!pvSrc;
+    }
     if (pvSrc && !card) img.src = pvSrc;
     if (!showCard) return;
     const { width, height } = cardSize(pvImg.naturalWidth, pvImg.naturalHeight);
-    canvas.width = width;
-    canvas.height = height;
-    drawGreetingCard(
-      canvas.getContext('2d'),
-      pvImg,
-      {
-        title: renderMessage(form.title.value, sample),
-        body: renderMessage(form.body.value, sample),
-        position: form.card_position.value,
-        color: form.card_color.value,
-      },
-      width,
-      height,
-    );
+    const text = {
+      title: renderMessage(form.title.value, sample),
+      body: renderMessage(form.body.value, sample),
+      color: form.card_color.value,
+      ...place,
+    };
+    // Prévia (como chega) e editor (com o contorno da área do texto, para arrastar).
+    for (const [c, guide] of [[canvas, false], [document.getElementById('card-edit'), true]]) {
+      c.width = width;
+      c.height = height;
+      const box = drawGreetingCard(c.getContext('2d'), pvImg, { ...text, guide }, width, height);
+      if (guide) textBox = box;
+    }
   };
   const showPreviewImage = (src) => {
     pvSrc = src;
@@ -10227,7 +10248,59 @@ async function viewMessageSettings(ctx, kind) {
   showPreviewImage(pvSrc);
   form.title.addEventListener('input', preview);
   form.body.addEventListener('input', preview);
-  for (const name of ['card', 'card_position', 'card_color']) form[name]?.addEventListener('change', drawImagePreview);
+  for (const name of ['card', 'card_color']) form[name]?.addEventListener('change', drawImagePreview);
+  if (form.card_size) {
+    for (const name of ['card_size', 'card_width']) {
+      form[name].addEventListener('input', () => {
+        place[name === 'card_size' ? 'size' : 'width'] = Number(form[name].value);
+        syncCardInputs();
+        drawImagePreview();
+      });
+    }
+    document.getElementById('card-center').onclick = () => {
+      Object.assign(place, { x: CARD_DEFAULTS.x, y: CARD_DEFAULTS.y });
+      drawImagePreview();
+    };
+    // Arrastar o texto: move o centro da área junto com o dedo, sem sair da imagem.
+    const editor = document.getElementById('card-edit');
+    let drag = null;
+    const point = (e) => {
+      const r = editor.getBoundingClientRect();
+      return { x: ((e.clientX - r.left) / r.width) * editor.width, y: ((e.clientY - r.top) / r.height) * editor.height };
+    };
+    editor.addEventListener('pointerdown', (e) => {
+      const p = point(e);
+      drag = { from: p, x: place.x, y: place.y };
+      // Tocou fora do texto: o texto pula para lá e continua arrastando.
+      const b = textBox;
+      if (b && (p.x < b.left || p.x > b.left + b.width || p.y < b.top || p.y > b.top + b.height)) {
+        drag.x = (p.x / editor.width) * 100;
+        drag.y = (p.y / editor.height) * 100;
+        Object.assign(place, { x: drag.x, y: drag.y });
+        drawImagePreview();
+      }
+      editor.setPointerCapture?.(e.pointerId);
+      e.preventDefault();
+    });
+    editor.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const p = point(e);
+      place.x = Math.min(100, Math.max(0, drag.x + ((p.x - drag.from.x) / editor.width) * 100));
+      place.y = Math.min(100, Math.max(0, drag.y + ((p.y - drag.from.y) / editor.height) * 100));
+      drawImagePreview();
+    });
+    const stop = () => {
+      if (!drag) return;
+      drag = null;
+      // Guarda a posição em que o texto ficou de fato (ele não sai da imagem).
+      if (textBox) {
+        place.x = Math.round(((textBox.left + textBox.width / 2) / editor.width) * 100);
+        place.y = Math.round(((textBox.top + textBox.height / 2) / editor.height) * 100);
+      }
+    };
+    editor.addEventListener('pointerup', stop);
+    editor.addEventListener('pointercancel', stop);
+  }
   form.title.addEventListener('focus', () => (lastField = form.title));
   form.body.addEventListener('focus', () => (lastField = form.body));
   form.querySelectorAll('[data-field], [data-insert]').forEach((b) => {
@@ -10274,7 +10347,11 @@ async function viewMessageSettings(ctx, kind) {
         updated_at: new Date().toISOString(),
       };
       // Só depois de rodar o supabase/040_cartao.sql (antes, a tela nem mostra a opção).
-      if (form.card) Object.assign(patch, { card: form.card.checked, card_position: form.card_position.value, card_color: form.card_color.value });
+      if (form.card) Object.assign(patch, { card: form.card.checked, card_color: form.card_color.value });
+      // Posição livre: só depois de rodar o supabase/041_cartao_ajuste.sql.
+      if ('card_x' in t) {
+        Object.assign(patch, { card_x: Math.round(place.x), card_y: Math.round(place.y), card_width: place.width, card_size: place.size });
+      }
       if (imageFile) {
         const img = await resizeImage(imageFile, 1080, 0.82);
         const path = `${state.church.id}/${kind}/imagem-${Date.now()}.${img.type === 'image/webp' ? 'webp' : 'jpg'}`;

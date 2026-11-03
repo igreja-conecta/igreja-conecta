@@ -90,7 +90,7 @@ test('com o cartão ligado, a prévia mostra a imagem com a mensagem escrita por
   await page.route('**/rest/v1/message_templates?*', async (route) => {
     const res = await route.fetch();
     const rows = await res.json();
-    const body = JSON.stringify(rows.map((r) => ({ card: false, card_position: 'meio', card_color: 'claro', ...r })));
+    const body = JSON.stringify(rows.map((r) => ({ card: false, card_position: 'meio', card_color: 'claro', card_x: 50, card_y: 50, card_width: 84, card_size: 100, ...r })));
     await route.fulfill({ response: res, body });
   });
   await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config/aniversario');
@@ -124,13 +124,50 @@ test('com o cartão ligado, a prévia mostra a imagem com a mensagem escrita por
       return n;
     });
   expect(await white()).toBeGreaterThan(500);
+
+  // Área do texto estreita e arrastada para a esquerda: o texto fica todo na metade esquerda.
+  const side = (from, to) =>
+    card.evaluate(
+      (c, [a, b]) => {
+        const x0 = Math.round(c.width * a);
+        const d = c.getContext('2d').getImageData(x0, 0, Math.round(c.width * b) - x0, c.height).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240) n++;
+        return n;
+      },
+      [from, to],
+    );
+  await page.locator('input[name="card_width"]').fill('40');
+  await expect(page.locator('#card-width-out')).toHaveText('40%');
+  const editor = page.locator('#card-edit');
+  await editor.scrollIntoViewIfNeeded();
+  const r = await editor.boundingBox();
+  await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(r.x + r.width * 0.3, r.y + r.height / 2, { steps: 5 });
+  await page.mouse.move(r.x + r.width * 0.15, r.y + r.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => side(0.5, 1)).toBeLessThan(20);
+  expect(await side(0, 0.5)).toBeGreaterThan(300);
+  // Centralizar volta para o meio.
+  await page.getByRole('button', { name: 'Centralizar' }).click();
+  await expect.poll(() => side(0.5, 1)).toBeGreaterThan(100);
+
+  // Letras maiores: mais pontos brancos (com a área larga, para o texto caber sem diminuir).
+  await page.locator('input[name="card_width"]').fill('100');
+  await page.locator('input[name="card_size"]').fill('50');
+  await expect(page.locator('#card-size-out')).toHaveText('50%');
+  const before = await white();
+  await page.locator('input[name="card_size"]').fill('80');
+  await expect(page.locator('#card-size-out')).toHaveText('80%');
+  await expect.poll(white).toBeGreaterThan(before * 1.5);
+
   await page.getByLabel('Cor do texto').selectOption('escuro');
   await expect.poll(white).toBeLessThan(50);
-  await expect(page.getByLabel('Posição do texto')).toBeVisible();
   // Desligado: volta a imagem sozinha.
   await cardBox.uncheck();
   await expect(card).toBeHidden();
-  await expect(page.getByLabel('Posição do texto')).toBeHidden();
+  await expect(page.locator('input[name="card_size"]')).toBeHidden();
 });
 
 // Datas especiais (008): na Teste A, "Casada da A" (12/06/2010, autorizou mostrar) e
