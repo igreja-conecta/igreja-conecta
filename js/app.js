@@ -20,6 +20,7 @@ const faceErrorText = (err, fallback) =>
     : err?.friendly || err?.code
       ? errorText(err)
       : `${fallback} (${err?.name || 'erro'}: ${err?.message || err})`;
+import { CARD_POSITIONS, CARD_COLORS, cardSize, drawCard as drawGreetingCard } from './cartao.js';
 import { BOOKS, BIBLE_VERSIONS, bibleUrl, bookName, bookChapters, verseRef, READING_PLANS, planReading, passageLabel, readingLabel } from './biblia.js';
 
 const $view = document.getElementById('view');
@@ -1699,7 +1700,7 @@ function helpTopics() {
       ? [[
           'Mensagem de aniversário',
           `<p>Em <a href="#/config/aniversario">Menu &gt; Mensagem de aniversário</a>, escreva o título e o texto. Toque nos campos para colocar no texto: <code>{nome}</code>, <code>{primeiro_nome}</code>, <code>{igreja}</code> e <code>{idade}</code>. A prévia mostra como fica. Para alegrar, toque nos emojis embaixo (🎂 🎉 🙏…) ou use os do teclado do celular.</p>
-           <p>A mensagem sai às 7h (horário de Brasília). Quem nasceu em 29/02 recebe em 28/02 nos anos que não são bissextos. Você pode pôr uma imagem e ligar o <strong>resumo para a liderança</strong> (aniversariantes do dia e, às segundas, os da semana).</p>
+           <p>A mensagem sai às 7h (horário de Brasília). Quem nasceu em 29/02 recebe em 28/02 nos anos que não são bissextos. Você pode pôr uma imagem e, se quiser, ligar o <strong>cartão</strong>: o título e a mensagem vão escritos dentro da imagem, com o nome de cada pessoa (escolha a posição e a cor do texto; a prévia mostra como fica). Também dá para ligar o <strong>resumo para a liderança</strong> (aniversariantes do dia e, às segundas, os da semana).</p>
            <p>Ela vai por notificação no celular (para quem ativou), fica na central do app e vai por e-mail para quem tem e-mail no cadastro.</p>`,
         ]]
       : []),
@@ -4316,7 +4317,7 @@ async function viewDevotionalForm(ctx, id) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = form.querySelector('button.primary');
-    const num = (name) => (form[name].value ? Number(form[name].value) : null);
+    const num =(name) => (form[name].value ? Number(form[name].value) : null);
     const book = form.verse_book.value || null;
     const row = {
       publish_date: form.publish_date.value,
@@ -9791,6 +9792,7 @@ function notifList(items) {
         <span class="notif-text">
           <span class="notif-head"><strong>${esc(n.title)}</strong><time datetime="${esc(n.created_at)}">${esc(notifTime(n.created_at))}</time></span>
           ${n.body ? `<small>${esc(n.body)}</small>` : ''}
+          ${n.image_url?.startsWith('https://') ? `<img class="notif-image" src="${esc(n.image_url)}" alt="" loading="lazy">` : ''}
         </span>
         ${n.unread ? '<span class="notif-dot" aria-label="Não lida"></span>' : ''}
       </a>`;
@@ -9809,7 +9811,7 @@ async function viewNotifications(ctx) {
   const fetchPage = (from) => {
     let q = sb
       .from('notifications')
-      .select('id, kind, title, body, url, read_at, created_at')
+      .select('*') // inclui image_url (cartão de aniversário, supabase/040_cartao.sql) quando existir
       .eq('church_id', state.church.id)
       .order('created_at', { ascending: false })
       .range(from, from + NOTIF_PAGE); // um a mais: diz se ainda há outra página
@@ -10126,6 +10128,18 @@ async function viewMessageSettings(ctx, kind) {
           <label class="btn small">${t.image_url ? 'Trocar a imagem' : 'Escolher imagem'}<input type="file" name="image" accept="image/*" hidden></label>
           <button type="button" class="btn link small" id="image-remove" ${t.image_url ? '' : 'hidden'}>Remover imagem</button>
         </div>
+        ${'card' in t
+          ? `<label class="check"><input type="checkbox" name="card" ${t.card ? 'checked' : ''}> Escrever o título e a mensagem dentro da imagem, como um cartão</label>
+        <div class="card-options" id="card-options" ${t.card ? '' : 'hidden'}>
+          <label>Posição do texto<select name="card_position">${Object.entries(CARD_POSITIONS)
+            .map(([v, l]) => `<option value="${v}" ${t.card_position === v ? 'selected' : ''}>${l}</option>`)
+            .join('')}</select></label>
+          <label>Cor do texto<select name="card_color">${Object.entries(CARD_COLORS)
+            .map(([v, l]) => `<option value="${v}" ${t.card_color === v ? 'selected' : ''}>${l}</option>`)
+            .join('')}</select></label>
+          <p class="hint">Cada pessoa recebe o cartão com o nome dela, no e-mail, na notificação do celular e no app. Use uma arte sem texto, com espaço livre onde vai a mensagem.</p>
+        </div>`
+          : ''}
       </fieldset>
 
       <fieldset class="card">
@@ -10146,6 +10160,8 @@ async function viewMessageSettings(ctx, kind) {
         <div class="push-preview">
           <img src="${esc(state.church.logo_url || 'icons/icon-192.png')}" alt="" width="36" height="36">
           <div><strong id="pv-title"></strong><p id="pv-body"></p></div>
+          <img class="pv-image" id="pv-image" alt="" hidden>
+          <canvas class="pv-image" id="pv-card" role="img" aria-label="Cartão com a mensagem" hidden></canvas>
         </div>
         <p class="hint">Assim chega para ${esc(sample.name.split(' ')[0])}, ${esc(screen.sample(sample.age))}.</p>
       </section>
@@ -10157,13 +10173,61 @@ async function viewMessageSettings(ctx, kind) {
   let imageFile = null;
   let removeImage = false;
   let lastField = form.body;
+  // Prévia: a imagem como chega (aberta no Android e no topo do e-mail) ou, com o cartão ligado,
+  // o cartão já com o texto escrito, desenhado como no envio das 7h (js/cartao.js).
+  let pvSrc = t.image_url || null;
+  let pvImg = null;
+  const drawImagePreview = () => {
+    const card = !!form.card?.checked;
+    const options = document.getElementById('card-options');
+    if (options) options.hidden = !card;
+    const img = document.getElementById('pv-image');
+    const canvas = document.getElementById('pv-card');
+    const showCard = card && !!pvSrc && !!pvImg?.naturalWidth;
+    img.hidden = !pvSrc || (card && !!pvSrc);
+    canvas.hidden = !showCard;
+    if (pvSrc && !card) img.src = pvSrc;
+    if (!showCard) return;
+    const { width, height } = cardSize(pvImg.naturalWidth, pvImg.naturalHeight);
+    canvas.width = width;
+    canvas.height = height;
+    drawGreetingCard(
+      canvas.getContext('2d'),
+      pvImg,
+      {
+        title: renderMessage(form.title.value, sample),
+        body: renderMessage(form.body.value, sample),
+        position: form.card_position.value,
+        color: form.card_color.value,
+      },
+      width,
+      height,
+    );
+  };
+  const showPreviewImage = (src) => {
+    pvSrc = src;
+    pvImg = null;
+    if (src) {
+      const img = new Image();
+      img.onload = () => {
+        if (pvSrc !== src) return;
+        pvImg = img;
+        drawImagePreview();
+      };
+      img.src = src;
+    }
+    drawImagePreview();
+  };
   const preview = () => {
     document.getElementById('pv-title').textContent = renderMessage(form.title.value, sample);
     document.getElementById('pv-body').textContent = renderMessage(form.body.value, sample);
+    drawImagePreview();
   };
   preview();
+  showPreviewImage(pvSrc);
   form.title.addEventListener('input', preview);
   form.body.addEventListener('input', preview);
+  for (const name of ['card', 'card_position', 'card_color']) form[name]?.addEventListener('change', drawImagePreview);
   form.title.addEventListener('focus', () => (lastField = form.title));
   form.body.addEventListener('focus', () => (lastField = form.body));
   form.querySelectorAll('[data-field], [data-insert]').forEach((b) => {
@@ -10181,7 +10245,9 @@ async function viewMessageSettings(ctx, kind) {
     imageFile = form.image.files[0] || null;
     if (!imageFile) return;
     removeImage = false;
-    document.getElementById('image-box').innerHTML = `<img src="${URL.createObjectURL(imageFile)}" alt="">`;
+    const src = URL.createObjectURL(imageFile);
+    document.getElementById('image-box').innerHTML = `<img src="${src}" alt="">`;
+    showPreviewImage(src);
     document.getElementById('image-remove').hidden = false;
   });
   document.getElementById('image-remove').onclick = () => {
@@ -10190,6 +10256,7 @@ async function viewMessageSettings(ctx, kind) {
     form.image.value = '';
     document.getElementById('image-box').innerHTML = '<p class="hint">Sem imagem.</p>';
     document.getElementById('image-remove').hidden = true;
+    showPreviewImage(null);
   };
 
   form.addEventListener('submit', async (e) => {
@@ -10206,6 +10273,8 @@ async function viewMessageSettings(ctx, kind) {
         send_email: form.send_email.checked,
         updated_at: new Date().toISOString(),
       };
+      // Só depois de rodar o supabase/040_cartao.sql (antes, a tela nem mostra a opção).
+      if (form.card) Object.assign(patch, { card: form.card.checked, card_position: form.card_position.value, card_color: form.card_color.value });
       if (imageFile) {
         const img = await resizeImage(imageFile, 1080, 0.82);
         const path = `${state.church.id}/${kind}/imagem-${Date.now()}.${img.type === 'image/webp' ? 'webp' : 'jpg'}`;

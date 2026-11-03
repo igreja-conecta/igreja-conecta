@@ -88,6 +88,10 @@ test.describe('Banco: visitante sem login (aniversários)', () => {
       expect((await rpc(request, fn, { p_secret: 'errada' })).ok(), fn).toBe(false);
     }
     expect((await rpc(request, 'mark_message_failed', { p_secret: 'errada', p_log_id: 1 })).ok()).toBe(false);
+    // Cartão de aniversário (040): sem a chave do envio, não lista nem grava cartões.
+    expect((await rpc(request, 'claim_celebration_cards', { p_secret: 'errada' })).ok()).toBe(false);
+    const card = { p_secret: 'errada', p_member: UUID, p_kind: 'aniversario', p_date: '2027-01-01', p_url: 'https://x.supabase.co/storage/v1/object/public/igrejas/cartoes/a/b.jpg' };
+    expect((await rpc(request, 'save_celebration_card', card)).ok()).toBe(false);
     expect((await rpc(request, 'forget_push_subscription', { p_secret: 'errada', p_endpoint: 'https://x' })).ok()).toBe(false);
     expect((await rpc(request, 'save_push_subscription', { p_endpoint: 'https://x', p_p256dh: 'a', p_auth: 'b' })).ok()).toBe(false);
     expect((await rpc(request, 'birthdays_between', { p_church: UUID, p_from: '2027-01-01', p_to: '2027-01-31' })).ok()).toBe(false);
