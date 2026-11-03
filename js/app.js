@@ -20,7 +20,7 @@ const faceErrorText = (err, fallback) =>
     : err?.friendly || err?.code
       ? errorText(err)
       : `${fallback} (${err?.name || 'erro'}: ${err?.message || err})`;
-import { CARD_COLORS, CARD_DEFAULTS, CARD_LIMITS, cardOptions, cardSize, drawCard as drawGreetingCard } from './cartao.js';
+import { CARD_SWATCHES, CARD_FONTS, CARD_FONT_DIR, CARD_DEFAULTS, CARD_LIMITS, cardColor, cardOptions, cardSize, drawCard as drawGreetingCard } from './cartao.js';
 import { BOOKS, BIBLE_VERSIONS, bibleUrl, bookName, bookChapters, verseRef, READING_PLANS, planReading, passageLabel, readingLabel } from './biblia.js';
 
 const $view = document.getElementById('view');
@@ -1993,6 +1993,23 @@ const initials = (name) =>
 
 const avatar = (name, url, size = '') =>
   `<span class="avatar ${size}">${url ? `<img src="${esc(url)}" alt="">` : `<b class="initials">${initials(name)}</b>`}</span>`;
+
+// Letras do cartão de aniversário (js/cartao.js): cada uma baixada uma vez, quando escolhida.
+const cardFontLoads = new Map();
+function loadCardFont(key) {
+  const f = CARD_FONTS[key];
+  if (!f?.family || typeof FontFace === 'undefined') return Promise.resolve();
+  if (!cardFontLoads.has(key)) {
+    const load = Promise.all(
+      Object.entries(f.files).map(async ([weight, file]) => {
+        const face = new FontFace(f.family, `url(${new URL(CARD_FONT_DIR + file, ROOT_URL).href})`, { weight });
+        document.fonts.add(await face.load());
+      }),
+    ).catch(() => cardFontLoads.delete(key)); // sem internet: tenta de novo na próxima
+    cardFontLoads.set(key, load);
+  }
+  return cardFontLoads.get(key);
+}
 
 // Cor: o quadradinho que abre a paleta e, ao lado, o código (ex.: #2c3666) para digitar ou colar.
 const colorField = (label, name, value) => `
@@ -10138,12 +10155,16 @@ async function viewMessageSettings(ctx, kind) {
           </div>
           <label>Tamanho do texto <output id="card-size-out"></output><input type="range" name="card_size" min="${CARD_LIMITS.size[0]}" max="${CARD_LIMITS.size[1]}" step="5"></label>
           <label>Largura da área do texto <output id="card-width-out"></output><input type="range" name="card_width" min="${CARD_LIMITS.width[0]}" max="${CARD_LIMITS.width[1]}" step="1"></label>
+          <label>Letra<select name="card_font">${Object.entries(CARD_FONTS)
+            .map(([v, f]) => `<option value="${v}" ${(t.card_font || 'padrao') === v ? 'selected' : ''}>${esc(f.label)}</option>`)
+            .join('')}</select></label>
           <div class="card-row">
-            <label>Cor do texto<select name="card_color">${Object.entries(CARD_COLORS)
-              .map(([v, l]) => `<option value="${v}" ${t.card_color === v ? 'selected' : ''}>${l}</option>`)
-              .join('')}</select></label>
+            ${colorField('Cor da letra', 'card_text_color', cardColor(t.card_text_color || t.card_color))}
             <button type="button" class="btn small" id="card-center">Centralizar</button>
           </div>
+          <div class="swatches" role="group" aria-label="Cores prontas">${Object.entries(CARD_SWATCHES)
+            .map(([hex, name]) => `<button type="button" class="swatch" data-color="${hex}" style="background:${hex}" aria-label="${name}" title="${name}"></button>`)
+            .join('')}</div>
           <p class="hint">Cada pessoa recebe o cartão com o nome dela, no e-mail, na notificação do celular e no app. Use uma arte sem texto, com espaço livre onde vai a mensagem. Nomes longos ocupam mais espaço: deixe uma folga.</p>
         </div>`
           : ''}
@@ -10214,7 +10235,8 @@ async function viewMessageSettings(ctx, kind) {
     const text = {
       title: renderMessage(form.title.value, sample),
       body: renderMessage(form.body.value, sample),
-      color: form.card_color.value,
+      color: form.card_text_color.value,
+      font: form.card_font.value,
       ...place,
     };
     // Prévia (como chega) e editor (com o contorno da área do texto, para arrastar).
@@ -10248,7 +10270,24 @@ async function viewMessageSettings(ctx, kind) {
   showPreviewImage(pvSrc);
   form.title.addEventListener('input', preview);
   form.body.addEventListener('input', preview);
-  for (const name of ['card', 'card_color']) form[name]?.addEventListener('change', drawImagePreview);
+  form.card?.addEventListener('change', drawImagePreview);
+  if (form.card_font) {
+    // Letras do cartão: baixadas só quando escolhidas (fonts/cartao/); redesenha quando chegam.
+    const useFont = () => loadCardFont(form.card_font.value).then(() => ctx.alive() && drawImagePreview());
+    form.card_font.addEventListener('change', () => {
+      drawImagePreview();
+      useFont();
+    });
+    useFont();
+    bindColorFields(form);
+    form.card_text_color.addEventListener('input', drawImagePreview);
+    for (const b of form.querySelectorAll('.swatch')) {
+      b.onclick = () => {
+        form.card_text_color.value = b.dataset.color;
+        form.card_text_color.dispatchEvent(new Event('input'));
+      };
+    }
+  }
   if (form.card_size) {
     for (const name of ['card_size', 'card_width']) {
       form[name].addEventListener('input', () => {
@@ -10347,7 +10386,9 @@ async function viewMessageSettings(ctx, kind) {
         updated_at: new Date().toISOString(),
       };
       // Só depois de rodar o supabase/040_cartao.sql (antes, a tela nem mostra a opção).
-      if (form.card) Object.assign(patch, { card: form.card.checked, card_color: form.card_color.value });
+      if (form.card) Object.assign(patch, { card: form.card.checked });
+      // Letra e cor livre: só depois de rodar o supabase/042_cartao_letra.sql.
+      if ('card_font' in t) Object.assign(patch, { card_font: form.card_font.value, card_text_color: cardColor(form.card_text_color.value) });
       // Posição livre: só depois de rodar o supabase/041_cartao_ajuste.sql.
       if ('card_x' in t) {
         Object.assign(patch, { card_x: Math.round(place.x), card_y: Math.round(place.y), card_width: place.width, card_size: place.size });
