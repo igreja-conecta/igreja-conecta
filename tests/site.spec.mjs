@@ -134,3 +134,27 @@ test('dízimos e ofertas some com a funcionalidade desligada', async ({ page }) 
   await page.goto('/i/teste-a/#/ofertar');
   await expect(page.getByText('A igreja ainda não informou uma chave Pix.')).toBeVisible();
 });
+
+test('quem abre a página da igreja no celular já vê o convite para instalar o app', async ({ page }) => {
+  // Página publicada com o ícone atual (como build-site.mjs gera).
+  await page.route('**/i/teste-a/', async (route) => {
+    const res = await route.fetch();
+    const html = (await res.text()).replace('<head>', '<head><meta name="icone-versao" content="999">');
+    await route.fulfill({ response: res, body: html });
+  });
+  await page.goto('/i/teste-a/');
+  const banner = page.locator('.install-banner');
+  await expect(banner).toContainText('Tenha');
+  await banner.getByRole('button', { name: 'Instalar' }).click();
+  // Sem o botão de instalar do navegador (como aqui), mostra o passo a passo do Android ou do iPhone.
+  await expect(page.getByRole('heading', { name: /Adicionar à tela (inicial|de início)/i })).toBeVisible();
+  await page.getByRole('button', { name: 'Entendi' }).click();
+
+  // Fechou no "×": não aparece de novo na próxima abertura.
+  await page.reload();
+  await expect(banner).toBeVisible();
+  await banner.getByRole('button', { name: 'Agora não' }).click();
+  await page.reload();
+  await page.waitForTimeout(3500);
+  await expect(banner).toHaveCount(0);
+});

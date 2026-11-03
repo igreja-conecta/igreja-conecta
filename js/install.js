@@ -1,15 +1,24 @@
 // Convite para "Adicionar à tela inicial", com o nome e a logo da igreja.
-// Aparece depois que a pessoa entra na igreja; no iPhone, mostra um tutorial.
+// Aparece logo que a pessoa abre a página da igreja no navegador do celular (antes mesmo de entrar).
+// Android com o Chrome: abre a instalação do navegador. iPhone ou outro navegador: mostra o passo a passo.
 import { esc } from './util.js';
 
 let deferredPrompt = null;
+let pendingChurch = null; // igreja que já pediu o convite, à espera do aviso do navegador
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
+  // O Chrome às vezes avisa que dá para instalar depois que a tela já abriu.
+  if (pendingChurch) maybeSuggestInstall(pendingChurch);
+});
+window.addEventListener('appinstalled', () => {
+  deferredPrompt = null;
+  document.querySelector('.install-banner')?.remove();
 });
 
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = () => /android/i.test(navigator.userAgent);
 
 function readNumber(key) {
   try {
@@ -51,15 +60,24 @@ export async function installNow() {
     return outcome === 'accepted';
   }
   if (isIOS()) showIOSTutorial();
+  else if (isAndroid()) showAndroidTutorial();
   return false;
 }
 
+// Chamado ao abrir a página da igreja (e de novo no Início). Mostra o convite uma vez por abertura.
+// Quem fechou no "×" volta a ver depois de 3 dias.
+let bannerTimer = 0;
 export function maybeSuggestInstall(church) {
   if (!church || isStandalone() || !iconReady(church)) return;
-  if (Date.now() - readNumber('install-dismissed') < 14 * 24 * 3600 * 1000) return;
-  if (!deferredPrompt && !isIOS()) return;
-  if (document.querySelector('.install-banner')) return;
-  setTimeout(() => showBanner(church), 1200);
+  if (Date.now() - readNumber('install-dismissed') < 3 * 24 * 3600 * 1000) return;
+  pendingChurch = church;
+  if (!deferredPrompt && !isIOS() && !isAndroid()) return; // computador: só se o navegador oferecer instalar
+  if (document.querySelector('.install-banner') || bannerTimer) return;
+  // No Android sem o aviso do Chrome ainda, espera um pouco mais: se ele chegar, o botão instala direto.
+  const wait = deferredPrompt || isIOS() ? 800 : 2500;
+  bannerTimer = setTimeout(() => {
+    if (!document.querySelector('.install-banner') && !isStandalone()) showBanner(pendingChurch);
+  }, wait);
 }
 
 function showBanner(church) {
@@ -67,8 +85,8 @@ function showBanner(church) {
   el.className = 'install-banner';
   el.innerHTML = `
     <img src="${esc(church.logo_url || 'icons/icon-192.png')}" alt="" width="40" height="40">
-    <div><strong>Tenha ${esc(church.short_name || church.name)} na tela inicial</strong><span>Agenda, avisos e aniversariantes com um toque.</span></div>
-    <button class="btn primary small" data-install>Adicionar</button>
+    <div><strong>Tenha ${esc(church.short_name || church.name)} na tela inicial</strong><span>Instale o app da igreja: agenda, avisos e aniversariantes com um toque.</span></div>
+    <button class="btn primary small" data-install>Instalar</button>
     <button class="close" aria-label="Agora não" data-dismiss>&times;</button>`;
   document.body.appendChild(el);
 
@@ -85,15 +103,24 @@ function showBanner(church) {
       if (outcome !== 'accepted') write('install-dismissed', Date.now());
     } else if (isIOS()) {
       showIOSTutorial();
+    } else {
+      showAndroidTutorial();
     }
   };
 }
 
-function showIOSTutorial() {
+function showModal(inner) {
   const wrap = document.createElement('div');
   wrap.className = 'modal-backdrop';
-  wrap.innerHTML = `
-    <div class="modal">
+  wrap.innerHTML = `<div class="modal">${inner}<button class="btn primary" data-close>Entendi</button></div>`;
+  wrap.addEventListener('click', (e) => {
+    if (e.target === wrap || e.target.closest('[data-close]')) wrap.remove();
+  });
+  document.body.appendChild(wrap);
+}
+
+function showIOSTutorial() {
+  showModal(`
       <h2>Adicionar à Tela de Início</h2>
       <ol>
         <li>Abra este endereço no <strong>Safari</strong>.</li>
@@ -102,11 +129,17 @@ function showIOSTutorial() {
           na barra de baixo.</li>
         <li>Role e toque em <strong>Adicionar à Tela de Início</strong>.</li>
         <li>Toque em <strong>Adicionar</strong>. Pronto!</li>
+      </ol>`);
+}
+
+// Android sem o botão de instalar do navegador (outro navegador, ou o Chrome ainda não liberou).
+function showAndroidTutorial() {
+  showModal(`
+      <h2>Adicionar à tela inicial</h2>
+      <ol>
+        <li>Toque no menu do navegador: os <strong>três pontinhos ⋮</strong> no canto de cima (no Samsung Internet, as <strong>três linhas ≡</strong> embaixo).</li>
+        <li>Toque em <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>.</li>
+        <li>Confirme em <strong>Instalar</strong> ou <strong>Adicionar</strong>. Pronto!</li>
       </ol>
-      <button class="btn primary" data-close>Entendi</button>
-    </div>`;
-  wrap.addEventListener('click', (e) => {
-    if (e.target === wrap || e.target.closest('[data-close]')) wrap.remove();
-  });
-  document.body.appendChild(wrap);
+      <p class="hint">Não achou a opção? Abra este endereço no <strong>Chrome</strong>.</p>`);
 }
