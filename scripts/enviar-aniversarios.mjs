@@ -104,7 +104,7 @@ async function makeCard(r) {
   drawCard(
     canvas.getContext('2d'),
     img,
-    { title: renderMessage(r.title, data), body: renderMessage(r.body, data), position: r.card_position, color: r.card_color },
+    { title: renderMessage(r.title, data), body: renderMessage(r.body, data), color: r.card_color, x: r.card_x, y: r.card_y, width: r.card_width, size: r.card_size, position: r.card_position },
     width,
     height,
   );
