@@ -10321,6 +10321,7 @@ async function boot() {
   }
   state.church = church;
   applyBranding();
+  maybeSuggestInstall(church); // convite para instalar já na primeira abertura, antes de entrar
   await setUser(data.session?.user ?? null);
 
   sb.auth.onAuthStateChange((event, session) => {
