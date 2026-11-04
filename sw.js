@@ -25,6 +25,7 @@ const SHELL = [
   'js/biblia.js',
   'js/leitor-qr.js',
   'js/rosto.js',
+  'js/organizar.js',
   'js/tema.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
