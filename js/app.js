@@ -6846,7 +6846,8 @@ async function viewMemberFaceEnroll(ctx, id) {
 }
 
 // Termo, autorização e a câmera guiada.
-// Anel em volta do rosto, uma parte para cada ângulo guardado (vai se completando enquanto a pessoa gira).
+// Anel em volta do rosto, uma parte para cada direção (a primeira centrada em cima, depois no sentido
+// do relógio): fica verde a parte do lado para onde a pessoa virou a cabeça (poseSlot em js/rosto.js).
 function faceRing() {
   const r = 46;
   const gap = 4; // graus entre as partes
@@ -6855,7 +6856,7 @@ function faceRing() {
     return `${(50 + r * Math.cos(a)).toFixed(2)} ${(50 + r * Math.sin(a)).toFixed(2)}`;
   };
   const step = 360 / TURN_SHOTS;
-  const parts = Array.from({ length: TURN_SHOTS }, (_, i) => `<path d="M ${pt(i * step + gap / 2)} A ${r} ${r} 0 0 1 ${pt((i + 1) * step - gap / 2)}"/>`);
+  const parts = Array.from({ length: TURN_SHOTS }, (_, i) => `<path d="M ${pt((i - 0.5) * step + gap / 2)} A ${r} ${r} 0 0 1 ${pt((i + 0.5) * step - gap / 2)}"/>`);
   return `<svg class="face-ring" id="face-ring" viewBox="0 0 100 100" aria-hidden="true">${parts.join('')}</svg>`;
 }
 
@@ -6905,11 +6906,14 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
       video.classList.toggle('mirror', facing === 'user');
       stepEl.textContent = 'Preparando o reconhecimento…';
       const alive = () => ctx.alive() && mine === run;
+      document.querySelectorAll('#face-ring path').forEach((p) => p.classList.remove('done'));
+      document.getElementById('face-count').textContent = `0 de ${TURN_SHOTS}`;
       const result = await enrollFace(video, {
         alive,
+        mirror: facing === 'user',
         onStep: (text) => (stepEl.textContent = text),
-        onTurn: (n) => {
-          document.querySelectorAll('#face-ring path').forEach((p, j) => p.classList.toggle('done', j < n));
+        onTurn: (n, parts) => {
+          document.querySelectorAll('#face-ring path').forEach((p, j) => p.classList.toggle('done', !!parts[j]));
           document.getElementById('face-count').textContent = `${n} de ${TURN_SHOTS}`;
         },
         onHint: (text) => (hintEl.textContent = text),

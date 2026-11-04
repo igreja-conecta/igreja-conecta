@@ -48,7 +48,8 @@ test.afterAll(async () => {
 
 // Câmera (um quadro cinza) e reconhecimento de mentira: sempre "um rosto, perto e nítido",
 // com a assinatura k; os olhos piscam a cada 6 leituras. Com turn, cada leitura sai um pouco
-// diferente (como alguém girando a cabeça): é o que o cadastro precisa para completar o anel.
+// diferente e com a cabeça virada para uma das 8 direções (como alguém girando a cabeça em
+// círculo): é o que o cadastro precisa para completar o anel.
 async function fakeFace(page, k, { turn = false } = {}) {
   await page.addInitScript(([d, turn]) => {
     navigator.mediaDevices.getUserMedia = async () => {
@@ -66,7 +67,9 @@ async function fakeFace(page, k, { turn = false } = {}) {
     window.__rostoFalso = {
       detect: async () => {
         const j = reads++ % 9;
-        return [{ descriptor: turn && j ? d.map((v, i) => (i === j ? v + 0.2 : v)) : d, score: 0.95, box }];
+        const a = ((j - 1) * Math.PI) / 4;
+        const pose = turn && j ? { x: 0.3 * Math.sin(a), y: 0.5 - 0.2 * Math.cos(a) } : { x: 0, y: 0.5 };
+        return [{ descriptor: turn && j ? d.map((v, i) => (i === j ? v + 0.2 : v)) : d, pose, score: 0.95, box }];
       },
       track: async () => [{ score: 0.95, box, eyes: ++n % 6 === 0 ? 0.1 : 0.3 }],
     };
