@@ -60,6 +60,22 @@ async function warmUp(faceapi) {
   await faceapi.computeFaceDescriptor(canvas);
 }
 
+// Copia o quadro atual do vídeo para um canvas e é ele que vai para a face-api. Passando o <video>
+// direto, a face-api espera o vídeo chegar a readyState 3 por um evento 'load' que o vídeo nunca
+// dispara: no iPhone a câmera às vezes fica abaixo disso e a leitura travava para sempre (cadastro
+// parado em "Olhe para a câmera"). O canvas também evita o vídeo da câmera sair preto no webgl do iOS.
+let frameCanvas;
+function grab(video) {
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  if (!w || !h) return null;
+  if (video.paused) video.play().catch(() => {});
+  frameCanvas ??= document.createElement('canvas');
+  if (frameCanvas.width !== w || frameCanvas.height !== h) Object.assign(frameCanvas, { width: w, height: h });
+  frameCanvas.getContext('2d', { willReadFrequently: true }).drawImage(video, 0, 0, w, h);
+  return frameCanvas;
+}
+
 let engine;
 // Os testes trocam o leitor de rosto por um de mentira (window.__rostoFalso): só no navegador do teste.
 // onProgress(texto): o que está acontecendo (baixar ~8 MB na primeira vez pode demorar no 4G).
@@ -107,10 +123,10 @@ export function loadFaceEngine(onProgress = () => {}) {
       backend: faceapi.tf.getBackend(),
       // Rápido (sem a assinatura): onde está o rosto e quanto os olhos estão abertos (para o piscar).
       async track(video) {
-        const w = video.videoWidth;
-        const h = video.videoHeight;
-        if (!w || !h) return [];
-        const found = await faceapi.detectAllFaces(video, fast).withFaceLandmarks(true);
+        const frame = grab(video);
+        if (!frame) return [];
+        const { width: w, height: h } = frame;
+        const found = await faceapi.detectAllFaces(frame, fast).withFaceLandmarks(true);
         return found.map((f) => ({
           score: f.detection.score,
           box: boxOf(f.detection, w, h),
@@ -119,10 +135,10 @@ export function loadFaceEngine(onProgress = () => {}) {
       },
       // Rostos no quadro: a assinatura, a confiança e a caixa (em fração do quadro).
       async detect(video, { group = false, walk = false } = {}) {
-        const w = video.videoWidth;
-        const h = video.videoHeight;
-        if (!w || !h) return [];
-        const found = await faceapi.detectAllFaces(video, group ? wide : walk ? mid : opts).withFaceLandmarks(true).withFaceDescriptors();
+        const frame = grab(video);
+        if (!frame) return [];
+        const { width: w, height: h } = frame;
+        const found = await faceapi.detectAllFaces(frame, group ? wide : walk ? mid : opts).withFaceLandmarks(true).withFaceDescriptors();
         return found.map((f) => ({
           descriptor: Array.from(f.descriptor),
           score: f.detection.score,
@@ -156,7 +172,8 @@ function reader(face, kind, options) {
   let fails = 0;
   return async (video) => {
     try {
-      const out = await face[kind](video, options);
+      // Uma leitura que não volta em 20 s conta como falha (antes podia ficar esperando para sempre).
+      const out = await within(face[kind](video, options), 20000, 'a leitura do rosto não respondeu');
       fails = 0;
       return out;
     } catch (err) {
@@ -209,7 +226,10 @@ export async function openCamera(video, facing = 'user', { hd = false } = {}) {
   video.muted = true;
   video.setAttribute('playsinline', '');
   video.srcObject = stream;
-  video.play().catch(() => {});
+  // iPhone: o vídeo da câmera às vezes só começa a tocar se pedir de novo quando os dados chegam.
+  const play = () => video.play().catch(() => {});
+  video.addEventListener('loadedmetadata', play, { once: true });
+  play();
   // Espera a primeira imagem (até 10 s).
   for (let i = 0; i < 50 && !video.videoWidth; i++) await new Promise((r) => setTimeout(r, 200));
   if (!video.videoWidth) {
