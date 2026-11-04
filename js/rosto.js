@@ -6,22 +6,47 @@ const BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15';
 export const FACE_MODEL = 'face-api-1.7.15';
 
 // Cadastro girando a cabeça (como o desbloqueio pelo rosto do celular): primeiro de frente, depois
-// a pessoa gira a cabeça devagar em círculo e o app guarda as assinaturas de ângulos diferentes.
-// TURN_SHOTS: quantas guardar (o anel da tela tem uma parte para cada).
+// a pessoa gira a cabeça devagar em círculo. O anel tem TURN_SHOTS partes, uma para cada direção
+// (cima, cima-direita, direita... no sentido do relógio, como a pessoa vê na tela); cada parte fica
+// verde quando a cabeça vira para aquele lado, e guarda a assinatura daquele ângulo.
 export const TURN_SHOTS = 8;
-// Mínimo para terminar se a pessoa não conseguir girar mais (depois de TURN_GIVE_UP_MS).
+// Mínimo de partes para terminar se a pessoa não conseguir girar mais (depois de TURN_GIVE_UP_MS).
 const TURN_MIN = 4;
 const TURN_GIVE_UP_MS = 30000;
-// Uma assinatura nova só entra se for diferente das que já estão (outro ângulo): 0,15.
-// Mais longe que 0,6 da de frente já não parece a mesma pessoa (ou virou demais): fica de fora.
-const TURN_NEW = 0.15;
+// Mais longe que 0,6 da assinatura de frente já não parece a mesma pessoa (ou virou demais): fica de fora.
 const TURN_FAR = 0.6;
-// O que fazer com uma leitura durante o giro: 'novo' (outro ângulo, guarda), 'igual' (ângulo
-// que já tem) ou 'longe' (virou demais ou outra pessoa).
-export function turnPick(shots, d) {
-  if (!shots.length) return 'novo';
-  if (faceDistance(shots[0], d) > TURN_FAR) return 'longe';
-  return shots.every((x) => faceDistance(x, d) >= TURN_NEW) ? 'novo' : 'igual';
+// Quanto a cabeça precisa virar (o nariz em relação aos olhos, em fração da distância entre os
+// olhos) para contar como uma direção. Para cima e para baixo o nariz anda menos: pesa mais.
+const TURN_MOVE = 0.13;
+const PITCH_GAIN = 1.6;
+
+// Posição da cabeça pelos 68 pontos do rosto: onde está a ponta do nariz (ponto 30) em relação ao
+// meio dos olhos, em fração da distância entre os olhos. x cresce para a direita da imagem; y para baixo.
+export function headPose(pts) {
+  const mid = (a, b) => {
+    let x = 0;
+    let y = 0;
+    for (let i = a; i <= b; i++) {
+      x += pts[i][0];
+      y += pts[i][1];
+    }
+    return [x / (b - a + 1), y / (b - a + 1)];
+  };
+  const l = mid(36, 41);
+  const r = mid(42, 47);
+  const eyes = Math.hypot(r[0] - l[0], r[1] - l[1]) || 1;
+  return { x: (pts[30][0] - (l[0] + r[0]) / 2) / eyes, y: (pts[30][1] - (l[1] + r[1]) / 2) / eyes };
+}
+
+// Para qual parte do anel a cabeça virou, comparando com a posição de frente (base): 0 = cima,
+// 1 = cima-direita, 2 = direita... 7 = cima-esquerda, como a pessoa vê na tela (mirror: câmera da
+// frente, imagem espelhada). -1: ainda de frente (não virou o bastante).
+export function poseSlot(base, pose, mirror = true) {
+  const dx = (pose.x - base.x) * (mirror ? -1 : 1);
+  const dy = (pose.y - base.y) * PITCH_GAIN;
+  if (Math.hypot(dx, dy) < TURN_MOVE) return -1;
+  const deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+  return Math.round(((deg + 360) % 360) / (360 / TURN_SHOTS)) % TURN_SHOTS;
 }
 // Totem: quantas leituras seguidas da mesma pessoa antes de dizer "Não reconheci" (quem chega
 // com o rosto um pouco para baixo costuma ser reconhecido na segunda ou terceira).
@@ -141,6 +166,7 @@ export function loadFaceEngine(onProgress = () => {}) {
         const found = await faceapi.detectAllFaces(frame, group ? wide : walk ? mid : opts).withFaceLandmarks(true).withFaceDescriptors();
         return found.map((f) => ({
           descriptor: Array.from(f.descriptor),
+          pose: headPose(f.landmarks.positions.map((p) => [p.x, p.y])),
           score: f.detection.score,
           box: { x: f.detection.box.x / w, y: f.detection.box.y / h, width: f.detection.box.width / w, height: f.detection.box.height / h },
         }));
@@ -239,50 +265,58 @@ export async function openCamera(video, facing = 'user', { hd = false } = {}) {
   return close;
 }
 
-// Cadastro: onStep(texto) mostra o que fazer, onTurn(n) quantas partes do anel já completou,
-// onHint(texto) avisa o que falta. Devolve { descriptor (média), samples, angles (cada ângulo) }.
-export async function enrollFace(video, { onStep, onTurn = () => {}, onHint, onInfo = () => {}, onProgress = () => {}, alive = () => true }) {
+// Cadastro: onStep(texto) mostra o que fazer, onTurn(n, partes) quantas partes do anel já completou
+// e quais (lista de true/false, na ordem do anel), onHint(texto) avisa o que falta.
+// mirror: a tela mostra a imagem espelhada (câmera da frente). Devolve { descriptor (média), samples, angles (cada ângulo) }.
+export async function enrollFace(video, { mirror = true, onStep, onTurn = () => {}, onHint, onInfo = () => {}, onProgress = () => {}, alive = () => true }) {
   const face = await loadFaceEngine(onProgress);
   const detect = reader(face, 'detect');
-  const shots = [];
+  let front = null;
+  let base = null;
+  const slots = new Array(TURN_SHOTS).fill(null);
+  const filled = () => slots.filter(Boolean).length;
   let startedAt = 0;
   let lastNew = 0;
   onStep('Olhe para a câmera, de frente');
-  while (shots.length < TURN_SHOTS && !(startedAt && shots.length >= TURN_MIN && Date.now() - startedAt > TURN_GIVE_UP_MS)) {
+  while (filled() < TURN_SHOTS && !(startedAt && filled() >= TURN_MIN && Date.now() - startedAt > TURN_GIVE_UP_MS)) {
     if (!alive() || !video.isConnected) throw new Error('cancelado');
     const t0 = performance.now();
     const found = await detect(video);
     const now = Date.now();
     onInfo(`${face.backend || '?'} · ${Math.round(performance.now() - t0)} ms · ${video.videoWidth}×${video.videoHeight}`);
     // De lado o rosto fica mais estreito e com menos certeza: depois do primeiro, aceita um pouco menos.
-    const minWidth = shots.length ? 0.14 : 0.18;
-    const minScore = shots.length ? 0.4 : 0.6;
+    const minWidth = front ? 0.14 : 0.18;
+    const minScore = front ? 0.4 : 0.6;
     if (found.length > 1) onHint('Só uma pessoa na frente da câmera.');
     else if (!found.length && frameBrightness(video) < 10)
       onHint('A imagem da câmera está preta. Toque em "Trocar câmera" ou feche outros apps que usam a câmera.');
-    else if (!found.length) onHint(shots.length ? 'Não estou vendo o rosto: gire um pouco menos.' : 'Não estou vendo o rosto. Chegue mais perto e deixe o rosto iluminado.');
+    else if (!found.length) onHint(front ? 'Não estou vendo o rosto: gire um pouco menos.' : 'Não estou vendo o rosto. Chegue mais perto e deixe o rosto iluminado.');
     else if (found[0].box.width < minWidth) onHint('Chegue um pouco mais perto.');
     else if (found[0].score < minScore) onHint('Fique parado um instante, com o rosto iluminado.');
-    else {
-      const pick = turnPick(shots, found[0].descriptor);
-      if (pick === 'novo') {
-        shots.push(found[0].descriptor);
-        lastNew = now;
-        onTurn(shots.length);
-        onHint('');
-        if (shots.length === 1) {
-          startedAt = now;
-          onStep('Agora gire a cabeça devagar, fazendo um círculo');
-        }
-      } else if (pick === 'longe') {
+    else if (!front) {
+      // De frente: guarda a assinatura e a posição da cabeça (a base para saber para onde ela vira).
+      front = found[0].descriptor;
+      base = found[0].pose;
+      startedAt = lastNew = now;
+      onHint('');
+      onStep('Agora gire a cabeça devagar, fazendo um círculo');
+    } else {
+      const slot = found[0].pose ? poseSlot(base, found[0].pose, mirror) : -1;
+      if (faceDistance(front, found[0].descriptor) > TURN_FAR) {
         onHint('Gire um pouco menos, sem tirar o rosto da câmera.');
-      } else if (now - lastNew > 5000) {
-        onHint('Gire um pouco mais: para os lados, para cima e para baixo.');
+      } else if (slot >= 0 && !slots[slot]) {
+        slots[slot] = found[0].descriptor;
+        lastNew = now;
+        onTurn(filled(), slots.map(Boolean));
+        onHint('');
+      } else if (now - lastNew > 4000) {
+        onHint('Gire a cabeça na direção das partes cinza do anel.');
       }
     }
     await sleep(120);
   }
-  return { descriptor: meanDescriptor(shots), samples: shots.length, angles: shots };
+  const angles = [front, ...slots.filter(Boolean)];
+  return { descriptor: meanDescriptor(angles), samples: angles.length, angles };
 }
 
 // Totem: acompanha quem chega na frente da câmera (um por vez, o rosto maior) e, quando a pessoa
