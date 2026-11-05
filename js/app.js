@@ -393,7 +393,7 @@ function printAs(fileTitle) {
 function drawSheet({ back, backText, title, accent, sub, body, signs, file }) {
   $view.innerHTML = `
     <div class="page sheet-page">
-      <a href="${back}" class="back no-print">← ${esc(backText)}</a>
+      <a href="${back}" class="back no-print"><span class="back-arrow">←</span> ${esc(backText)}</a>
       <article class="sheet">
         ${sheetHead(title, accent, sub)}
         ${body}
@@ -2123,11 +2123,14 @@ function bindColorFields(form) {
 function photoField(name, url) {
   return `
     <div class="photo-field">
-      <span id="photo-preview">${avatar(name, url, 'big')}</span>
+      <label class="photo-pick" title="Toque na foto para trocar">
+        <span id="photo-preview">${avatar(name, url, 'big')}</span>
+        <span class="photo-pick-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+        <input type="file" name="photo" accept="image/*" aria-label="Foto" hidden>
+      </label>
       <div>
-        <label class="btn small">${url ? 'Trocar a foto' : 'Escolher foto'}<input type="file" name="photo" accept="image/*" hidden></label>
         <button type="button" class="btn link small" id="photo-remove" ${url ? '' : 'hidden'}>Remover foto</button>
-        <p class="hint">Opcional. A foto é reduzida no celular antes do envio.</p>
+        <p class="hint">Toque na foto para escolher outra. Opcional; ela é reduzida no celular antes do envio.</p>
       </div>
     </div>`;
 }
@@ -2325,7 +2328,7 @@ async function viewMemberForm(ctx, id) {
 
   $view.innerHTML = `
     <form id="member" class="form page">
-      <a href="#/membros" class="back">← Membros</a>
+      <a href="#/membros" class="back"><span class="back-arrow">←</span> Membros</a>
       <h1>${isNew ? 'Novo membro' : esc(m.name)}</h1>
       ${st ? `<p><span class="tag ${st.cls}">${st.label}</span></p>` : ''}
       ${photoField(m.name, photoUrl)}
@@ -2491,7 +2494,7 @@ async function viewImport(ctx) {
 
   $view.innerHTML = `
     <div class="page">
-      <a href="#/membros" class="back">← Membros</a>
+      <a href="#/membros" class="back"><span class="back-arrow">←</span> Membros</a>
       <h1>Importar planilha</h1>
       <div class="card">
         <p>Use uma planilha com as colunas <strong>nome</strong>, <strong>email</strong>, <strong>telefone</strong> e <strong>nascimento</strong>${featureOn('datas_especiais') ? ' (e, se quiser, <strong>casamento</strong> e <strong>batismo</strong>)' : ''} na primeira linha. Só o nome é obrigatório.</p>
@@ -3207,7 +3210,7 @@ function drawEvent(ctx, ev) {
 
   $view.innerHTML = `
     <div class="page">
-      <a href="#/agenda" class="back">← Agenda</a>
+      <a href="#/agenda" class="back"><span class="back-arrow">←</span> Agenda</a>
       <h1>${esc(ev.title)}</h1>
       <p class="meta">${icon.clock}${esc(fmtEventWhen(occ))}</p>
       ${ev.location ? `<p class="meta">${icon.pin}${esc(ev.location)}</p>` : ''}
@@ -3386,7 +3389,7 @@ function drawRegistrants(id, { ev, list }) {
     </div>`;
   $view.innerHTML = `
     <div class="page">
-      <a href="#/agenda/${id}" class="back">← ${esc(ev.title)}</a>
+      <a href="#/agenda/${id}" class="back"><span class="back-arrow">←</span> ${esc(ev.title)}</a>
       <h1>Inscritos</h1>
       <p class="hint">${esc(ev.title)} · ${esc(fmtEventWhen(ev))}</p>
       <div class="actions-row"><button class="btn" id="csv" ${list.length ? '' : 'disabled'}>${icon.upload} Baixar planilha</button></div>
@@ -3481,7 +3484,7 @@ async function viewEventForm(ctx, id) {
 
   $view.innerHTML = `
     <form id="event" class="form page">
-      <a href="${id ? `#/agenda/${id}` : '#/agenda'}" class="back">← ${id ? 'Evento' : 'Agenda'}</a>
+      <a href="${id ? `#/agenda/${id}` : '#/agenda'}" class="back"><span class="back-arrow">←</span> ${id ? 'Evento' : 'Agenda'}</a>
       <h1>${id ? 'Editar evento' : 'Novo evento'}</h1>
       <label>Título<input name="title" required minlength="3" maxlength="120" value="${esc(ev.title)}" placeholder="Culto de domingo"></label>
       <label>Data<input name="date" type="date" required value="${s ? isoLocal(s) : ''}"></label>
@@ -3658,7 +3661,7 @@ async function viewAnnouncementForm(ctx, id) {
   if (!ctx.alive()) return;
   $view.innerHTML = `
     <form id="notice" class="form page">
-      <a href="#/avisos" class="back">← Avisos</a>
+      <a href="#/avisos" class="back"><span class="back-arrow">←</span> Avisos</a>
       <h1>${id ? 'Editar aviso' : 'Novo aviso'}</h1>
       <label>Título<input name="title" required minlength="3" maxlength="120" value="${esc(a.title)}"></label>
       <label>Aviso<textarea name="body" required rows="6" maxlength="4000">${esc(a.body)}</textarea></label>
@@ -3773,7 +3776,7 @@ async function viewPrayerForm() {
   if (!requireMemberFeature('/oracao/novo', 'oracao')) return;
   $view.innerHTML = `
     <form id="prayer" class="form page">
-      <a href="#/oracao" class="back">← Pedidos de oração</a>
+      <a href="#/oracao" class="back"><span class="back-arrow">←</span> Pedidos de oração</a>
       <h1>Fazer um pedido</h1>
       <label>Seu pedido<textarea name="body" required minlength="3" maxlength="${PRAYER_MAX}" rows="6"></textarea>
         <small class="hint" id="count">0 de ${PRAYER_MAX} letras</small></label>
@@ -4142,7 +4145,7 @@ function drawVisitor(v) {
   }
   $view.innerHTML = `
     <form id="visit" class="form page">
-      <a href="#/visitantes" class="back">← Visitantes</a>
+      <a href="#/visitantes" class="back"><span class="back-arrow">←</span> Visitantes</a>
       <h1>${esc(v.name)}</h1>
       <p class="hint">Cadastro em ${esc(new Date(v.created_at).toLocaleDateString('pt-BR'))}${v.first_time ? ' · primeira vez' : ' · já tinha vindo antes'}${v.source ? ` · ${esc(VISITOR_SOURCES[v.source])}` : ''}</p>
       <p>${v.wants_contact ? '✅ Quer que alguém da igreja fale com ele.' : 'Não pediu contato.'}</p>
@@ -4208,7 +4211,7 @@ async function viewVisitorQr() {
   const c = state.church;
   $view.innerHTML = `
     <div class="page visitor-qr">
-      <a href="#/visitantes" class="back no-print">← Visitantes</a>
+      <a href="#/visitantes" class="back no-print"><span class="back-arrow">←</span> Visitantes</a>
       <h1>Visitou a ${esc(c.name)}?</h1>
       <p class="center">Aponte a câmera do celular e deixe o seu contato.</p>
       <div class="qr" id="visitor-qr"><p class="hint center">Gerando o QR Code…</p></div>
@@ -4353,7 +4356,7 @@ function drawDevotional(d) {
   const img = devotionalImage(d.image_path);
   $view.innerHTML = `
     <article class="page devotional">
-      <a href="#/devocional" class="back">← Devocional</a>
+      <a href="#/devocional" class="back"><span class="back-arrow">←</span> Devocional</a>
       ${img ? `<img class="devotional-img" src="${esc(img)}" alt="">` : ''}
       <p class="hint">${published ? '' : '<span class="tag wait">Agendado</span> '}${esc(fmtLongDay(d.publish_date))}</p>
       <h1>${esc(d.title)}</h1>
@@ -4426,7 +4429,7 @@ async function viewDevotionalForm(ctx, id) {
   const img = devotionalImage(d.image_path);
   $view.innerHTML = `
     <form id="devotional" class="form page">
-      <a href="${id ? `#/devocional/${id}` : '#/devocional'}" class="back">← Devocional</a>
+      <a href="${id ? `#/devocional/${id}` : '#/devocional'}" class="back"><span class="back-arrow">←</span> Devocional</a>
       <h1>${id ? 'Editar devocional' : 'Novo devocional'}</h1>
       <label>Dia em que aparece<input name="publish_date" type="date" required value="${esc(d.publish_date)}">
         <small class="hint">Um devocional por dia. Os membros só veem a partir desse dia.</small></label>
@@ -4708,7 +4711,7 @@ function drawReadingPlan(data, id) {
   const all = Array.from({ length: s.meta.days }, (_, i) => i + 1);
   $view.innerHTML = `
     <div class="page">
-      <a href="#/leitura" class="back">← Plano de leitura</a>
+      <a href="#/leitura" class="back"><span class="back-arrow">←</span> Plano de leitura</a>
       <h1>${esc(s.meta.title)}</h1>
       <p class="hint">${esc(planWhen(p, s))} · começou em ${esc(fmtDate(p.start_date))}${st?.readers ? ` · ${st.readers} ${st.readers === 1 ? 'pessoa lendo' : 'pessoas lendo'}` : ''}</p>
       ${
@@ -4800,7 +4803,7 @@ async function viewReadingForm() {
   if (!isLeaderRole(myRole())) return navigate('/leitura');
   $view.innerHTML = `
     <form id="plan" class="form page">
-      <a href="#/leitura" class="back">← Plano de leitura</a>
+      <a href="#/leitura" class="back"><span class="back-arrow">←</span> Plano de leitura</a>
       <h1>Novo plano de leitura</h1>
       <fieldset>
         <legend>Plano</legend>
@@ -5000,7 +5003,7 @@ async function viewCellForm(ctx, id) {
   if (!ctx.alive()) return;
   $view.innerHTML = `
     <form id="cell" class="form page">
-      <a href="${id ? `#/celulas/${id}` : '#/celulas'}" class="back">← ${id ? esc(c.name) : 'Células'}</a>
+      <a href="${id ? `#/celulas/${id}` : '#/celulas'}" class="back"><span class="back-arrow">←</span> ${id ? esc(c.name) : 'Células'}</a>
       <h1>${id ? 'Editar célula' : 'Nova célula'}</h1>
       <label>Nome<input name="name" required minlength="2" maxlength="80" value="${esc(c.name)}" placeholder="Célula Esperança"></label>
       <div class="colors">
@@ -5095,7 +5098,7 @@ function drawCell(id, { c, roster, manage, meetings }, photos) {
 
   $view.innerHTML = `
     <div class="page">
-      <a href="#/celulas" class="back">← ${leader ? 'Células' : 'Minha célula'}</a>
+      <a href="#/celulas" class="back"><span class="back-arrow">←</span> ${leader ? 'Células' : 'Minha célula'}</a>
       <h1>${esc(c.name)}</h1>
       ${!c.active ? '<p class="notice">Esta célula está encerrada.</p>' : ''}
       ${cellWhen(c) ? `<p class="meta">${icon.clock}${esc(cellWhen(c))}</p>` : ''}
@@ -5244,7 +5247,7 @@ async function viewCellMeeting(ctx, id) {
   const cellRes = { data: { name } };
   $view.innerHTML = `
     <form id="meeting" class="form page">
-      <a href="#/celulas/${id}" class="back">← ${esc(cellRes.data.name)}</a>
+      <a href="#/celulas/${id}" class="back"><span class="back-arrow">←</span> ${esc(cellRes.data.name)}</a>
       <h1>${meeting ? 'Corrigir encontro' : 'Registrar encontro'}</h1>
       <label>Data<input name="date" type="date" required value="${date}" max="${isoLocal(addDays(new Date(), 1))}"></label>
       <label>Tema (opcional)<input name="topic" maxlength="120" value="${esc(meeting?.topic || '')}" placeholder="Estudo de Romanos 8"></label>
@@ -5482,7 +5485,7 @@ async function viewMinistryForm(ctx, id) {
   const suggestions = id ? [] : MINISTRY_SUGGESTIONS.filter(([name]) => !taken.has(fold(name)));
   $view.innerHTML = `
     <form id="ministry" class="form page">
-      <a href="${id ? `#/ministerios/${id}` : '#/escalas'}" class="back">← ${id ? esc(mi.name) : 'Escalas'}</a>
+      <a href="${id ? `#/ministerios/${id}` : '#/escalas'}" class="back"><span class="back-arrow">←</span> ${id ? esc(mi.name) : 'Escalas'}</a>
       <h1>${id ? 'Editar ministério' : 'Novo ministério'}</h1>
       ${
         suggestions.length
@@ -5606,7 +5609,7 @@ function drawMinistry(id, { mi, roster, schedules, manage }, photos) {
 
   $view.innerHTML = `
     <div class="page">
-      <a href="#/escalas" class="back">← Escalas</a>
+      <a href="#/escalas" class="back"><span class="back-arrow">←</span> Escalas</a>
       <h1>${esc(mi.name)}</h1>
       ${!mi.active ? '<p class="notice">Este ministério está desativado.</p>' : ''}
       ${mi.description ? `<p>${esc(mi.description)}</p>` : ''}
@@ -5732,7 +5735,7 @@ async function viewScheduleForm(ctx, id, scheduleId) {
   const date = s?.service_date || isoLocal(addDays(new Date(), 7 - new Date().getDay()));
   $view.innerHTML = `
     <form id="schedule" class="form page">
-      <a href="#/ministerios/${id}" class="back">← ${esc(d.mi.name)}</a>
+      <a href="#/ministerios/${id}" class="back"><span class="back-arrow">←</span> ${esc(d.mi.name)}</a>
       <h1>${s ? 'Editar escala' : 'Nova escala'}</h1>
       <div class="colors">
         <label>Data<input name="date" type="date" required value="${date}" min="${isoLocal(new Date())}"></label>
@@ -5954,7 +5957,7 @@ async function viewChildForm(ctx, id) {
   const canDelete = !team || isLeaderRole(myRole());
   $view.innerHTML = `
     <form id="child" class="form page">
-      <a href="#${back}" class="back">← ${team ? 'Check-in infantil' : 'Meus filhos'}</a>
+      <a href="#${back}" class="back"><span class="back-arrow">←</span> ${team ? 'Check-in infantil' : 'Meus filhos'}</a>
       <h1>${id ? 'Editar criança' : team ? 'Cadastrar criança' : 'Cadastrar filho'}</h1>
       <label>Nome da criança<input name="name" required minlength="2" maxlength="120" value="${esc(c.name)}" autocomplete="off"></label>
       <label>Data de nascimento<input name="birth_date" type="date" value="${esc(c.birth_date || '')}" max="${isoLocal(new Date())}"></label>
@@ -6148,7 +6151,7 @@ async function viewKidCheckin(ctx, childId) {
   const suggested = roomFor(d.rooms, k.birth_date);
   $view.innerHTML = `
     <form id="checkin" class="form page">
-      <a href="#/infantil" class="back">← Check-in infantil</a>
+      <a href="#/infantil" class="back"><span class="back-arrow">←</span> Check-in infantil</a>
       <h1>Entrada: ${esc(k.name)}</h1>
       <p class="hint">${esc([ageText(k.birth_date), k.guardian ? `Responsável: ${k.guardian}` : ''].filter(Boolean).join(' · '))}</p>
       ${k.care_notes ? `<p class="notice kid-warning">⚠️ <strong>Atenção:</strong> ${esc(k.care_notes)}</p>` : ''}
@@ -6189,7 +6192,7 @@ async function viewKidLabel(ctx, checkinId) {
     const day = new Date(k.checked_in_at).toLocaleDateString('pt-BR');
     $view.innerHTML = `
       <div class="page kid-labels">
-        <a href="#/infantil" class="back no-print">← Check-in infantil</a>
+        <a href="#/infantil" class="back no-print"><span class="back-arrow">←</span> Check-in infantil</a>
         <h1 class="no-print">Entrada confirmada</h1>
         <p class="no-print">Código de retirada de ${esc(firstName(k.name))}:</p>
         <p class="kid-code no-print">${esc(k.code)}</p>
@@ -6223,7 +6226,7 @@ async function viewKidCheckout(ctx) {
   const k = fromList ? screenCached('infantil')?.kids.find((x) => x.checkin_id === fromList) : null;
   $view.innerHTML = `
     <form id="checkout" class="form page">
-      <a href="#/infantil" class="back">← Check-in infantil</a>
+      <a href="#/infantil" class="back"><span class="back-arrow">←</span> Check-in infantil</a>
       <h1>Retirada</h1>
       ${k ? `<p><strong>${esc(k.name)}</strong>${k.room_name ? ` · ${esc(k.room_name)}` : ''}${k.guardian ? `<br><span class="hint">Responsável: ${esc(k.guardian)}</span>` : ''}</p>` : ''}
       <label>Código de retirada<input name="code" required minlength="4" maxlength="4" autocomplete="off" autocapitalize="characters" class="code-input" placeholder="K7P3"></label>
@@ -6286,7 +6289,7 @@ function drawKidRooms(rooms) {
   const ageOpts = (v) => `<option value="">—</option>${Array.from({ length: 18 }, (_, i) => `<option value="${i}" ${v === i ? 'selected' : ''}>${i}</option>`).join('')}`;
   $view.innerHTML = `
     <div class="page">
-      <a href="#/infantil" class="back">← Check-in infantil</a>
+      <a href="#/infantil" class="back"><span class="back-arrow">←</span> Check-in infantil</a>
       <h1>Salas</h1>
       <p class="hint">Na entrada, o app sugere a sala pela idade da criança.</p>
       ${
@@ -6633,7 +6636,7 @@ async function viewAttendanceNew(ctx) {
   const first = featureOn('agenda') ? todays(screenCached('agenda'))[0] : null;
   $view.innerHTML = `
     <div class="page">
-      <a href="#/presenca" class="back">← Presença</a>
+      <a href="#/presenca" class="back"><span class="back-arrow">←</span> Presença</a>
       <h1>Nova lista de presença</h1>
       <form id="att-new" class="form">
         <div id="att-events"></div>
@@ -6709,7 +6712,7 @@ function drawAttendanceSession(ctx, id, data) {
   const link = (ver) => `#/presenca/${id}?ver=${ver}${term ? `&busca=${encodeURIComponent(ctx.params.get('busca'))}` : ''}`;
   $view.innerHTML = `
     <div class="page">
-      <a href="#/presenca" class="back">← Presença</a>
+      <a href="#/presenca" class="back"><span class="back-arrow">←</span> Presença</a>
       <h1>${esc(session.title)}</h1>
       <p class="hint">${esc(fmtLongDay(session.session_date))}</p>
       ${attendanceTiles(c)}
@@ -6812,7 +6815,7 @@ async function viewAttendanceQr(ctx, id) {
   const session = data?.session;
   $view.innerHTML = `
     <div class="page qr-reader">
-      <a href="#/presenca/${id}" class="back">← Lista de presença</a>
+      <a href="#/presenca/${id}" class="back"><span class="back-arrow">←</span> Lista de presença</a>
       <h1>Ler carteirinha</h1>
       ${session ? `<p class="hint">${esc(session.title)} · ${esc(fmtLongDay(session.session_date))}</p>` : ''}
       <div class="qr-video"><video id="qr-video" playsinline muted></video><span class="qr-frame" aria-hidden="true"></span></div>
@@ -6943,7 +6946,7 @@ const faceWhen = (s) =>
 function drawFaceStatus({ own, name, back, backText, enrollHref, memberId, cacheName }, s) {
   $view.innerHTML = `
     <div class="page">
-      ${back ? `<a href="${back}" class="back">← ${esc(backText)}</a>` : ''}
+      ${back ? `<a href="${back}" class="back"><span class="back-arrow">←</span> ${esc(backText)}</a>` : ''}
       <h1>${own ? 'Meu rosto' : `Rosto de ${esc(firstName(name))}`}</h1>
       <p class="hint">Reconhecimento facial para a presença nos cultos.</p>
       ${
@@ -7031,7 +7034,7 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
   const needsAdult = status?.needs_adult ?? true;
   $view.innerHTML = `
     <div class="page face-enroll">
-      <a href="#${back}" class="back">← ${own ? 'Meu rosto' : esc(name)}</a>
+      <a href="#${back}" class="back"><span class="back-arrow">←</span> ${own ? 'Meu rosto' : esc(name)}</a>
       <h1>${own ? 'Cadastrar meu rosto' : `Cadastrar o rosto de ${esc(firstName(name))}`}</h1>
       ${own ? '' : `<p class="notice"><strong>Entregue o aparelho a ${esc(firstName(name))}:</strong> a própria pessoa lê o termo e toca em <em>Eu autorizo</em>.</p>`}
       <form id="face-consent" class="form">
@@ -7165,7 +7168,7 @@ async function viewAttendanceTotem(ctx, id) {
   let mode = ['grupo', 'passagem'].includes(pref(TOTEM_MODE_KEY, 'um')) ? pref(TOTEM_MODE_KEY, 'um') : 'um';
   $view.innerHTML = `
     <div class="page totem" id="totem">
-      <a href="#/presenca/${id}" class="back">← Lista de presença</a>
+      <a href="#/presenca/${id}" class="back"><span class="back-arrow">←</span> Lista de presença</a>
       <button type="button" class="btn small totem-exit" id="totem-exit" hidden>Sair da tela cheia</button>
       ${session ? `<p class="totem-title">${esc(session.title)}</p>` : ''}
       <div class="qr-video totem-video ${mode !== 'um' ? 'group' : ''}" id="totem-box"><video id="totem-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div>
@@ -7519,7 +7522,7 @@ function drawAbsences(ctx, rows) {
     </div>`;
   $view.innerHTML = `
     <div class="page">
-      <a href="#/presenca" class="back">← Presença</a>
+      <a href="#/presenca" class="back"><span class="back-arrow">←</span> Presença</a>
       <h1>Quem está faltando</h1>
       <p class="hint">${
         weeks
@@ -8216,7 +8219,7 @@ function drawFinanceEntry(key, id, d) {
   const accounts = d.accounts.filter((a) => a.active || a.id === e?.account_id || a.id === e?.to_account_id);
   $view.innerHTML = `
     <form id="fin-entry" class="form page">
-      <a href="#/financeiro?mes=${key}" class="back">← Financeiro</a>
+      <a href="#/financeiro?mes=${key}" class="back"><span class="back-arrow">←</span> Financeiro</a>
       <h1>${id ? 'Lançamento' : 'Novo lançamento'}</h1>
       ${closed ? '<p class="notice">Este mês está fechado: o lançamento não pode mudar.</p>' : ''}
       <fieldset>
@@ -8307,7 +8310,7 @@ function drawFinanceConfig(ctx, d) {
   const cats = (kind) => d.categories.filter((c) => c.kind === kind).map((c) => item('categoria', c)).join('');
   $view.innerHTML = `
     <div class="page">
-      <a href="#/financeiro" class="back">← Financeiro</a>
+      <a href="#/financeiro" class="back"><span class="back-arrow">←</span> Financeiro</a>
       <h1>Contas e categorias</h1>
       <h2>Contas</h2>
       <p class="hint">O saldo inicial é o que a conta tinha antes do primeiro lançamento no app.</p>
@@ -8393,7 +8396,7 @@ function drawFinanceImport(ctx, d) {
   const names = (list) => list.filter((x) => x.active).map((x) => esc(x.name)).join(', ');
   $view.innerHTML = `
     <div class="page">
-      <a href="#/financeiro" class="back">← Financeiro</a>
+      <a href="#/financeiro" class="back"><span class="back-arrow">←</span> Financeiro</a>
       <h1>Importar planilha</h1>
       <div class="card">
         <p>Use uma planilha com as colunas <strong>data</strong>, <strong>tipo</strong> (entrada, saída ou transferência), <strong>valor</strong>, <strong>categoria</strong>, <strong>conta</strong>, <strong>conta_destino</strong> (só na transferência) e <strong>descricao</strong> na primeira linha.</p>
@@ -8604,7 +8607,7 @@ function drawAccountabilityMonth(key, r) {
   };
   $view.innerHTML = `
     <div class="page acc-page">
-      <a href="#/prestacao" class="back no-print">← Livro caixa</a>
+      <a href="#/prestacao" class="back no-print"><span class="back-arrow">←</span> Livro caixa</a>
       ${r.published_at ? '' : '<p class="notice no-print">Prévia: este mês ainda não foi publicado. Só a tesouraria vê.</p>'}
       <article class="acc-sheet">
         <header class="acc-head">
@@ -8760,7 +8763,7 @@ function drawAlbum(ctx, id, { album, photos }, urls) {
   const team = galleryTeam();
   $view.innerHTML = `
     <div class="page">
-      <a href="#/galeria" class="back">← Galeria</a>
+      <a href="#/galeria" class="back"><span class="back-arrow">←</span> Galeria</a>
       <h1>${esc(album.title)}</h1>
       <p class="hint">${esc(fmtDate(album.album_date))} · ${photos.length} ${photos.length === 1 ? 'foto' : 'fotos'}</p>
       ${album.description ? `<p class="pre">${esc(album.description)}</p>` : ''}
@@ -8862,7 +8865,7 @@ function drawGalleryPhoto(ctx, albumId, photoId, { album, photos }, urls) {
   const src = urls[p.path] || urls[p.mini_path];
   $view.innerHTML = `
     <div class="page photo-view">
-      <a href="#/galeria/${albumId}" class="back">← ${esc(album.title)}</a>
+      <a href="#/galeria/${albumId}" class="back"><span class="back-arrow">←</span> ${esc(album.title)}</a>
       <div class="photo-stage" id="stage">
         ${src ? `<img src="${esc(src)}" alt="Foto ${i + 1} de ${photos.length}">` : '<span class="thumb-wait big" aria-hidden="true"></span>'}
         ${prev ? `<a class="photo-nav prev" href="#/galeria/${albumId}/foto/${prev.id}" aria-label="Foto anterior">‹</a>` : ''}
@@ -8972,7 +8975,7 @@ async function viewAlbumForm(ctx, id) {
   if (!ctx.alive()) return;
   $view.innerHTML = `
     <form id="album" class="form page">
-      <a href="${id ? `#/galeria/${id}` : '#/galeria'}" class="back">← ${id ? esc(a.title) : 'Galeria'}</a>
+      <a href="${id ? `#/galeria/${id}` : '#/galeria'}" class="back"><span class="back-arrow">←</span> ${id ? esc(a.title) : 'Galeria'}</a>
       <h1>${id ? 'Editar álbum' : 'Novo álbum'}</h1>
       <label>Título<input name="title" required minlength="2" maxlength="80" value="${esc(a.title)}" placeholder="Batismo de outubro"></label>
       <label>Data<input name="album_date" type="date" required value="${esc(a.album_date)}"></label>
@@ -9128,7 +9131,7 @@ async function viewMinutesForm(ctx, id) {
   const needsFile = !a.published_at;
   $view.innerHTML = `
     <form id="minutes" class="form page">
-      <a href="#/atas" class="back">← ATAs</a>
+      <a href="#/atas" class="back"><span class="back-arrow">←</span> ATAs</a>
       <h1>${id ? 'Editar ATA' : 'Nova ATA'}</h1>
       <label>Título<input name="title" required minlength="2" maxlength="120" value="${esc(a.title)}" placeholder="Reunião ordinária de outubro"></label>
       <label>Data da reunião<input name="meeting_date" type="date" required value="${esc(a.meeting_date)}"></label>
@@ -9447,7 +9450,7 @@ function drawChatNew(ctx, people, photos) {
     list.length ? `<section class="chat-people"><h2 class="notif-day">${title}</h2><div class="list">${list.map(row).join('')}</div></section>` : '';
   $view.innerHTML = `
     <div class="page chat-page">
-      <a href="#/chat" class="back">← Conversas</a>
+      <a href="#/chat" class="back"><span class="back-arrow">←</span> Conversas</a>
       <h1>${leader ? 'Nova conversa' : 'Falar com a liderança'}</h1>
       <form id="chat-search" class="form"><label class="search">${icon.search}<input name="q" type="search" placeholder="Buscar pelo nome" aria-label="Buscar pessoa" autocomplete="off" value="${esc(typed)}"></label></form>
       ${
@@ -10273,7 +10276,7 @@ async function viewMessageSettings(ctx, kind) {
 
   $view.innerHTML = `
     <form id="bday" class="form page">
-      <a href="#/menu" class="back">← Menu</a>
+      <a href="#/menu" class="back"><span class="back-arrow">←</span> Menu</a>
       <h1>${esc(info.menu)}</h1>
       <p class="hint">${esc(screen.intro)}</p>
       <label class="check"><input type="checkbox" name="enabled" ${t.enabled ? 'checked' : ''}> ${esc(screen.send)}</label>

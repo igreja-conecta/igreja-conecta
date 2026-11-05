@@ -286,6 +286,8 @@ svg.inline { vertical-align: -3px; }
 /* ---------- Membros ---------- */
 .actions-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
 .back { display: inline-block; margin-bottom: 4px; text-decoration: none; font-weight: 600; }
+/* A seta "←" das fontes do sistema é fina: o contorno engrossa o traço. */
+.back-arrow { display: inline-block; -webkit-text-stroke: 1.4px currentColor; paint-order: stroke fill; }
 .search { flex-direction: row; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); }
 .search input { border: 0 !important; padding-left: 0 !important; outline: none; background: transparent; }
 .filters { margin: 10px 0 4px; }
@@ -305,6 +307,14 @@ select:disabled, input:disabled { opacity: .65; }
 .avatar.big { width: 84px; height: 84px; font-size: 1.6rem; }
 .photo-field { display: flex; gap: 16px; align-items: center; }
 .photo-field .btn.link { width: auto; padding-left: 0; }
+/* A própria foto é o botão de trocar: o selo de câmera mostra que dá para tocar. */
+.photo-pick { position: relative; display: inline-block; cursor: pointer; border-radius: 50%; flex: none; }
+.photo-pick:focus-within { outline: 2px solid var(--brand); outline-offset: 3px; }
+.photo-pick-badge {
+  position: absolute; right: -2px; bottom: -2px; width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--brand); color: var(--brand-ink); border: 2px solid var(--bg);
+}
 
 .member-row {
   display: flex; align-items: center; gap: 12px;
