@@ -167,7 +167,8 @@ test('o botão + abre a lista de quem dá para chamar, com busca', async ({ page
   const box = await page.locator('.chat-person .avatar').first().boundingBox();
   expect(Math.round(box.width)).toBe(44);
   expect(Math.round(box.height)).toBe(44);
-  await page.getByLabel('Buscar pessoa').fill('membro');
+  // "Membro da A" e não só "membro": o teste do banco cria um "Membro temporário" na Teste A ao mesmo tempo.
+  await page.getByLabel('Buscar pessoa').fill('membro da a');
   await expect(page.locator('.chat-person:visible')).toHaveCount(1);
   await page.getByLabel('Buscar pessoa').fill('ninguem-com-esse-nome');
   await expect(page.getByText('Ninguém com esse nome')).toBeVisible();
