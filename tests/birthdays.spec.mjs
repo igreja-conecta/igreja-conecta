@@ -213,6 +213,10 @@ test('o Início mostra avisos, eventos e aniversariantes num carrossel abaixo do
   await page.route('**/rest/v1/rpc/events_between', (r) =>
     r.fulfill({ json: [{ event_id: 'e1', title: 'Culto de domingo', starts_at: '2027-06-13T22:00:00Z', ends_at: null, location: null, repeat_weekly: false }] }),
   );
+  // Mural de oração, células e ATAs vazios: aqui só os três cartões de cima.
+  await page.route('**/rest/v1/rpc/prayer_wall', (r) => r.fulfill({ json: [] }));
+  await page.route('**/rest/v1/cells?*', (r) => r.fulfill({ json: [] }));
+  await page.route('**/rest/v1/meeting_minutes?*', (r) => r.fulfill({ json: [] }));
   await openLoggedIn(page, accounts['lider-a'].session, '/i/teste-a/#/');
   const carousel = page.locator('#home-carousel');
   await expect(carousel).toBeVisible();
@@ -227,4 +231,55 @@ test('o Início mostra avisos, eventos e aniversariantes num carrossel abaixo do
   await dots.nth(2).click();
   await expect(dots.nth(2)).toHaveAttribute('aria-current', 'true');
   await expect(carousel.locator('#week-birthdays')).toBeInViewport();
+});
+
+test('o carrossel do Início também mostra os pedidos de oração do mural, as células e as ATAs', async ({ page }) => {
+  // Oração, células e ATAs ligadas (na Teste A podem estar desligadas por outro teste).
+  await page.route('**/rest/v1/churches?*', async (r) => {
+    const res = await r.fetch();
+    const rows = await res.json();
+    const on = (c) => ({ ...c, features: { ...(c.features || {}), oracao: true, celulas: true, atas: true } });
+    await r.fulfill({ response: res, json: Array.isArray(rows) ? rows.map(on) : on(rows) });
+  });
+  await page.route('**/rest/v1/announcements?*', (r) => r.fulfill({ json: [] }));
+  await page.route('**/rest/v1/rpc/events_between', (r) => r.fulfill({ json: [] }));
+  await page.route('**/rest/v1/rpc/prayer_wall', (r) =>
+    r.fulfill({
+      json: [
+        { id: 'p1', body: 'Pela saúde da minha mãe', author: 'Ana', anonymous: false, approved_at: '2027-06-09T12:00:00Z', answered_at: null, praying: 3, i_pray: false, mine: false },
+        { id: 'p2', body: 'Por um emprego novo', author: null, anonymous: true, approved_at: '2027-06-08T12:00:00Z', answered_at: null, praying: 0, i_pray: false, mine: false },
+        { id: 'p3', body: 'Pedido mais antigo', author: 'Bia', anonymous: false, approved_at: '2027-06-01T12:00:00Z', answered_at: null, praying: 0, i_pray: false, mine: false },
+      ],
+    }),
+  );
+  await page.route('**/rest/v1/cells?*', (r) =>
+    r.fulfill({
+      json: [
+        { id: '00000000-0000-4000-8000-0000000000c1', name: 'Célula Esperança', weekday: 3, meets_at: '20:00:00', location: 'Asa Norte', active: true, cell_members: [] },
+        { id: '00000000-0000-4000-8000-0000000000c2', name: 'Célula Inativa', weekday: 4, meets_at: '20:00:00', location: null, active: false, cell_members: [] },
+      ],
+    }),
+  );
+  await page.route('**/rest/v1/meeting_minutes?*', (r) =>
+    r.fulfill({
+      json: [
+        { id: 'm1', title: 'Assembleia ordinária', meeting_date: '2027-05-30', path: 'x/m1.pdf', file_size: 1000, published_at: '2027-05-31T12:00:00Z' },
+        { id: 'm2', title: 'Rascunho sem PDF', meeting_date: '2027-06-05', path: 'x/m2.pdf', file_size: null, published_at: null },
+      ],
+    }),
+  );
+  await openLoggedIn(page, accounts['membro-a'].session, '/i/teste-a/#/');
+  const carousel = page.locator('#home-carousel');
+  await expect(carousel.locator('.slide:not([hidden]) h2')).toContainText(['Pedidos de oração', 'Células', 'ATAs']);
+  const prayers = carousel.locator('#home-prayers');
+  await expect(prayers).toContainText('Pela saúde da minha mãe');
+  await expect(prayers).toContainText('Pedido anônimo');
+  await expect(prayers).not.toContainText('Pedido mais antigo'); // só os 2 mais novos
+  await expect(prayers.getByRole('link', { name: 'Ver o mural de oração' })).toHaveAttribute('href', '#/oracao');
+  const cells = carousel.locator('#home-cells');
+  await expect(cells).toContainText('Célula Esperança');
+  await expect(cells).not.toContainText('Célula Inativa');
+  const minutes = carousel.locator('#home-minutes');
+  await expect(minutes).toContainText('Assembleia ordinária');
+  await expect(minutes).not.toContainText('Rascunho sem PDF'); // só as publicadas
 });

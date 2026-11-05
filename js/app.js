@@ -1241,7 +1241,10 @@ async function viewChurchHome() {
           <div class="slide" id="home-reading"></div>
           <div class="slide" id="home-notices"></div>
           <div class="slide" id="home-events"></div>
+          <div class="slide" id="home-prayers"></div>
           <div class="slide" id="week-birthdays"></div>
+          <div class="slide" id="home-cells"></div>
+          <div class="slide" id="home-minutes"></div>
         </div>
         <div class="carousel-dots"></div>
       </div>
@@ -1260,7 +1263,10 @@ async function viewChurchHome() {
   if (featureOn('escalas')) homeSchedulesCard(slot('home-schedules'), changed).catch(() => {});
   if (featureOn('avisos')) homeNoticesCard(slot('home-notices'), changed).catch(() => {});
   if (featureOn('agenda')) homeEventsCard(slot('home-events'), changed).catch(() => {});
+  if (featureOn('oracao')) homePrayersCard(slot('home-prayers'), changed).catch(() => {});
   if (datesOn()) weekBirthdaysCard(slot('week-birthdays'), changed).catch(() => {});
+  if (featureOn('celulas')) homeCellsCard(slot('home-cells'), changed).catch(() => {});
+  if (featureOn('atas')) homeMinutesCard(slot('home-minutes'), changed).catch(() => {});
   pushInvite(document.getElementById('push-invite')).catch(() => {});
   maybeSuggestInstall(c);
   prefetchMembers();
@@ -3021,6 +3027,78 @@ function homeNoticesCard(el, changed) {
         )
         .join('')}
       <a href="#/avisos">Ver todos os avisos</a>
+    </section>`;
+  }, changed);
+}
+
+// Pedidos de oração do mural (os aprovados, mais novos primeiro): os 2 últimos.
+function homePrayersCard(el, changed) {
+  return homeCard(el, 'mural', loadPrayerWall, (all) => {
+    const rows = (all || []).slice(0, 2);
+    if (!rows.length) return '';
+    return `
+    <section class="card">
+      <h2>${icon.heart} Pedidos de oração</h2>
+      ${rows
+        .map(
+          (p) => `
+        <article class="notice-mini">
+          ${p.answered_at ? '<span class="tag ok">Deus respondeu 🙌</span>' : ''}
+          <p class="pre clamp">${esc(p.body)}</p>
+          <small class="hint">${p.author ? esc(p.author) : 'Pedido anônimo'}${p.praying ? ` · 🙏 ${p.praying} orando` : ''}</small>
+        </article>`,
+        )
+        .join('')}
+      <a href="#/oracao">Ver o mural de oração</a>
+    </section>`;
+  }, changed);
+}
+
+// Células da igreja (as ativas): a da pessoa primeiro, até 3.
+function homeCellsCard(el, changed) {
+  return homeCard(el, 'celulas', loadCells, (data) => {
+    const me = myMember()?.id;
+    const mine = (c) => (c.cell_members || []).some((x) => x.member_id === me);
+    const active = (data?.cells || []).filter((c) => c.active !== false).sort((a, b) => mine(b) - mine(a));
+    if (!active.length) return '';
+    const rows = active.slice(0, 3);
+    const more = active.length - rows.length;
+    return `
+    <section class="card">
+      <h2>${icon.users} Células</h2>
+      <div class="list">${rows
+        .map(
+          (c) => `
+        <a class="event-card" href="#/celulas/${c.id}">
+          <span><strong>${esc(c.name)}${mine(c) ? ' <span class="tag role">Sua célula</span>' : ''}</strong><small>${esc([cellWhen(c), c.location].filter(Boolean).join(' · '))}</small></span>${icon.chevron}
+        </a>`,
+        )
+        .join('')}</div>
+      <a href="#/celulas">${more > 0 ? `Ver todas as ${active.length} células` : 'Ver as células'}</a>
+    </section>`;
+  }, changed);
+}
+
+// ATAs publicadas: as 2 últimas reuniões. Com o link do PDF já buscado (prefetchScreens), abre direto.
+function homeMinutesCard(el, changed) {
+  return homeCard(el, 'atas', loadMinutes, (all) => {
+    const rows = (all || []).filter((r) => r.published_at).slice(0, 2);
+    if (!rows.length) return '';
+    const now = Date.now();
+    return `
+    <section class="card">
+      <h2>${icon.file} ATAs</h2>
+      <div class="list">${rows
+        .map((r) => {
+          const hit = galleryLinks.get(`atas:${r.path}`);
+          const open = hit && hit.until > now ? `href="${esc(hit.url)}" target="_blank" rel="noopener"` : 'href="#/atas"';
+          return `
+        <a class="event-card" ${open}>
+          <span><strong>${esc(r.title)}</strong><small>Reunião de ${esc(fmtDate(r.meeting_date))}</small></span>${icon.chevron}
+        </a>`;
+        })
+        .join('')}</div>
+      <a href="#/atas">Ver todas as ATAs</a>
     </section>`;
   }, changed);
 }
