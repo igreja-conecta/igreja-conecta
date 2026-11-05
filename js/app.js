@@ -13,6 +13,7 @@ import { PIX_TYPES, guessPixType, normalizePixKey, formatPixKey, parseAmount, pi
 import { placeBlock, mountPlaceMaps, pinField, bindPinField, pinValues } from './map.js';
 import { startQrReader, beep } from './leitor-qr.js';
 import { TURN_SHOTS, FACE_MODEL, openCamera, enrollFace, watchFaces, watchGroup, watchWalk } from './rosto.js';
+import { sortableGrid, mergeOrder } from './organizar.js';
 // Erros do rosto com texto para a pessoa (faceError em js/rosto.js) aparecem como estão.
 const faceErrorText = (err, fallback) =>
   /NotAllowed|Permission/i.test(err?.name || err?.message || '')
@@ -1122,6 +1123,34 @@ function viewInvite(m) {
   };
 }
 
+// "≡ Organizar atalhos" (só o administrador): liga o modo organizando, em que os atalhos são
+// arrastados (sortableGrid em js/organizar.js) e tocar num atalho não abre a tela. Cada troca grava
+// a ordem da igreja (churches.home_order), que vale para todos.
+let homeOrderSaving = Promise.resolve();
+function bindHomeOrganize(grid) {
+  const btn = document.getElementById('org-btn');
+  const hint = document.getElementById('org-hint');
+  btn.onclick = () => {
+    const on = grid.classList.toggle('organizing');
+    btn.textContent = on ? 'Pronto' : '≡ Organizar atalhos';
+    btn.classList.toggle('primary', on);
+    hint.hidden = !on;
+    if (on) navigator.vibrate?.(8);
+  };
+  sortableGrid(grid, (keys) => {
+    const c = state.church;
+    // Junta com os atalhos que estão desligados agora, para eles não perderem o lugar.
+    const order = mergeOrder(keys, c.home_order);
+    c.home_order = order;
+    saveBootCache();
+    // Em fila: duas trocas rápidas não chegam fora de ordem no banco.
+    homeOrderSaving = homeOrderSaving.then(async () => {
+      const { error } = await sb.from('churches').update({ home_order: order }).eq('id', c.id);
+      if (error) toast('Não deu para salvar a ordem. Tente de novo.', 'error');
+    });
+  });
+}
+
 async function viewChurchHome() {
   const c = state.church;
   const m = myMember();
@@ -1159,7 +1188,10 @@ async function viewChurchHome() {
     return;
   }
 
-  // As telas destes atalhos chegam nas próximas entregas da Fase 1.
+  // Atalhos do Início. A ordem é a que o administrador escolheu arrastando (churches.home_order,
+  // SQL 043); atalho que não está nela (função ligada depois) vai para o fim, na ordem de sempre.
+  const order = c.home_order || [];
+  const rank = (k) => (order.includes(k) ? order.indexOf(k) : order.length);
   const shortcuts = [
     ['devocional', icon.book, 'Devocional', '#/devocional'],
     ['agenda', icon.calendar, 'Agenda', '#/agenda'],
@@ -1178,18 +1210,27 @@ async function viewChurchHome() {
   ].filter(([k]) =>
     k === 'pix' ? offerReady() : k === 'aniversarios' ? datesOn() : k === 'visitantes' ? visitorTeam() : k === 'infantil' ? kidsTeam() : k === 'presenca' ? attendanceTeam() : featureOn(k),
   );
+  shortcuts.sort((a, b) => rank(a[0]) - rank(b[0]));
+  // Só o administrador organiza (a regra de verdade está no banco), e só com o SQL 043 rodado.
+  const organize = m.role === 'admin' && 'home_order' in c && shortcuts.length > 1;
   $view.innerHTML = `
     <div class="page">
       ${head}
       ${
         shortcuts.length
-          ? `<div class="shortcuts">${shortcuts
-              .map(([, ic, label, href]) =>
+          ? `<div class="shortcuts" id="home-shortcuts">${shortcuts
+              .map(([k, ic, label, href]) =>
                 href
-                  ? `<a class="shortcut" href="${href}">${ic}<span>${label}</span></a>`
-                  : `<div class="shortcut soon">${ic}<span>${label}</span><small>Em breve</small></div>`,
+                  ? `<a class="shortcut" data-key="${k}" href="${href}">${ic}<span>${label}</span></a>`
+                  : `<div class="shortcut soon" data-key="${k}">${ic}<span>${label}</span><small>Em breve</small></div>`,
               )
               .join('')}</div>`
+          : ''
+      }
+      ${
+        organize
+          ? `<div class="organize-bar"><p class="hint" id="org-hint" hidden>Arraste para mudar a ordem. Vale para todos da igreja.</p>
+              <button type="button" class="btn small" id="org-btn">≡ Organizar atalhos</button></div>`
           : ''
       }
       <div class="carousel" id="home-carousel" hidden>
@@ -1207,6 +1248,7 @@ async function viewChurchHome() {
       <div id="push-invite"></div>
       ${aboutCard(c)}
     </div>`;
+  if (organize) bindHomeOrganize(document.getElementById('home-shortcuts'));
   const slot = (id) => document.getElementById(id);
   const box = slot('home-carousel');
   const changed = () => setupCarousel(box);
@@ -1727,6 +1769,10 @@ function helpTopics() {
   ];
 
   const admins = [
+    [
+      'Ordem dos atalhos do Início',
+      `<p>No Início, embaixo dos atalhos, toque em <em>≡ Organizar atalhos</em> e arraste cada atalho para o lugar que quiser. A ordem é salva na hora e vale para todos da igreja. Toque em <em>Pronto</em> para voltar a abrir as telas. Uma funcionalidade ligada depois aparece no fim.</p>`,
+    ],
     [
       'Configurar a igreja',
       `<p>Em <a href="#/config">Menu &gt; Configurar a igreja</a>:</p>
