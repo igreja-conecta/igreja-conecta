@@ -23,3 +23,24 @@ jobs:
           curl -fsS --retry 3 --retry-delay 20 \
             "https://lmukzyonnggwwwjrfywy.supabase.co/rest/v1/churches?select=id&limit=1" \
             -H "apikey: sb_publishable_Z8-CR2iLvz9XAC59Dty-Vg_BOPcvDhC"
+
+  # O GitHub desliga os agendamentos de repositório público depois de 60 dias sem commit.
+  # Religar pela API todo dia zera essa contagem, sem criar commit nenhum.
+  # Religa os agendamentos ativos e os que o GitHub desligou por inatividade;
+  # um desligado à mão (disabled_manually) continua desligado.
+  religar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Religar os agendamentos
+        run: |
+          gh api "repos/$REPO/actions/workflows" --paginate \
+            -q '.workflows[] | select(.state == "active" or .state == "disabled_inactivity") | .id' |
+          while read -r id; do
+            gh api -X PUT "repos/$REPO/actions/workflows/$id/enable" && echo "religado: $id"
+          done
