@@ -7670,6 +7670,9 @@ function attendancePeopleSummary(rows) {
         ${statTile('Não vieram nenhuma vez', counted.filter((r) => !r.present).length)}
       </div>`,
     head: ['Nome', 'Veio', 'Faltou', 'Frequência', 'Última presença'],
+    // Na tela e na folha: cabeçalhos curtos e a data com o ano em 2 dígitos, para caber no celular.
+    shortHead: ['Nome', 'Veio', 'Faltou', 'Freq.', 'Última'],
+    shortLine: (r) => [r.name, r.present, r.sessions ? r.absent : '—', freqOf(r) == null ? '—' : `${freqOf(r)}%`, r.last_present ? fmtDate(r.last_present).replace(/\/20(\d\d)$/, '/$1') : 'Nunca'],
     line: (r) => [r.name, r.present, r.sessions ? r.absent : '—', freqOf(r) == null ? '—' : `${freqOf(r)}%`, r.last_present ? fmtDate(r.last_present) : 'Nunca'],
   };
 }
@@ -7701,8 +7704,8 @@ function drawAttendancePeople(ctx, p, rows) {
              <div class="chips filters">
                ${PEOPLE_SORTS.map(([k, label]) => `<a class="chip ${sort === k ? 'active' : ''}" href="${link(p.key, k)}">${label}</a>`).join('')}
              </div>
-             <div class="table-wrap"><table class="preview-table people-table"><tr>${s.head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${sorted
-               .map((r) => `<tr data-name="${esc(fold(r.name))}">${s.line(r).map((c) => `<td>${esc(String(c))}</td>`).join('')}</tr>`)
+             <div class="table-wrap"><table class="preview-table people-table"><tr>${s.shortHead.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${sorted
+               .map((r) => `<tr data-name="${esc(fold(r.name))}">${s.shortLine(r).map((c) => `<td>${esc(String(c))}</td>`).join('')}</tr>`)
                .join('')}</table></div>
              <p class="hint" id="people-none" hidden>Ninguém com esse nome.</p>`
           : '<div class="empty"><p>Nenhum membro ativo.</p></div>'
@@ -7740,7 +7743,7 @@ async function viewAttendancePeopleSheet(ctx) {
       title: 'Presenças e ausências',
       accent: p.label,
       sub: `${fmtDate(p.from)} a ${fmtDate(p.to)} · só contam as listas desde que cada membro entrou`,
-      body: `<section class="report-section">${s.tiles}${reportTable(s.head, sortPeople(rows, sort).map(s.line))}</section>`,
+      body: `<section class="report-section">${s.tiles}${reportTable(s.shortHead, sortPeople(rows, sort).map(s.shortLine)).replace("preview-table", "preview-table people-table")}</section>`,
       signs: ['Secretaria', 'Pastor(a) responsável'],
       file: `Presenças e ausências - ${state.church.name} - ${p.label}`,
     });
