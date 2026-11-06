@@ -112,7 +112,57 @@ test('a secretaria cadastra o rosto de quem não usa o app, com a pessoa autoriz
   await page.getByLabel(`Eu, Pessoa ${tag}, li e autorizo o cadastro do meu rosto para a presença nos cultos.`).check();
   await page.getByRole('button', { name: 'Eu autorizo' }).click();
   await expect(page.getByText('Pronto: rosto cadastrado.')).toBeVisible({ timeout: 20000 });
+  await expect(page.getByRole('heading', { name: '✓ Rosto cadastrado' })).toBeVisible();
   await expect(page.locator('.card')).toContainText('pela secretaria');
+});
+
+// Cada igreja tem o seu cadastro, com a sua data de nascimento: se ela for de menor de 18, o banco
+// recusaria só no fim (depois do anel, com a câmera já preta). O app avisa antes da câmera.
+test('com a data de nascimento de menor de 18 o app avisa antes de abrir a câmera', async ({ page }) => {
+  const made = await api.post(rest('members'), {
+    headers: { ...as['adm-a'].headers, Prefer: 'return=representation' },
+    data: { church_id: ids.church, name: `Jovem ${tag}`, birth_date: `${new Date().getFullYear() - 15}-01-10` },
+  });
+  const [{ id }] = await made.json();
+  try {
+    let cameras = 0;
+    await page.exposeFunction('__contaCamera', () => cameras++);
+    await page.addInitScript(() => {
+      navigator.mediaDevices.getUserMedia = async () => {
+        window.__contaCamera();
+        throw new Error('não deveria abrir');
+      };
+    });
+    await openLoggedIn(page, as['adm-a'].session, `/i/teste-a/#/membros/${id}/rosto`);
+    await expect(page.locator('.face-minor')).toContainText('de menor de 18 anos');
+    await page.getByRole('link', { name: 'Cadastrar o rosto' }).click();
+    await page.getByLabel(`Eu, Jovem ${tag}, li e autorizo o cadastro do meu rosto para a presença nos cultos.`).check();
+    await page.getByRole('button', { name: 'Eu autorizo' }).click();
+    await expect(page.locator('#face-consent .face-minor')).toContainText('corrija na ficha do membro');
+    await expect(page.locator('#face-camera')).toBeHidden();
+    expect(cameras).toBe(0);
+  } finally {
+    await api.delete(rest(`members?id=eq.${id}`), { headers: as['adm-a'].headers });
+  }
+});
+
+// Depois do anel a câmera desliga: o salvamento aparece num quadro próprio e, se falhar,
+// dá para tentar de novo sem refazer o anel.
+test('se o salvamento do rosto falhar aparece o erro e "Tentar salvar de novo" salva', async ({ page }) => {
+  await fakeFace(page, 2, { turn: true });
+  let fail = true;
+  await page.route('**/rest/v1/rpc/face_save', (route) =>
+    fail ? route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"fora do ar"}' }) : route.continue(),
+  );
+  await openLoggedIn(page, as['adm-a'].session, `/i/teste-a/#/membros/${ids.pessoa}/rosto`);
+  await page.getByRole('link', { name: /Cadastrar (o rosto|de novo)/ }).click();
+  await page.getByLabel(`Eu, Pessoa ${tag}, li e autorizo o cadastro do meu rosto para a presença nos cultos.`).check();
+  await page.getByRole('button', { name: 'Eu autorizo' }).click();
+  await expect(page.getByRole('heading', { name: 'O rosto não foi salvo' })).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('#face-camera')).toBeHidden();
+  fail = false;
+  await page.getByRole('button', { name: 'Tentar salvar de novo' }).click();
+  await expect(page.getByText('Pronto: rosto cadastrado.')).toBeVisible({ timeout: 20000 });
 });
 
 test('quem não é da secretaria não vê o cadastro de rosto dos outros', async ({ page }) => {

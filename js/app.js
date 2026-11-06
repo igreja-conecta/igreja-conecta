@@ -6929,11 +6929,26 @@ const faceTerm = (own) => `
     </ul>
   </section>`;
 
+// Com a data de nascimento do cadastro desta igreja: o banco recusa menores de 18 anos, e isso
+// precisa aparecer ANTES da câmera (cada igreja tem o seu cadastro, com a sua data).
 async function loadFaceStatus(memberId) {
-  const { data, error } = await sb.rpc('face_status', { p_member: memberId });
-  if (error) throw error;
-  return data[0] ?? { registered: false, needs_adult: true };
+  const [st, mb] = await Promise.all([
+    sb.rpc('face_status', { p_member: memberId }),
+    sb.from('members').select('birth_date').eq('id', memberId).maybeSingle(),
+  ]);
+  if (st.error) throw st.error;
+  return { ...(st.data[0] ?? { registered: false, needs_adult: true }), birth_date: mb.data?.birth_date ?? null };
 }
+
+// Menor de 18 pela data de nascimento cadastrada nesta igreja (o mesmo que o banco confere ao salvar).
+const faceMinor = (s) => {
+  const age = ageOf(s?.birth_date);
+  return age != null && age < 18;
+};
+const faceMinorText = (own, s) =>
+  `${own ? 'O seu cadastro nesta igreja está' : 'O cadastro desta pessoa está'} com a data de nascimento ${fmtDate(s.birth_date)}, ` +
+  `de menor de 18 anos, e o reconhecimento facial é só para maiores de 18. ` +
+  (own ? 'Se a data estiver errada, corrija em Menu > Meu cadastro e tente de novo.' : 'Se a data estiver errada, corrija na ficha do membro e tente de novo.');
 
 function requireFaceOn(next) {
   if (!requireMemberFeature(next, 'presenca_facial')) return false;
@@ -6952,6 +6967,7 @@ function drawFaceStatus({ own, name, back, backText, enrollHref, memberId, cache
       ${back ? `<a href="${back}" class="back"><span class="back-arrow">←</span> ${esc(backText)}</a>` : ''}
       <h1>${own ? 'Meu rosto' : `Rosto de ${esc(firstName(name))}`}</h1>
       <p class="hint">Reconhecimento facial para a presença nos cultos.</p>
+      ${faceMinor(s) ? `<p class="notice face-minor">${esc(faceMinorText(own, s))}</p>` : ''}
       ${
         s.registered
           ? `<section class="card"><h2>✓ Rosto cadastrado</h2><p>${esc(faceWhen(s))}</p>
@@ -7058,6 +7074,15 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
         </div>
         <p class="hint">A câmera só calcula a assinatura do rosto neste aparelho. Nenhuma foto é guardada nem enviada.</p>
       </div>
+      <section class="card face-saving" id="face-saving" aria-live="polite" hidden>
+        <h2 id="face-save-title">Salvando o rosto…</h2>
+        <p id="face-save-msg"></p>
+        <div class="actions-row" id="face-save-actions" hidden>
+          <button class="btn primary" type="button" id="face-save-retry">Tentar salvar de novo</button>
+          <button class="btn" type="button" id="face-save-again">Cadastrar de novo</button>
+          <a class="btn" href="#${back}">Cancelar</a>
+        </div>
+      </section>
     </div>`;
   const form = document.getElementById('face-consent');
   const video = document.getElementById('face-video');
@@ -7095,20 +7120,8 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
       });
       close();
       if (!alive()) return;
-      stepEl.textContent = 'Salvando…';
-      const { error } = await sb.rpc('face_save', {
-        p_member: memberId,
-        p_embedding: result.descriptor,
-        p_samples: result.samples,
-        p_model: FACE_MODEL,
-        p_term_version: FACE_TERM_VERSION,
-        p_adult_confirmed: adult(),
-        p_angles: result.angles,
-      });
-      if (error) throw error;
-      screenForget(cacheName);
-      toast(own ? 'Pronto: seu rosto foi cadastrado.' : 'Pronto: rosto cadastrado.');
-      navigate(back);
+      captured = result;
+      await save();
     } catch (err) {
       close?.();
       if (!ctx.alive() || mine !== run || err?.message === 'cancelado') return;
@@ -7117,10 +7130,70 @@ function drawFaceEnroll(ctx, { own, memberId, name, status, cacheName, back }) {
     }
   };
 
-  form.addEventListener('submit', (e) => {
+  // Depois do anel completo a câmera desliga: em vez da imagem preta, aparece o quadro do salvamento,
+  // com prazo. Se não der certo, dá para tentar salvar de novo sem refazer o anel.
+  let captured = null;
+  const savingBox = document.getElementById('face-saving');
+  const saveTitle = document.getElementById('face-save-title');
+  const saveMsg = document.getElementById('face-save-msg');
+  const saveActions = document.getElementById('face-save-actions');
+  const showCamera = (on) => {
+    document.getElementById('face-camera').hidden = !on;
+    savingBox.hidden = on;
+  };
+  const save = async () => {
+    showCamera(false);
+    saveTitle.textContent = 'Salvando o rosto…';
+    saveMsg.textContent = 'Pode afastar o celular. Leva só alguns segundos.';
+    saveActions.hidden = true;
+    try {
+      const call = sb.rpc('face_save', {
+        p_member: memberId,
+        p_embedding: captured.descriptor,
+        p_samples: captured.samples,
+        p_model: FACE_MODEL,
+        p_term_version: FACE_TERM_VERSION,
+        p_adult_confirmed: adult(),
+        p_angles: captured.angles,
+      });
+      const late = new Promise((_, no) =>
+        setTimeout(() => no(Object.assign(new Error('O banco não respondeu em 30 segundos. Confira a internet e toque em "Tentar salvar de novo".'), { friendly: true })), 30000),
+      );
+      const { error } = await Promise.race([call, late]);
+      if (error) throw error;
+      if (!ctx.alive()) return;
+      screenForget(cacheName);
+      toast(own ? 'Pronto: seu rosto foi cadastrado.' : 'Pronto: rosto cadastrado.');
+      navigate(back);
+    } catch (err) {
+      if (!ctx.alive()) return;
+      saveTitle.textContent = 'O rosto não foi salvo';
+      saveMsg.textContent = err?.friendly ? err.message : errorText(err);
+      saveActions.hidden = false;
+    }
+  };
+  document.getElementById('face-save-retry').onclick = () => save();
+  document.getElementById('face-save-again').onclick = () => {
+    captured = null;
+    showCamera(true);
+    start();
+  };
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    // Confere a data de nascimento desta igreja antes de abrir a câmera (o banco recusa menores no fim).
+    const btn = form.querySelector('button');
+    btn.disabled = true;
+    const fresh = await loadFaceStatus(memberId).catch(() => status);
+    btn.disabled = false;
+    if (!ctx.alive()) return;
+    if (faceMinor(fresh)) {
+      form.querySelector('.face-minor')?.remove();
+      btn.insertAdjacentHTML('beforebegin', `<p class="notice face-minor" role="alert">${esc(faceMinorText(own, fresh))}</p>`);
+      return;
+    }
     form.hidden = true;
-    document.getElementById('face-camera').hidden = false;
+    showCamera(true);
     start();
   });
   document.getElementById('face-flip').onclick = () => {
