@@ -2631,14 +2631,17 @@ async function viewSettings(ctx) {
         <p class="hint">É o nome que aparece embaixo do ícone do app instalado. Deixe em branco para usar o começo do nome da igreja.</p>
         <div class="logo-picker">
           <div class="icon-with-name">
-            <div class="icon-preview" id="icon-preview" style="background:${esc(c.icon_background)}">
-              <img id="logo-preview" src="${esc(c.logo_url || 'icons/icon-192.png')}" alt="">
-            </div>
+            <label class="photo-pick icon-pick" title="Toque no ícone para trocar a logo">
+              <span class="icon-preview" id="icon-preview" style="background:${esc(c.icon_background)}">
+                <img id="logo-preview" src="${esc(c.logo_url || 'icons/icon-192.png')}" alt="">
+              </span>
+              <span class="photo-pick-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+              <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" aria-label="Logo" hidden>
+            </label>
             <span id="icon-name" aria-label="Nome embaixo do ícone">${esc(c.short_name || c.name.slice(0, 20))}</span>
           </div>
           <div>
-            <label class="btn small">Trocar a logo<input type="file" name="logo" accept="image/png,image/jpeg,image/webp" hidden></label>
-            <p class="hint">PNG com fundo transparente fica melhor. É assim que o ícone aparece no celular.</p>
+            <p class="hint">Toque no ícone para trocar a logo. PNG com fundo transparente fica melhor. É assim que o ícone aparece no celular.</p>
           </div>
         </div>
         <div class="colors">

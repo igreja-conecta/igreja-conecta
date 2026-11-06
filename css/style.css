@@ -185,6 +185,9 @@ legend { font-weight: 700; padding: 0 4px; }
   border: 1px solid var(--line); overflow: hidden;
 }
 .icon-preview img { width: 84%; height: 84%; object-fit: contain; }
+/* O próprio ícone é o botão de trocar a logo (mesmo selo de câmera da foto do cadastro). */
+.icon-pick { border-radius: 20px; }
+.icon-pick .photo-pick-badge { right: -8px; bottom: -8px; }
 .icon-with-name { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .icon-with-name span { font-size: .8rem; max-width: 96px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -287,7 +290,7 @@ svg.inline { vertical-align: -3px; }
 .actions-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
 .back { display: inline-block; margin-bottom: 4px; text-decoration: none; font-weight: 600; }
 /* A seta "←" das fontes do sistema é fina: o contorno engrossa o traço. */
-.back-arrow { display: inline-block; -webkit-text-stroke: 1.4px currentColor; paint-order: stroke fill; }
+.back-arrow { display: inline-block; font-size: 1.45em; line-height: 1; vertical-align: -.1em; margin-right: 2px; -webkit-text-stroke: 1.6px currentColor; paint-order: stroke fill; }
 .search { flex-direction: row; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); }
 .search input { border: 0 !important; padding-left: 0 !important; outline: none; background: transparent; }
 .filters { margin: 10px 0 4px; }
