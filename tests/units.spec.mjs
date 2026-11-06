@@ -343,6 +343,42 @@ test('cartão de aniversário: tamanho e texto dentro do cartão, em cima, no me
   expect(last.y + last.size).toBeLessThanOrEqual(540);
 });
 
+test('cartão de aniversário: letra e cor escolhidas, e os arquivos das letras existem', async () => {
+  const { CARD_FONTS, CARD_FONT_DIR, cardColor, cardFont, drawCard } = await import('../js/cartao.js');
+  const { readFileSync, existsSync } = await import('node:fs');
+  // Cor livre; as antigas "claro"/"escuro" continuam valendo; inválida vira branco.
+  expect(cardColor('#D4AF37')).toBe('#d4af37');
+  expect(cardColor('claro')).toBe('#ffffff');
+  expect(cardColor('escuro')).toBe('#1b1e27');
+  expect(cardColor('vermelho')).toBe('#ffffff');
+  // Letra: família própria; desconhecida vira a padrão; sem negrito, o título usa a normal.
+  expect(cardFont('lora')).toMatchObject({ title: 700, body: 400 });
+  expect(cardFont('lora').family).toContain('"Cartao Lora"');
+  expect(cardFont('pacifico').title).toBe(400);
+  expect(cardFont('nenhuma').family).not.toContain('Cartao');
+  // As mesmas chaves do SQL 044, e cada arquivo está na pasta (o app e o envio das 7h usam).
+  expect(Object.keys(CARD_FONTS)).toEqual(['padrao', 'montserrat', 'lora', 'playfair', 'dancing', 'caveat', 'greatvibes', 'pacifico']);
+  const sql = readFileSync(new URL('../supabase/044_cartao_letra_e_cor.sql', import.meta.url), 'utf8');
+  for (const key of Object.keys(CARD_FONTS)) expect(sql).toContain(`'${key}'`);
+  for (const f of Object.values(CARD_FONTS)) {
+    for (const file of Object.values(f.files || {})) expect(existsSync(new URL(`../${CARD_FONT_DIR}${file}`, import.meta.url)), file).toBe(true);
+  }
+  // O desenho usa a letra e a cor pedidas.
+  const used = { fonts: new Set(), fills: new Set() };
+  const ctx = {
+    _font: '',
+    set font(v) { this._font = v; used.fonts.add(v); },
+    get font() { return this._font; },
+    set fillStyle(v) { used.fills.add(v); },
+    drawImage() {},
+    measureText: (t) => ({ width: t.length * 10 }),
+    fillText() {},
+  };
+  drawCard(ctx, { width: 1080, height: 540 }, { title: 'Oi', body: 'Tudo bem?', font: 'dancing', color: '#7f1d1d' }, 1080, 540);
+  expect([...used.fonts].some((f) => f.includes('"Cartao Dancing"'))).toBe(true);
+  expect(used.fills.has('#7f1d1d')).toBe(true);
+});
+
 test('planos de leitura: cada plano lê todos os capítulos uma vez só, no número de dias do banco', async () => {
   const { readFileSync } = await import('node:fs');
   const { BOOKS, READING_PLANS, planReading, readingLabel } = await import('../js/biblia.js');

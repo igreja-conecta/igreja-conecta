@@ -90,7 +90,7 @@ test('com o cartão ligado, a prévia mostra a imagem com a mensagem escrita por
   await page.route('**/rest/v1/message_templates?*', async (route) => {
     const res = await route.fetch();
     const rows = await res.json();
-    const body = JSON.stringify(rows.map((r) => ({ card: false, card_position: 'meio', card_color: 'claro', card_x: 50, card_y: 50, card_width: 84, card_size: 100, ...r })));
+    const body = JSON.stringify(rows.map((r) => ({ card: false, card_position: 'meio', card_color: 'claro', card_font: 'padrao', card_x: 50, card_y: 50, card_width: 84, card_size: 100, ...r })));
     await route.fulfill({ response: res, body });
   });
   await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config/aniversario');
@@ -162,8 +162,25 @@ test('com o cartão ligado, a prévia mostra a imagem com a mensagem escrita por
   await expect(page.locator('#card-size-out')).toHaveText('80%');
   await expect.poll(white).toBeGreaterThan(before * 1.5);
 
-  await page.getByLabel('Cor do texto').selectOption('escuro');
+  // Cor: as prontas e qualquer outra pelo código. Preto: quase nada de branco; dourado: os pontos dourados.
+  await page.getByRole('button', { name: 'Preto' }).click();
+  await expect(page.getByLabel('Código da cor (cor da letra)')).toHaveValue('#1b1e27');
   await expect.poll(white).toBeLessThan(50);
+  const near = (rgb) =>
+    card.evaluate((c, [r, g, b]) => {
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - r) < 12 && Math.abs(d[i + 1] - g) < 12 && Math.abs(d[i + 2] - b) < 12) n++;
+      return n;
+    }, rgb);
+  await page.getByLabel('Código da cor (cor da letra)').fill('d4af37');
+  await expect(page.locator('input[name="card_color"]')).toHaveValue('#d4af37');
+  await expect.poll(() => near([0xd4, 0xaf, 0x37])).toBeGreaterThan(300);
+  // Letra: é baixada do próprio site na hora e o cartão é redesenhado com ela.
+  const font = page.waitForResponse((r) => r.url().includes('fonts/cartao/Pacifico-400Regular.ttf'));
+  await page.getByRole('combobox', { name: 'Letra' }).selectOption('pacifico');
+  expect((await font).ok()).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.fonts.check('40px "Cartao Pacifico"'))).toBe(true);
   // Desligado: volta a imagem sozinha.
   await cardBox.uncheck();
   await expect(card).toBeHidden();
