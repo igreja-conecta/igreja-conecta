@@ -290,7 +290,7 @@ svg.inline { vertical-align: -3px; }
 .actions-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
 .back { display: inline-block; margin-bottom: 4px; text-decoration: none; font-weight: 600; }
 /* A seta "←" das fontes do sistema é fina: o contorno engrossa o traço. */
-.back-arrow { display: inline-block; font-size: 1.45em; line-height: 1; vertical-align: -.1em; margin-right: 2px; -webkit-text-stroke: 1.6px currentColor; paint-order: stroke fill; }
+.back-arrow { display: inline-block; font-size: 1.9em; line-height: 1; vertical-align: -.16em; margin-right: 4px; -webkit-text-stroke: 1.9px currentColor; paint-order: stroke fill; }
 .search { flex-direction: row; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); }
 .search input { border: 0 !important; padding-left: 0 !important; outline: none; background: transparent; }
 .filters { margin: 10px 0 4px; }

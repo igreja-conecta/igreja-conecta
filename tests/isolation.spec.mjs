@@ -2375,6 +2375,10 @@ test.describe('Totem em grupo (037)', () => {
   const many = (who, list, model = 'teste-grupo') => rpc(who, 'face_match_many', { p_session: ids.session, p_embeddings: list, p_model: model });
 
   test.beforeAll(async () => {
+    // Sobra de uma rodada cortada no meio (o afterAll não rodou): o mesmo rosto cadastrado duas vezes faz
+    // o banco não escolher ninguém. Apaga antes as pessoas temporárias de rodadas anteriores.
+    await api.delete(rest(`members?church_id=eq.${church.a}&name=like.${encodeURIComponent('Grupo ')}*`), { headers: as['adm-a'].headers });
+    await api.delete(rest(`attendance_sessions?church_id=eq.${church.a}&title=like.${encodeURIComponent('Grupo ')}*`), { headers: as['lider-a'].headers });
     // Duas pessoas temporárias com rostos bem diferentes (modelo próprio: não cruza com os outros testes).
     for (const [key, k] of [['ana', 2], ['bia', 5]]) {
       const made = await api.post(rest('members'), {
@@ -2436,6 +2440,9 @@ test.describe('Cadastro com vários ângulos do rosto (038)', () => {
     (await (await rpc('lider-a', 'face_match', { p_session: ids.session, p_embedding: embedding, p_model: model })).json()).map((r) => r.member_id);
 
   test.beforeAll(async () => {
+    // Sobra de uma rodada cortada no meio (o afterAll não rodou): apaga antes, senão os rostos repetidos atrapalham.
+    await api.delete(rest(`members?church_id=eq.${church.a}&name=like.${encodeURIComponent('Angulos ')}*`), { headers: as['adm-a'].headers });
+    await api.delete(rest(`attendance_sessions?church_id=eq.${church.a}&title=like.${encodeURIComponent('Angulos ')}*`), { headers: as['lider-a'].headers });
     for (const key of ['ana', 'bia']) {
       const made = await api.post(rest('members'), {
         headers: returning(as['adm-a'].headers),
