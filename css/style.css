@@ -380,6 +380,8 @@ button.member-row { font: inherit; text-align: left; width: 100%; cursor: pointe
 .card-options input[type="range"] { width: 100%; accent-color: var(--brand); }
 .card-row { display: flex; align-items: flex-end; gap: 12px; }
 .card-row label { flex: 1; }
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.swatch { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--line); box-shadow: inset 0 0 0 2px var(--surface); cursor: pointer; padding: 0; }
 .card-editor canvas { display: block; width: 100%; height: auto; border-radius: 10px; touch-action: none; cursor: move; }
 .card-editor .hint { margin: 6px 0 0; }
 .notif-image { display: block; width: 100%; max-width: 360px; height: auto; margin-top: 8px; border-radius: 10px; }
