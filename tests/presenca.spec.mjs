@@ -180,3 +180,26 @@ test('a pastoral vê quem está faltando e marca "Vou procurar"', async ({ page 
     await api.delete(rest(`members?id=eq.${member}`), { headers: adm.headers });
   }
 });
+
+// 046: evento da agenda com "Fazer lista de presença" abre a lista sozinho no dia.
+test('o evento de hoje com "Fazer lista de presença" já aparece em Presença nos cultos', async ({ page }) => {
+  const name = `${title} agenda`;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  await openLoggedIn(page, as['lider-a'].session, '/i/teste-a/#/agenda/novo');
+  await page.getByLabel('Título').fill(name);
+  await page.getByLabel('Data').fill(today);
+  await page.getByLabel('Começa: hora').selectOption('23');
+  await page.getByLabel('Fazer lista de presença').check();
+  await page.getByRole('button', { name: 'Criar evento' }).click();
+  await expect(page.getByRole('heading', { name })).toBeVisible();
+  const eventId = page.url().match(/agenda\/([0-9a-f-]{36})/)[1];
+  try {
+    await expect(page.locator('.page')).toContainText('Lista de presença automática');
+    await page.goto('/i/teste-a/#/presenca');
+    await page.locator('.member-row', { hasText: name }).click();
+    await expect(page.getByRole('heading', { name })).toBeVisible();
+    await expect(tile(page, 'Presentes')).toHaveText('0');
+  } finally {
+    await api.delete(rest(`events?id=eq.${eventId}`), { headers: as['lider-a'].headers });
+  }
+});
