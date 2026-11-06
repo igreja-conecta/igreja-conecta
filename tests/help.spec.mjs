@@ -111,6 +111,18 @@ test('as cores aceitam o código digitado, e o código acompanha a paleta', asyn
   await expect(page.locator('#color-warn')).toBeVisible();
 });
 
+// Só confere a tela: nada é gravado na Teste A.
+test('a logo é trocada tocando no próprio ícone, sem botão "Trocar a logo"', async ({ page }) => {
+  await openLoggedIn(page, accounts['adm-a'].session, '/i/teste-a/#/config');
+  await expect(page.locator('#icon-preview')).toBeVisible();
+  await expect(page.getByText('Trocar a logo', { exact: true })).toHaveCount(0);
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('#icon-preview').click();
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+  await (await chooser).setFiles({ name: 'logo.png', mimeType: 'image/png', buffer: png });
+  await expect(page.locator('#logo-preview')).toHaveAttribute('src', /^blob:/);
+});
+
 // Só confere as validações da tela: nada é gravado na Teste A.
 test('a configuração do Pix valida a chave antes de salvar', async ({ page }) => {
   let saved = false;
