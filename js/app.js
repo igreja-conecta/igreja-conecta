@@ -7171,7 +7171,7 @@ async function viewAttendanceTotem(ctx, id) {
       <a href="#/presenca/${id}" class="back"><span class="back-arrow">←</span> Lista de presença</a>
       <button type="button" class="btn small totem-exit" id="totem-exit" hidden>Sair da tela cheia</button>
       ${session ? `<p class="totem-title">${esc(session.title)}</p>` : ''}
-      <div class="qr-video totem-video ${mode !== 'um' ? 'group' : ''}" id="totem-box"><video id="totem-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div>
+      <div class="qr-video totem-video ${mode !== 'um' ? 'group' : ''}" id="totem-box"><div class="totem-frame" id="totem-frame"><video id="totem-video" playsinline muted></video><span class="face-oval" aria-hidden="true"></span></div></div>
       <div class="totem-bottom">
         <div id="totem-msg" class="totem-msg" role="status" aria-live="polite">Abrindo a câmera…</div>
         <button type="button" class="btn danger-outline big" id="totem-notme" hidden>Não sou eu</button>
@@ -7200,6 +7200,13 @@ async function viewAttendanceTotem(ctx, id) {
       </details>
     </div>`;
   const video = document.getElementById('totem-video');
+  // A tela mostra a imagem inteira da câmera, sem cortar (o quadro tem o formato da câmera). Cortada,
+  // o rosto parecia maior do que é para o reconhecimento e a pessoa ficava longe demais (pior na tela cheia).
+  const fitFrame = () => {
+    if (video.videoWidth && video.videoHeight) document.getElementById('totem-frame')?.style.setProperty('--ar', video.videoWidth / video.videoHeight);
+  };
+  video.addEventListener('loadedmetadata', fitFrame);
+  video.addEventListener('resize', fitFrame);
   const msg = document.getElementById('totem-msg');
   const notMe = document.getElementById('totem-notme');
   let close = null;

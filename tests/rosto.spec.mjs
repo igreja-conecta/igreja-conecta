@@ -331,6 +331,12 @@ test('no modo grupo o totem marca duas pessoas de uma vez e cada uma pode ser de
   const cam = await page.locator('#totem-box').boundingBox();
   expect(Math.round(cam.width)).toBe(view.width);
   expect(Math.round(cam.height)).toBe(view.height);
+  // A imagem da câmera (1280×720) aparece inteira, sem cortar: o quadro tem o formato dela e cabe na tela.
+  const frame = await page.locator('#totem-frame').boundingBox();
+  expect(frame.width / frame.height).toBeCloseTo(1280 / 720, 1);
+  expect(frame.width).toBeLessThanOrEqual(view.width + 1);
+  expect(frame.height).toBeLessThanOrEqual(view.height + 1);
+  expect(Math.max(frame.width / view.width, frame.height / view.height)).toBeGreaterThan(0.99);
   const msg = await page.locator('#totem-msg').boundingBox();
   expect(msg.y).toBeGreaterThan(view.height * 0.5);
   await expect(page.getByRole('button', { name: 'Não é Admin' })).toBeVisible();
