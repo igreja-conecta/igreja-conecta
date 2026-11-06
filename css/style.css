@@ -354,6 +354,10 @@ button.member-row { font: inherit; text-align: left; width: 100%; cursor: pointe
 .table-wrap { overflow-x: auto; margin: 10px 0; }
 .preview-table { border-collapse: collapse; width: 100%; font-size: .85rem; }
 .preview-table th, .preview-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+/* Presenças e ausências: o nome quebra a linha e os números ficam juntos, para caber no celular. */
+.people-table th, .people-table td { padding: 6px 5px; font-variant-numeric: tabular-nums; }
+.people-table td:first-child { white-space: normal; overflow-wrap: anywhere; }
+.people-table th:not(:first-child), .people-table td:not(:first-child) { text-align: right; }
 .preview-table tr.bad td { color: var(--danger); }
 .preview-table tr.skip td { color: var(--muted); }
 .warn-box { color: var(--warn); }
