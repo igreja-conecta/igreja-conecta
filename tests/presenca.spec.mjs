@@ -157,6 +157,26 @@ test('a pastoral vê quem está faltando e marca "Vou procurar"', async ({ page 
     const other = await page.context().newPage();
     await openLoggedIn(other, as['membro-a'].session, '/i/teste-a/#/presenca/faltas');
     await expect(other.getByRole('heading', { name: 'Quem está faltando' })).toHaveCount(0);
+
+    // Presenças e ausências por pessoa (045): busca pelo nome, folha para imprimir e planilha.
+    await page.goto('/i/teste-a/#/presenca');
+    await page.getByRole('link', { name: 'Presenças e ausências' }).click();
+    await expect(page.getByRole('heading', { name: 'Presenças e ausências' })).toBeVisible();
+    await page.getByLabel('Buscar pelo nome').fill(name);
+    const line = page.locator('.people-table tr:not([hidden])', { hasText: name });
+    await expect(line).toHaveCount(1);
+    await expect(line.locator('td').nth(1)).toHaveText('2');
+    await expect(line).toContainText(new Date(Date.now() - 50 * 864e5).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }));
+    await expect(page.locator('.people-table tr[data-name]:not([hidden])')).toHaveCount(1);
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Baixar planilha' }).click();
+    expect((await download).suggestedFilename()).toMatch(/^presencas-.*\.csv$/);
+    await page.getByRole('link', { name: 'Imprimir ou salvar PDF' }).click();
+    await expect(page.locator('.sheet')).toContainText(name);
+    await expect(page.getByRole('button', { name: 'Imprimir ou salvar PDF' })).toBeVisible();
+
+    await openLoggedIn(other, as['membro-a'].session, '/i/teste-a/#/presenca/pessoas');
+    await expect(other.getByRole('heading', { name: 'Presenças e ausências' })).toHaveCount(0);
   } finally {
     await api.delete(rest(`members?id=eq.${member}`), { headers: adm.headers });
   }

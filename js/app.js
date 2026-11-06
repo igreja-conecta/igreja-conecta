@@ -782,6 +782,8 @@ const churchRoutes = [
   [/^\/presenca$/, viewAttendance],
   [/^\/presenca\/nova$/, viewAttendanceNew],
   [/^\/presenca\/faltas$/, viewAbsences],
+  [/^\/presenca\/pessoas$/, viewAttendancePeople],
+  [/^\/presenca\/pessoas\/imprimir$/, viewAttendancePeopleSheet],
   [/^\/presenca\/([0-9a-f-]{36})$/, viewAttendanceSession],
   [/^\/presenca\/([0-9a-f-]{36})\/qr$/, viewAttendanceQr],
   [/^\/presenca\/([0-9a-f-]{36})\/totem$/, viewAttendanceTotem],
@@ -1571,7 +1573,7 @@ function helpTopics() {
             attendanceTeam()
               ? `<p><strong>Se você marca a presença:</strong> em <a href="#/presenca">Menu &gt; Presença nos cultos</a>, toque no botão <strong>+</strong>, embaixo à direita, e abra a lista do culto (os cultos de hoje da Agenda aparecem para escolher). Se outra pessoa já abriu a lista com o mesmo nome no mesmo dia, vocês marcam juntos na mesma lista. Busque o nome e toque em <em>Marcar</em>, ou toque em <em>Ler QR Code da carteirinha</em> e aponte a câmera para a carteirinha no celular da pessoa: cada uma lida faz um bip e entra na lista. No alto da lista, o contador mostra quantos foram marcados pela câmera, pelo QR Code e pela lista.</p>${
                   absenceOn()
-                    ? '<p><strong>Quem está faltando (pastoral):</strong> em Presença &gt; <a href="#/presenca/faltas">Quem está faltando</a> aparece quem vinha aos cultos e sumiu há algumas semanas (o administrador escolhe quantas em Configurar a igreja). Toda segunda-feira o administrador e os líderes recebem um aviso. Toque em <em>Vou procurar</em> para os outros líderes saberem que alguém já está cuidando, ou chame no WhatsApp.</p>'
+                    ? '<p><strong>Quem está faltando (pastoral):</strong> em Presença &gt; <a href="#/presenca/faltas">Quem está faltando</a> aparece quem vinha aos cultos e sumiu há algumas semanas (o administrador escolhe quantas em Configurar a igreja). Toda segunda-feira o administrador e os líderes recebem um aviso. Toque em <em>Vou procurar</em> para os outros líderes saberem que alguém já está cuidando, ou chame no WhatsApp.</p><p><strong>Presenças e ausências (pastoral):</strong> em Presença &gt; <a href="#/presenca/pessoas">Presenças e ausências</a> (ou em Relatórios) aparece, para cada membro, em quantos cultos veio, quantos faltou, a frequência e a última presença no período escolhido. Só contam os cultos desde que a pessoa entrou para a igreja. Dá para buscar pelo nome, imprimir ou salvar em PDF e baixar a planilha.</p>'
                     : ''
                 }`
               : ''
@@ -6609,7 +6611,7 @@ function drawAttendance(rows) {
     <div class="page">
       <h1>Presença nos cultos</h1>
       <p class="hint">Abra a lista do culto e marque quem veio: tocando no nome${featureOn('carteirinha') ? ' ou lendo o QR Code da carteirinha' : ''}.</p>
-      ${absenceOn() ? `<div class="actions-row"><a class="btn" href="#/presenca/faltas">${icon.users} Quem está faltando</a></div>` : ''}
+      ${absenceOn() ? `<div class="actions-row"><a class="btn" href="#/presenca/faltas">${icon.users} Quem está faltando</a><a class="btn" href="#/presenca/pessoas">${icon.chart} Presenças e ausências</a></div>` : ''}
       ${
         rows.length
           ? `<div class="list">${rows
@@ -7624,6 +7626,128 @@ function drawAbsences(ctx, rows) {
 }
 
 // ---------------------------------------------------------------------
+// Presenças e ausências por pessoa (pastoral): quantas listas contam para cada membro ativo
+// (desde que entrou), em quantas veio, quantas faltou e a última presença (attendance_people).
+// Fica só na memória (PRIVATE_SCREENS: "presenca...").
+// ---------------------------------------------------------------------
+async function loadAttendancePeople(p) {
+  const { data, error } = await sb.rpc('attendance_people', { p_church: state.church.id, p_from: p.from, p_to: p.to });
+  if (error) throw error;
+  return data;
+}
+
+const attendancePeopleOk = () => requireMemberFeature('/presenca/pessoas', 'presenca') && (isPastoral() || (navigate('/'), false));
+
+async function viewAttendancePeople(ctx) {
+  if (!attendancePeopleOk()) return;
+  const p = reportPeriod(ctx.params.get('periodo') || '3');
+  await screenShow(ctx, `presencas:${p.key}`, () => loadAttendancePeople(p), (rows) => drawAttendancePeople(ctx, p, rows));
+}
+
+// Frequência (0 a 100) ou null quando nenhuma lista conta para a pessoa (entrou depois).
+const freqOf = (r) => (r.sessions ? Math.round((100 * r.present) / r.sessions) : null);
+const PEOPLE_SORTS = [
+  ['menor', 'Menor frequência'],
+  ['maior', 'Maior frequência'],
+  ['nome', 'Nome'],
+];
+function sortPeople(rows, sort) {
+  const byName = (a, b) => a.name.localeCompare(b.name, 'pt-BR');
+  const f = (r) => freqOf(r) ?? (sort === 'menor' ? 101 : -1); // sem listas: sempre no fim
+  if (sort === 'nome') return [...rows].sort(byName);
+  return [...rows].sort((a, b) => (sort === 'maior' ? f(b) - f(a) : f(a) - f(b)) || byName(a, b));
+}
+
+function attendancePeopleSummary(rows) {
+  const counted = rows.filter((r) => r.sessions);
+  const avg = counted.length ? Math.round(counted.reduce((s, r) => s + freqOf(r), 0) / counted.length) : null;
+  return {
+    tiles: `
+      <div class="stat-grid">
+        ${statTile('Listas de presença', Math.max(0, ...rows.map((r) => r.sessions)))}
+        ${statTile('Frequência média', avg == null ? '—' : `${avg}%`)}
+        ${statTile('Vieram a 75% ou mais', counted.filter((r) => freqOf(r) >= 75).length)}
+        ${statTile('Não vieram nenhuma vez', counted.filter((r) => !r.present).length)}
+      </div>`,
+    head: ['Nome', 'Veio', 'Faltou', 'Frequência', 'Última presença'],
+    line: (r) => [r.name, r.present, r.sessions ? r.absent : '—', freqOf(r) == null ? '—' : `${freqOf(r)}%`, r.last_present ? fmtDate(r.last_present) : 'Nunca'],
+  };
+}
+
+function drawAttendancePeople(ctx, p, rows) {
+  const thisYear = new Date().getFullYear();
+  const sort = PEOPLE_SORTS.some(([k]) => k === ctx.params.get('ordem')) ? ctx.params.get('ordem') : 'menor';
+  const link = (periodo, ordem) => `#/presenca/pessoas?periodo=${periodo}&ordem=${ordem}`;
+  const s = attendancePeopleSummary(rows);
+  const sorted = sortPeople(rows, sort);
+  $view.innerHTML = `
+    <div class="page report">
+      <a href="#/presenca" class="back"><span class="back-arrow">←</span> Presença</a>
+      <h1>Presenças e ausências</h1>
+      <div class="chips filters">
+        ${REPORT_PERIODS.map(([k, label]) => `<a class="chip ${p.key === k ? 'active' : ''}" href="${link(k, sort)}">${label}</a>`).join('')}
+        ${[thisYear, thisYear - 1].map((y) => `<a class="chip ${p.key === String(y) ? 'active' : ''}" href="${link(y, sort)}">${y}</a>`).join('')}
+      </div>
+      <p class="hint">${esc(p.label)}: ${esc(fmtDate(p.from))} a ${esc(fmtDate(p.to))}. Para cada membro, só contam as listas de presença desde que entrou para a igreja.</p>
+      ${s.tiles}
+      <div class="actions-row">
+        <a class="btn" href="#/presenca/pessoas/imprimir?periodo=${p.key}&ordem=${sort}">${icon.print} Imprimir ou salvar PDF</a>
+        <button class="btn" type="button" id="people-csv">Baixar planilha</button>
+        ${absenceOn() ? `<a class="btn" href="#/presenca/faltas">${icon.users} Quem está faltando</a>` : ''}
+      </div>
+      ${
+        rows.length
+          ? `<label class="search">${icon.search}<input type="search" id="people-search" placeholder="Buscar pelo nome" aria-label="Buscar pelo nome"></label>
+             <div class="chips filters">
+               ${PEOPLE_SORTS.map(([k, label]) => `<a class="chip ${sort === k ? 'active' : ''}" href="${link(p.key, k)}">${label}</a>`).join('')}
+             </div>
+             <div class="table-wrap"><table class="preview-table people-table"><tr>${s.head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${sorted
+               .map((r) => `<tr data-name="${esc(fold(r.name))}">${s.line(r).map((c) => `<td>${esc(String(c))}</td>`).join('')}</tr>`)
+               .join('')}</table></div>
+             <p class="hint" id="people-none" hidden>Ninguém com esse nome.</p>`
+          : '<div class="empty"><p>Nenhum membro ativo.</p></div>'
+      }
+    </div>`;
+  const search = document.getElementById('people-search');
+  if (search) {
+    search.oninput = () => {
+      const q = fold(search.value.trim());
+      let shown = 0;
+      $view.querySelectorAll('.people-table tr[data-name]').forEach((tr) => {
+        tr.hidden = !!q && !tr.dataset.name.includes(q);
+        if (!tr.hidden) shown++;
+      });
+      document.getElementById('people-none').hidden = shown > 0;
+    };
+  }
+  document.getElementById('people-csv').onclick = () => {
+    const cell = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+    const lines = [[...s.head, 'Listas que contam', 'Membro desde'], ...sorted.map((r) => [...s.line(r), r.sessions, fmtDate(r.since)])];
+    downloadFile(`presencas-${slugify(state.church.name)}-${p.from}-a-${p.to}.csv`, lines.map((l) => l.map(cell).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
+  };
+}
+
+// Folha para imprimir: mesmo guardado da tela.
+async function viewAttendancePeopleSheet(ctx) {
+  if (!attendancePeopleOk()) return;
+  const p = reportPeriod(ctx.params.get('periodo') || '3');
+  const sort = PEOPLE_SORTS.some(([k]) => k === ctx.params.get('ordem')) ? ctx.params.get('ordem') : 'menor';
+  await screenShow(ctx, `presencas:${p.key}`, () => loadAttendancePeople(p), (rows) => {
+    const s = attendancePeopleSummary(rows);
+    drawSheet({
+      back: `#/presenca/pessoas?periodo=${p.key}&ordem=${sort}`,
+      backText: 'Presenças e ausências',
+      title: 'Presenças e ausências',
+      accent: p.label,
+      sub: `${fmtDate(p.from)} a ${fmtDate(p.to)} · só contam as listas desde que cada membro entrou`,
+      body: `<section class="report-section">${s.tiles}${reportTable(s.head, sortPeople(rows, sort).map(s.line))}</section>`,
+      signs: ['Secretaria', 'Pastor(a) responsável'],
+      file: `Presenças e ausências - ${state.church.name} - ${p.label}`,
+    });
+  });
+}
+
+// ---------------------------------------------------------------------
 // Relatórios da liderança: só totais, calculados no banco (church_report)
 // ---------------------------------------------------------------------
 const REPORT_PERIODS = [
@@ -7923,6 +8047,7 @@ function drawReport(p, r) {
       <div class="actions-row">
         <button class="btn" id="members-csv">${icon.users} Lista de membros completa</button>
         <a class="btn" href="#/relatorios/imprimir?periodo=${p.key}">${icon.print} Imprimir ou salvar PDF</a>
+        ${absenceOn() ? `<a class="btn" href="#/presenca/pessoas?periodo=${p.key}">${icon.chart} Presenças e ausências por pessoa</a>` : ''}
       </div>
       ${Object.entries(sections)
         .map(

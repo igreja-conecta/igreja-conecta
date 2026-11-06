@@ -2343,6 +2343,43 @@ test.describe('Quem está faltando (036)', () => {
     for (const who of ['membro-a', 'adm-b', 'sem-igreja']) expect((await rpc(who, 'absence_list', { p_church: church.a })).ok(), who).toBe(false);
   });
 
+  // 045: presenças e ausências por pessoa. Outros testes abrem listas na Teste A ao mesmo tempo,
+  // então os totais são conferidos contra as listas que existem no banco.
+  test('presenças e ausências por pessoa: só a pastoral, contando desde que a pessoa entrou', async () => {
+    const from = day(-90);
+    const to = day(0);
+    const people = (who) => rpc(who, 'attendance_people', { p_church: church.a, p_from: from, p_to: to });
+    const res = await people('lider-a');
+    expect(res.ok(), await res.text()).toBe(true);
+    const rows = await res.json();
+    const sessionsSince = async (d) =>
+      (await (await api.get(rest(`attendance_sessions?select=id&church_id=eq.${church.a}&session_date=gte.${d}&session_date=lte.${to}`), { headers: as['lider-a'].headers })).json()).length;
+
+    // Cadastrado hoje, mas veio há 60 dias: conta desde a primeira presença.
+    const me = rows.find((r) => r.member_id === ids.ausente);
+    expect(me).toMatchObject({ name: `${tag} Ausente`, present: 2, last_present: day(-50) });
+    expect(me.sessions).toBe(await sessionsSince(day(-60)));
+    expect(me.absent).toBe(me.sessions - 2);
+
+    // "Membro desde" há 10 dias e nunca veio: só as listas desses 10 dias contam.
+    const made = await api.post(rest('members'), {
+      headers: returning(as['adm-a'].headers),
+      data: { church_id: church.a, name: `${tag} Novo`, member_since: day(-10) },
+    });
+    const [{ id: novo }] = await made.json();
+    try {
+      const n = (await (await people('adm-a')).json()).find((r) => r.member_id === novo);
+      expect(n).toMatchObject({ present: 0, last_present: null, since: day(-10) });
+      expect(n.sessions).toBe(await sessionsSince(day(-10)));
+      expect(n.sessions).toBeLessThan(me.sessions);
+    } finally {
+      await api.delete(rest(`members?id=eq.${novo}`), { headers: as['adm-a'].headers });
+    }
+
+    for (const who of ['membro-a', 'adm-b', 'sem-igreja']) expect((await people(who)).ok(), who).toBe(false);
+    expect((await rpc('lider-a', 'attendance_people', { p_church: church.a, p_from: day(-500), p_to: to })).ok()).toBe(false);
+  });
+
   test('"Vou procurar" tira da lista por algumas semanas e mostra quem está acompanhando', async () => {
     const follow = (who, weeks) => rpc(who, 'absence_follow', { p_member: ids.ausente, p_weeks: weeks });
     for (const who of ['membro-a', 'adm-b']) expect((await follow(who, 4)).ok(), who).toBe(false);

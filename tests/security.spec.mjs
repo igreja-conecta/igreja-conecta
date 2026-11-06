@@ -397,6 +397,7 @@ test.describe('Banco: visitante sem login (quem está faltando)', () => {
       absence_list: { p_church: UUID },
       can_see_absences: { p_church: UUID },
       absence_follow: { p_member: UUID, p_weeks: 4 },
+      attendance_people: { p_church: UUID, p_from: '2026-01-01', p_to: '2026-03-01' },
     };
     for (const [fn, data] of Object.entries(calls)) expect((await rpc(request, fn, data)).ok(), fn).toBe(false);
     expect((await rpc(request, 'deliver_absence_alerts', { p_secret: 'errada' })).ok()).toBe(false);
