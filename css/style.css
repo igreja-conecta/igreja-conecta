@@ -975,7 +975,11 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 
 /* Totem da entrada */
 .totem-title { text-align: center; font-weight: 700; margin: 4px 0; }
-.totem-video { max-width: 520px; aspect-ratio: 4 / 3; }
+.totem-video { max-width: 520px; aspect-ratio: 4 / 3; container-type: size; }
+/* Quadro com o formato da câmera (--ar, posto pelo app), centralizado e sem cortar a imagem: o que
+   aparece na tela é exatamente o que o reconhecimento vê. Sem as unidades cq, ocupa a caixa toda. */
+.totem-frame { position: absolute; inset: 0; margin: auto; width: 100%; height: 100%; }
+.totem-frame { width: min(100cqw, 100cqh * var(--ar, 1.3333)); height: min(100cqh, 100cqw / var(--ar, 1.3333)); }
 .totem-msg { text-align: center; font-weight: 800; font-size: 1.6rem; padding: 14px 12px; margin: 10px 0; border-radius: var(--radius); border: 1px solid var(--line); }
 .totem-msg.ok { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 14%, transparent); font-size: 2rem; }
 .totem-msg.error { border-color: var(--danger); color: var(--danger); font-size: 1.2rem; }
@@ -990,7 +994,6 @@ body:not(.has-tabbar) .fab-options { bottom: calc(84px + env(safe-area-inset-bot
 .totem.full { position: fixed; inset: 0; z-index: 25; margin: 0; padding: 0; max-width: none; background: #000; color: #fff; overflow: hidden; }
 .totem.full > :not(.totem-video, .totem-bottom, .totem-exit) { display: none; }
 .totem.full .totem-video, .totem.full .totem-video.group { position: absolute; inset: 0; width: 100%; max-width: none; height: 100%; margin: 0; aspect-ratio: auto; border-radius: 0; }
-.totem.full .face-oval { inset: 10% 30% 34%; }
 .totem.full .totem-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, rgb(0 0 0 / .75) 30%); text-align: center; }
 .totem.full .totem-msg { margin: 0 auto 8px; max-width: 900px; color: #fff; border-color: rgb(255 255 255 / .35); background: rgb(0 0 0 / .45); }
 .totem.full .totem-msg.ok { background: color-mix(in srgb, var(--brand) 70%, #000); border-color: var(--brand); }
