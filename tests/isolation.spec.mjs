@@ -2522,3 +2522,64 @@ test.describe('Cadastro com vários ângulos do rosto (038)', () => {
     expect((await save(ids.bia, vec(5), { a: 1 })).ok()).toBe(false);
   });
 });
+
+test.describe('Lista de presença automática da agenda (046)', () => {
+  const tag = `Agenda presenca ${Date.now().toString(36)}`;
+  const day = (n) => new Date(Date.now() + n * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const at = (n) => `${day(n)}T12:00:00-03:00`;
+  const sessionsOf = async (title) =>
+    get('lider-a', `attendance_sessions?select=id,session_date,event_id,title&church_id=eq.${church.a}&title=eq.${encodeURIComponent(title)}`);
+  const newEvent = async (title, data) => {
+    const res = await api.post(rest('events'), {
+      headers: returning(as['lider-a'].headers),
+      data: { church_id: church.a, title, starts_at: at(0), ...data },
+    });
+    expect(res.ok(), await res.text()).toBe(true);
+    return (await res.json())[0];
+  };
+
+  test.afterAll(async () => {
+    if (!api) return;
+    await api.delete(rest(`attendance_sessions?title=like.${encodeURIComponent(tag)}*`), { headers: as['lider-a'].headers });
+    await api.delete(rest(`events?title=like.${encodeURIComponent(tag)}*`), { headers: as['lider-a'].headers });
+  });
+
+  test('evento de hoje com a opção abre a lista na hora, ligada ao evento; sem a opção ou em outro dia, não', async () => {
+    const hoje = await newEvent(`${tag} hoje`, { attendance: true });
+    expect(await sessionsOf(`${tag} hoje`)).toEqual([expect.objectContaining({ session_date: day(0), event_id: hoje.id })]);
+
+    await newEvent(`${tag} sem`, { attendance: false });
+    expect(await sessionsOf(`${tag} sem`)).toEqual([]);
+
+    await newEvent(`${tag} amanha`, { attendance: true, starts_at: at(1) });
+    expect(await sessionsOf(`${tag} amanha`)).toEqual([]);
+
+    // Semanal que começou semana passada: a lista de hoje abre.
+    const semanal = await newEvent(`${tag} semanal`, { attendance: true, starts_at: at(-7), repeat_weekly: true });
+    expect(await sessionsOf(`${tag} semanal`)).toEqual([expect.objectContaining({ session_date: day(0), event_id: semanal.id })]);
+  });
+
+  test('ligar a opção depois abre a lista; a lista aberta à mão com o mesmo nome é aproveitada', async () => {
+    const title = `${tag} depois`;
+    const ev = await newEvent(title, { attendance: false });
+    const manual = await (await rpc('lider-a', 'attendance_open', { p_church: church.a, p_title: title, p_date: day(0), p_event: null })).json();
+    const res = await api.patch(rest(`events?id=eq.${ev.id}`), { headers: as['lider-a'].headers, data: { attendance: true } });
+    expect(res.ok(), await res.text()).toBe(true);
+    const rows = await sessionsOf(title);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(manual);
+
+    // Desligar não apaga a lista.
+    await api.patch(rest(`events?id=eq.${ev.id}`), { headers: as['lider-a'].headers, data: { attendance: false } });
+    expect(await sessionsOf(title)).toHaveLength(1);
+  });
+
+  test('ninguém chama a abertura automática pela API e o membro não liga a opção', async () => {
+    for (const who of ['membro-a', 'lider-a', 'adm-b']) expect((await rpc(who, 'open_event_attendance', {})).ok(), who).toBe(false);
+    const ev = await newEvent(`${tag} membro`, { attendance: false });
+    await api.patch(rest(`events?id=eq.${ev.id}`), { headers: as['membro-a'].headers, data: { attendance: true } });
+    const [row] = await get('lider-a', `events?select=attendance&id=eq.${ev.id}`);
+    expect(row.attendance).toBe(false);
+    expect(await sessionsOf(`${tag} membro`)).toEqual([]);
+  });
+});

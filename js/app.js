@@ -1571,7 +1571,7 @@ function helpTopics() {
           'Presença nos cultos',
           `<p>A equipe da recepção marca quem veio a cada culto. A sua presença fica guardada para a liderança acompanhar a igreja, e você a encontra em <a href="#/meus-dados">Menu &gt; Meus dados</a>.${features('carteirinha') ? ' Na entrada, mostre o QR Code da <a href="#/carteirinha">sua carteirinha</a> para marcar mais rápido.' : ''}</p>${
             attendanceTeam()
-              ? `<p><strong>Se você marca a presença:</strong> em <a href="#/presenca">Menu &gt; Presença nos cultos</a>, toque no botão <strong>+</strong>, embaixo à direita, e abra a lista do culto (os cultos de hoje da Agenda aparecem para escolher). Se outra pessoa já abriu a lista com o mesmo nome no mesmo dia, vocês marcam juntos na mesma lista. Busque o nome e toque em <em>Marcar</em>, ou toque em <em>Ler QR Code da carteirinha</em> e aponte a câmera para a carteirinha no celular da pessoa: cada uma lida faz um bip e entra na lista. No alto da lista, o contador mostra quantos foram marcados pela câmera, pelo QR Code e pela lista.</p>${
+              ? `<p><strong>Se você marca a presença:</strong> em <a href="#/presenca">Menu &gt; Presença nos cultos</a>, toque no botão <strong>+</strong>, embaixo à direita, e abra a lista do culto (os cultos de hoje da Agenda aparecem para escolher). Se o evento da Agenda foi criado com <em>Fazer lista de presença</em>, a lista já abre sozinha no dia (toda semana, se o evento se repete). Se outra pessoa já abriu a lista com o mesmo nome no mesmo dia, vocês marcam juntos na mesma lista. Busque o nome e toque em <em>Marcar</em>, ou toque em <em>Ler QR Code da carteirinha</em> e aponte a câmera para a carteirinha no celular da pessoa: cada uma lida faz um bip e entra na lista. No alto da lista, o contador mostra quantos foram marcados pela câmera, pelo QR Code e pela lista.</p>${
                   absenceOn()
                     ? '<p><strong>Quem está faltando (pastoral):</strong> em Presença &gt; <a href="#/presenca/faltas">Quem está faltando</a> aparece quem vinha aos cultos e sumiu há algumas semanas (o administrador escolhe quantas em Configurar a igreja). Toda segunda-feira o administrador e os líderes recebem um aviso. Toque em <em>Vou procurar</em> para os outros líderes saberem que alguém já está cuidando, ou chame no WhatsApp.</p><p><strong>Presenças e ausências (pastoral):</strong> em Presença &gt; <a href="#/presenca/pessoas">Presenças e ausências</a> (ou em Relatórios) aparece, para cada membro, em quantos cultos veio, quantos faltou, a frequência e a última presença no período escolhido. Só contam os cultos desde que a pessoa entrou para a igreja. Dá para buscar pelo nome, imprimir ou salvar em PDF e baixar a planilha.</p>'
                     : ''
@@ -3224,6 +3224,7 @@ function drawEvent(ctx, ev) {
       ${ev.description ? `<div class="card"><p class="pre">${esc(ev.description)}</p></div>` : ''}
       ${ev.registration && regsOn() ? '<section class="card" id="reg-box"></section>' : ''}
       ${ev.remind_minutes ? `<p class="hint">${icon.bell} Lembrete por notificação ${esc(remind.toLowerCase())}.</p>` : ''}
+      ${leader && ev.attendance && featureOn('presenca') ? `<p class="hint">${icon.presenca} Lista de presença automática: abre sozinha no dia${ev.repeat_weekly ? ', toda semana' : ''}, em Presença nos cultos.</p>` : ''}
       <div class="actions-row">
         <button class="btn primary" id="ics">${icon.calendar} Adicionar à agenda</button>
         <a class="btn" href="${esc(googleCalendarUrl(ev, calOpts))}" target="_blank" rel="noopener">Google Agenda</a>
@@ -3505,6 +3506,12 @@ async function viewEventForm(ctx, id) {
       <label>Lembrete por notificação
         <select name="remind_minutes">${REMIND_OPTIONS.map(([m, label]) => `<option value="${m}" ${ev.remind_minutes === m ? 'selected' : ''}>${label}</option>`).join('')}</select>
       </label>
+      ${
+        featureOn('presenca')
+          ? `<label class="check"><input type="checkbox" name="attendance" ${ev.attendance ? 'checked' : ''}> Fazer lista de presença
+              <small class="hint">No dia do evento a lista abre sozinha em Presença nos cultos, com o nome do evento${ev.repeat_weekly ? ' (uma por semana)' : ''}. A equipe da presença só marca quem veio.</small></label>`
+          : ''
+      }
       ${id && ev.repeat_weekly ? '<p class="hint">As mudanças valem para todas as repetições.</p>' : ''}
       ${
         regsOn()
@@ -3556,6 +3563,7 @@ async function viewEventForm(ctx, id) {
       repeat_until: until,
       remind_minutes: Number(form.remind_minutes.value),
     };
+    if (form.attendance) row.attendance = form.attendance.checked;
     if (form.registration) {
       const on = form.registration.checked && !weekly;
       const until = on && form.reg_date.value ? new Date(`${form.reg_date.value}T${form.reg_time.value || '23:59'}`) : null;
